@@ -6,7 +6,9 @@ import Layout from './components/Layout'
 import Dashboard from './components/Dashboard'
 import Login from './components/Login'
 import Register from './components/Register'
+import ResetPassword from './components/ResetPassword'
 import Setup from './Setup'
+
 import Profile from './components/Profile'
 import Performance from './components/Performance'
 import Fitness from './components/Fitness'
@@ -24,17 +26,15 @@ function LoadingScreen() {
   )
 }
 
-function getUserRole(user, profile) {
-  return (
-    profile?.role ||
-    user?.role ||
-    user?.user_metadata?.role ||
-    user?.app_metadata?.role ||
-    'player'
-  )
+function getUserRole(profile, isAdmin) {
+  if (isAdmin) return 'admin'
+  return profile?.role || 'player'
 }
 
-// Redirects to login if not logged in
+function getSetupCompleted(profile) {
+  return profile?.setup_completed === true
+}
+
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
 
@@ -44,21 +44,24 @@ function PrivateRoute({ children }) {
   return children
 }
 
-// Redirects based on role if already logged in
 function PublicRoute({ children }) {
-  const { user, profile, loading } = useAuth()
+  const { user, profile, loading, isAdmin } = useAuth()
 
   if (loading) return <LoadingScreen />
 
   if (user) {
-    const role = getUserRole(user, profile)
+    const role = getUserRole(profile, isAdmin)
+
+    if (role === 'admin') {
+      return <Navigate to="/admin" replace />
+    }
 
     if (role === 'coach') {
       return <Navigate to="/coach" replace />
     }
 
-    if (role === 'admin') {
-      return <Navigate to="/admin" replace />
+    if (role === 'player' && !getSetupCompleted(profile)) {
+      return <Navigate to="/setup" replace />
     }
 
     return <Navigate to="/dashboard" replace />
@@ -67,32 +70,47 @@ function PublicRoute({ children }) {
   return children
 }
 
-// Admin only
 function AdminRoute({ children }) {
   const { user, profile, isAdmin, loading } = useAuth()
 
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/" replace />
 
-  const role = getUserRole(user, profile)
+  const role = getUserRole(profile, isAdmin)
 
-  if (!isAdmin && role !== 'admin') {
+  if (role !== 'admin') {
     return <Navigate to="/dashboard" replace />
   }
 
   return children
 }
 
-// Coach only
 function CoachRoute({ children }) {
+  const { user, profile, loading, isAdmin } = useAuth()
+
+  if (loading) return <LoadingScreen />
+  if (!user) return <Navigate to="/" replace />
+
+  const role = getUserRole(profile, isAdmin)
+
+  if (role !== 'coach') {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return children
+}
+
+function PlayerSetupRoute({ children }) {
   const { user, profile, loading } = useAuth()
 
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/" replace />
 
-  const role = getUserRole(user, profile)
+  if (profile?.role === 'coach') {
+    return <Navigate to="/coach" replace />
+  }
 
-  if (role !== 'coach') {
+  if (profile?.setup_completed === true) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -103,15 +121,56 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Auth routes */}
+        <Route
+          path="/"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
 
-        {/* Public routes */}
-        <Route path="/" element={<PublicRoute><Login /></PublicRoute>} />
-        <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-        <Route path="/setup" element={<Setup />} />
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
 
-        {/* Protected routes inside layout */}
-        <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
+        <Route
+          path="/register"
+          element={
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          }
+        />
 
+        <Route path="/reset-password" element={<ResetPassword />} />
+
+        {/* Player setup route */}
+        <Route
+          path="/setup"
+          element={
+            <PlayerSetupRoute>
+              <Setup />
+            </PlayerSetupRoute>
+          }
+        />
+
+        <Route path="/player-setup" element={<Navigate to="/setup" replace />} />
+
+        {/* Main app layout */}
+        <Route
+          element={
+            <PrivateRoute>
+              <Layout />
+            </PrivateRoute>
+          }
+        >
           {/* Player pages */}
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
@@ -157,10 +216,9 @@ function App() {
               </CoachRoute>
             }
           />
-
         </Route>
 
-        {/* Admin only */}
+        {/* Real admin route - protected */}
         <Route
           path="/admin"
           element={
@@ -170,9 +228,13 @@ function App() {
           }
         />
 
+        {/* Temporary admin preview route - no login needed */}
+        {process.env.NODE_ENV === 'development' && (
+          <Route path="/admin-preview" element={<AdminDashboard />} />
+        )}
+
         {/* Catch all */}
         <Route path="*" element={<Navigate to="/" replace />} />
-
       </Routes>
     </BrowserRouter>
   )

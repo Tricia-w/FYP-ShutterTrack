@@ -1,125 +1,124 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 
 export default function Login() {
-  const { loginWithGoogle, setDemoUser } = useAuth()
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+  const [forgotLoading, setForgotLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
-  const getRedirectPath = (role) => {
+  const ADMIN_EMAILS = ['admin@demo.com', 'tricia@admin.com']
+
+  function getRedirectPath(role, setupCompleted) {
     if (role === 'coach') return '/coach'
     if (role === 'admin') return '/admin'
+
+    if (role === 'player' && !setupCompleted) {
+      return '/setup'
+    }
+
     return '/dashboard'
   }
 
   async function handleLogin(e) {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setLoading(true)
 
-    const ADMIN_EMAILS = ['tricia@admin.com']
+    try {
+      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-    if (email === 'player@demo.com' && password === 'password123') {
-      const demoUser = {
-        id: 'demo',
-        email: 'player@demo.com',
-        name: 'Demo Player',
-        role: 'player',
+      if (loginError) {
+        setError('Invalid email or password.')
+        setLoading(false)
+        return
       }
 
-      localStorage.setItem('demoUser', JSON.stringify(demoUser))
-      setDemoUser(demoUser)
+      const user = data?.user
 
-      setTimeout(() => {
-        navigate('/dashboard', { replace: true })
-      }, 50)
-
-      setLoading(false)
-      return
-    }
-
-    if (email === 'admin@demo.com' && password === 'password123') {
-      const demoAdmin = {
-        id: 'demo-admin',
-        email: 'admin@demo.com',
-        name: 'Demo Admin',
-        role: 'admin',
+      if (!user?.id) {
+        setError('Login failed. Please try again.')
+        setLoading(false)
+        return
       }
 
-      localStorage.setItem('demoUser', JSON.stringify(demoAdmin))
-      setDemoUser(demoAdmin)
+      const { data: appUser, error: appUserError } = await supabase
+        .from('app_users')
+        .select('role, setup_completed')
+        .eq('user_id', user.id)
+        .maybeSingle()
 
-      setTimeout(() => {
-        navigate('/admin', { replace: true })
-      }, 50)
-
-      setLoading(false)
-      return
-    }
-
-    if (email === 'coach@demo.com' && password === 'password123') {
-      const demoCoach = {
-        id: 'demo-coach',
-        email: 'coach@demo.com',
-        name: 'Demo Coach',
-        role: 'coach',
+      if (appUserError) {
+        setError(appUserError.message)
+        setLoading(false)
+        return
       }
 
-      localStorage.setItem('demoUser', JSON.stringify(demoCoach))
-      setDemoUser(demoCoach)
+      if (!appUser) {
+        setError('Account data not found. Please register again or contact admin.')
+        setLoading(false)
+        return
+      }
 
-      setTimeout(() => {
-        navigate('/coach', { replace: true })
-      }, 50)
+      let role = appUser.role
+
+      if (ADMIN_EMAILS.includes(user.email)) {
+        role = 'admin'
+      }
+
+      const redirectPath = getRedirectPath(role, appUser.setup_completed)
 
       setLoading(false)
+      navigate(redirectPath, { replace: true })
+    } catch (err) {
+      setError(err.message || 'Something went wrong during login.')
+      setLoading(false)
+    }
+  }
+
+  async function handleForgotPassword() {
+    setError('')
+    setSuccess('')
+
+    if (!email) {
+      setError('Please enter your email first, then click Forgot password.')
       return
     }
 
-    const { error: err, data } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    setForgotLoading(true)
 
-    if (err) {
-      setError('Invalid email or password.')
-      setLoading(false)
-      return
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+
+      if (resetError) {
+        setError(resetError.message)
+        setForgotLoading(false)
+        return
+      }
+
+      setSuccess('Password reset link has been sent to your email.')
+    } catch (err) {
+      setError(err.message || 'Failed to send reset password email.')
     }
 
-    let role =
-      data.user?.user_metadata?.role ||
-      data.user?.app_metadata?.role ||
-      'player'
-
-    if (ADMIN_EMAILS.includes(data.user?.email)) {
-      role = 'admin'
-    }
-
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', data.user.id)
-      .maybeSingle()
-
-    if (profileData?.role) {
-      role = profileData.role
-    }
-
-    navigate(getRedirectPath(role), { replace: true })
-    setLoading(false)
+    setForgotLoading(false)
   }
 
   async function handleGoogle() {
-    await loginWithGoogle(remember)
+    setError('Google login will be added after email login, signup, and setup are working.')
   }
 
   return (
@@ -170,7 +169,7 @@ export default function Login() {
         </h1>
 
         <p style={{ fontSize: 13, color: '#8892A4', marginBottom: 28 }}>
-          Login to continue to ShuttleTracker
+          Login to continue to ShuttleTrack
         </p>
 
         {error && (
@@ -188,10 +187,25 @@ export default function Login() {
           </div>
         )}
 
+        {success && (
+          <div
+            style={{
+              background: '#10251C',
+              color: '#34D399',
+              fontSize: 13,
+              padding: '10px 14px',
+              borderRadius: 10,
+              marginBottom: 16,
+            }}
+          >
+            {success}
+          </div>
+        )}
+
         <form onSubmit={handleLogin}>
           <input
             type="email"
-            placeholder="player@demo.com"
+            placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -232,7 +246,7 @@ export default function Login() {
 
             <button
               type="button"
-              onClick={() => setShowPassword((p) => !p)}
+              onClick={() => setShowPassword((prev) => !prev)}
               style={{
                 position: 'absolute',
                 right: 14,
@@ -304,9 +318,23 @@ export default function Login() {
               </span>
             </div>
 
-            <span style={{ fontSize: 13, color: '#1A5FFF', cursor: 'pointer', fontWeight: 500 }}>
-              Forgot password?
-            </span>
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={forgotLoading}
+              style={{
+                fontSize: 13,
+                color: '#1A5FFF',
+                cursor: forgotLoading ? 'not-allowed' : 'pointer',
+                fontWeight: 500,
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                opacity: forgotLoading ? 0.7 : 1,
+              }}
+            >
+              {forgotLoading ? 'Sending...' : 'Forgot password?'}
+            </button>
           </div>
 
           <button

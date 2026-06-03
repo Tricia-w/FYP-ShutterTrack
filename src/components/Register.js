@@ -3,6 +3,66 @@ import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import styles from './Auth.module.css'
 
+function getPasswordChecks(password) {
+  return {
+    length: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+    symbol: /[^A-Za-z0-9]/.test(password),
+  }
+}
+
+function getPasswordError(password) {
+  const checks = getPasswordChecks(password)
+
+  if (!password) {
+    return 'Password is required.'
+  }
+
+  if (
+    !checks.length ||
+    !checks.uppercase ||
+    !checks.lowercase ||
+    !checks.number ||
+    !checks.symbol
+  ) {
+    return 'Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
+  }
+
+  return ''
+}
+
+function PasswordChecklist({ password }) {
+  const checks = getPasswordChecks(password)
+
+  const itemStyle = (valid) => ({
+    fontSize: 12,
+    color: valid ? '#34D399' : '#8892A4',
+    margin: '0 0 4px',
+  })
+
+  return (
+    <div style={{ marginTop: -4, marginBottom: 14 }}>
+      <p style={itemStyle(checks.length)}>
+        {checks.length ? '✓' : '•'} At least 8 characters
+      </p>
+      <p style={itemStyle(checks.uppercase)}>
+        {checks.uppercase ? '✓' : '•'} One uppercase letter
+      </p>
+      <p style={itemStyle(checks.lowercase)}>
+        {checks.lowercase ? '✓' : '•'} One lowercase letter
+      </p>
+      <p style={itemStyle(checks.number)}>
+        {checks.number ? '✓' : '•'} One number
+      </p>
+      <p style={itemStyle(checks.symbol)}>
+        {checks.symbol ? '✓' : '•'} One symbol
+      </p>
+    </div>
+  )
+}
+
 export default function Register() {
   const [step, setStep] = useState(1)
   const [role, setRole] = useState('')
@@ -21,15 +81,18 @@ export default function Register() {
 
   const navigate = useNavigate()
 
-  const set = (k) => (e) => {
-    setForm((f) => ({ ...f, [k]: e.target.value }))
+  const set = (key) => (e) => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: e.target.value,
+    }))
   }
 
   const ROLES = [
     {
       key: 'player',
       label: 'Player',
-      desc: 'Track your own performance, fitness, expenses and match history.',
+      desc: 'Track your own performance, fitness, setup and progress.',
       icon: (
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <circle cx="12" cy="8" r="5" />
@@ -40,7 +103,7 @@ export default function Register() {
     {
       key: 'coach',
       label: 'Coach',
-      desc: 'You play and coach. Get full player dashboard plus coach tools to manage your team.',
+      desc: 'Access coach tools and manage badminton players later.',
       icon: (
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <circle cx="9" cy="7" r="4" />
@@ -53,33 +116,27 @@ export default function Register() {
   ]
 
   async function handleGoogle() {
-    setError('')
-
-    if (!role) {
-      setError('Please select your role first.')
-      return
-    }
-
-    localStorage.setItem('selectedRole', role)
-
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/setup`,
-      },
-    })
-
-    if (err) {
-      setError(err.message)
-    }
+    setError('Google signup will be connected after email signup and setup are working.')
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
 
-    if (!form.name || !form.email || !form.password) {
+    if (!role) {
+      setError('Please select your role.')
+      return
+    }
+
+    if (!form.name || !form.email || !form.password || !form.confirm) {
       setError('Please fill in all required fields.')
+      return
+    }
+
+    const passwordError = getPasswordError(form.password)
+
+    if (passwordError) {
+      setError(passwordError)
       return
     }
 
@@ -88,45 +145,49 @@ export default function Register() {
       return
     }
 
-    if (form.password.length < 6) {
-      setError('Password must be at least 6 characters.')
-      return
-    }
+    try {
+      setLoading(true)
 
-    setLoading(true)
-    localStorage.setItem('selectedRole', role)
-
-    const { data, error: err } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: {
-        data: {
-          full_name: form.name,
-          username: form.username,
-          role,
+      const { data, error: signupError } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: {
+          data: {
+            role,
+            full_name: form.name,
+            username: form.username,
+          },
         },
-      },
-    })
+      })
 
-    if (err) {
-      setError(err.message)
+      if (signupError) {
+        setError(signupError.message)
+        setLoading(false)
+        return
+      }
+
+      if (!data?.session && data?.user) {
+        setError('Account created. Please check your email to confirm your account, then login.')
+        setLoading(false)
+
+        setTimeout(() => {
+          navigate('/')
+        }, 1500)
+
+        return
+      }
+
       setLoading(false)
-      return
-    }
 
-    if (!data?.session && data?.user) {
-      setError('Account created. Please check your email to confirm your account, then login.')
+      if (role === 'coach') {
+        navigate('/coach', { replace: true })
+      } else {
+        navigate('/setup', { replace: true })
+      }
+    } catch (err) {
+      setError(err.message || 'Something went wrong.')
       setLoading(false)
-
-      setTimeout(() => {
-        navigate('/')
-      }, 1500)
-
-      return
     }
-
-    setLoading(false)
-    navigate('/setup')
   }
 
   if (step === 1) {
@@ -156,7 +217,6 @@ export default function Register() {
                 onClick={() => {
                   setRole(r.key)
                   setError('')
-                  localStorage.setItem('selectedRole', r.key)
                 }}
                 style={{
                   display: 'flex',
@@ -233,7 +293,6 @@ export default function Register() {
                 return
               }
 
-              localStorage.setItem('selectedRole', role)
               setError('')
               setStep(2)
             }}
@@ -337,15 +396,7 @@ export default function Register() {
             marginBottom: 16,
             boxSizing: 'border-box',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#252D40')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#1E2535')}
         >
-          <svg width="18" height="18" viewBox="0 0 48 48">
-            <path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 20-8 20-20 0-1.3-.1-2.7-.4-4z" />
-            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.6 8.3 6.3 14.7z" />
-            <path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.6-2.9-11.3-7.1l-6.5 5C9.7 39.8 16.4 44 24 44z" />
-            <path fill="#1976D2" d="M43.6 20H24v8h11.3c-.9 2.4-2.5 4.4-4.6 5.8l6.2 5.2C40.8 35.7 44 30.3 44 24c0-1.3-.1-2.7-.4-4z" />
-          </svg>
           Sign up with Google
         </button>
 
@@ -399,7 +450,7 @@ export default function Register() {
 
             <button
               type="button"
-              onClick={() => setShowPassword((p) => !p)}
+              onClick={() => setShowPassword((prev) => !prev)}
               style={{
                 position: 'absolute',
                 right: 14,
@@ -412,20 +463,11 @@ export default function Register() {
                 padding: 0,
               }}
             >
-              {showPassword ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
+              {showPassword ? '🙈' : '👁'}
             </button>
           </div>
+
+          <PasswordChecklist password={form.password} />
 
           <div className={styles.field} style={{ position: 'relative' }}>
             <input
@@ -440,7 +482,7 @@ export default function Register() {
 
             <button
               type="button"
-              onClick={() => setShowConfirm((p) => !p)}
+              onClick={() => setShowConfirm((prev) => !prev)}
               style={{
                 position: 'absolute',
                 right: 14,
@@ -453,22 +495,16 @@ export default function Register() {
                 padding: 0,
               }}
             >
-              {showConfirm ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
+              {showConfirm ? '🙈' : '👁'}
             </button>
           </div>
 
-          <button className={styles.btn} type="submit" disabled={loading} style={{ opacity: loading ? 0.7 : 1 }}>
+          <button
+            className={styles.btn}
+            type="submit"
+            disabled={loading}
+            style={{ opacity: loading ? 0.7 : 1 }}
+          >
             {loading ? 'Creating account...' : 'Continue Setup'}
           </button>
         </form>

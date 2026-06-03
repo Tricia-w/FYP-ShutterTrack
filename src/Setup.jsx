@@ -7,7 +7,7 @@ import styles from './Setup.module.css'
 const PRESSURE_OPTIONS = ['Calm', 'Aggressive', 'Careful']
 
 export default function Setup() {
-  const { user, profile, saveProfile, loading } = useAuth()
+  const { user, loading } = useAuth()
   const navigate = useNavigate()
 
   const [form, setForm] = useState({
@@ -22,74 +22,72 @@ export default function Setup() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const set = (k) => (e) => {
-    setForm((f) => ({ ...f, [k]: e.target.value }))
+  const set = (key) => (e) => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: e.target.value,
+    }))
   }
 
-  const getInitials = (name) => {
-    return name
-      .trim()
-      .split(' ')
-      .filter(Boolean)
-      .map((word) => word[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
-  }
-
-  const handleFinish = async () => {
+  async function handleFinish() {
     setError('')
     setSaving(true)
 
-    let activeUser = user
+    try {
+      let activeUser = user
 
-    if (!activeUser?.id) {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
+      if (!activeUser?.id) {
+        const {
+          data: { user: currentUser },
+          error: userError,
+        } = await supabase.auth.getUser()
 
-      activeUser = currentUser
-    }
+        if (userError) {
+          throw userError
+        }
 
-    if (!activeUser?.id) {
+        activeUser = currentUser
+      }
+
+      if (!activeUser?.id) {
+        setError('Account is not ready yet. Please refresh or login again.')
+        setSaving(false)
+        return
+      }
+
+      const { error: setupError } = await supabase
+        .from('player_setup')
+        .upsert({
+          user_id: activeUser.id,
+          preferred_event: form.event,
+          play_style: form.style,
+          biggest_strength: form.strength,
+          current_weakness: form.weakness,
+          stamina_level: form.stamina,
+          pressure_reaction: form.pressure,
+        })
+
+      if (setupError) {
+        throw setupError
+      }
+
+      const { error: updateError } = await supabase
+        .from('app_users')
+        .update({
+          setup_completed: true,
+        })
+        .eq('user_id', activeUser.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
       setSaving(false)
-      setError('Account is not ready yet. Please refresh or login again.')
-      return
-    }
-
-    const selectedRole =
-      profile?.role ||
-      activeUser.user_metadata?.role ||
-      localStorage.getItem('selectedRole') ||
-      'player'
-
-    const name =
-      profile?.name ||
-      activeUser.user_metadata?.full_name ||
-      activeUser.user_metadata?.name ||
-      activeUser.email?.split('@')[0] ||
-      'Player'
-
-    const initials = getInitials(name)
-
-    const result = await saveProfile({
-      ...form,
-      name,
-      initials,
-      role: selectedRole,
-      status: 'active',
-    })
-
-    if (!result?.success) {
+      navigate('/dashboard', { replace: true })
+    } catch (err) {
+      setError(err.message || 'Failed to save setup. Please try again.')
       setSaving(false)
-      setError(result?.error || 'Failed to save setup. Please try again.')
-      return
     }
-
-    localStorage.removeItem('selectedRole')
-    setSaving(false)
-
-    navigate('/dashboard')
   }
 
   if (loading) {
@@ -168,8 +166,7 @@ export default function Setup() {
             >
               <option>Aggressive Attacker</option>
               <option>Defensive Player</option>
-              <option>All-round Player</option>
-              <option>Counter Attacker</option>
+              <option>All-Round Player</option>
               <option>Net Rusher</option>
             </select>
           </div>
@@ -184,11 +181,10 @@ export default function Setup() {
               onChange={set('strength')}
             >
               <option>Smash Power</option>
-              <option>Defense</option>
-              <option>Footwork</option>
               <option>Net Play</option>
-              <option>Consistency</option>
-              <option>Serve</option>
+              <option>Footwork</option>
+              <option>Endurance</option>
+              <option>Drop Shots</option>
             </select>
           </div>
 
@@ -200,11 +196,10 @@ export default function Setup() {
               onChange={set('weakness')}
             >
               <option>Defense Under Pressure</option>
-              <option>Footwork</option>
               <option>Net Play</option>
-              <option>Smash Accuracy</option>
+              <option>Footwork</option>
               <option>Stamina</option>
-              <option>Mental Strength</option>
+              <option>Backhand</option>
             </select>
           </div>
         </div>
@@ -226,21 +221,21 @@ export default function Setup() {
           <label className={styles.label}>How do you react under pressure?</label>
 
           <div className={styles.pressureBtns}>
-            {PRESSURE_OPTIONS.map((opt) => (
+            {PRESSURE_OPTIONS.map((option) => (
               <button
-                key={opt}
+                key={option}
                 type="button"
                 className={`${styles.pressureBtn} ${
-                  form.pressure === opt ? styles.pressureActive : ''
+                  form.pressure === option ? styles.pressureActive : ''
                 }`}
                 onClick={() =>
-                  setForm((f) => ({
-                    ...f,
-                    pressure: opt,
+                  setForm((prev) => ({
+                    ...prev,
+                    pressure: option,
                   }))
                 }
               >
-                {opt}
+                {option}
               </button>
             ))}
           </div>

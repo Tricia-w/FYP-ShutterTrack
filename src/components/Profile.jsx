@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabaseClient'
 import styles from './Pages.module.css'
 
 const skills = [
@@ -54,6 +55,83 @@ const skills = [
   },
 ]
 
+const skillColumns = [
+  { name: 'Smash', column: 'smash' },
+  { name: 'Defense', column: 'defense' },
+  { name: 'Footwork', column: 'footwork' },
+  { name: 'Drop shot', column: 'drop_shot' },
+  { name: 'Net play', column: 'net_play' },
+  { name: 'Serve', column: 'serve' },
+]
+
+const normaliseDateForSupabase = value => {
+  if (!value) return null
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+
+  return parsed.toISOString().slice(0, 10)
+}
+
+const StatIcon = ({ type, color }) => {
+  const commonProps = {
+    width: 18,
+    height: 18,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    xmlns: 'http://www.w3.org/2000/svg',
+  }
+
+  if (type === 'matches') {
+    return (
+      <svg {...commonProps}>
+        <rect x="5" y="4" width="14" height="16" rx="3" stroke={color} strokeWidth="2" />
+        <path d="M9 8H15" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        <path d="M9 12H15" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        <path d="M9 16H13" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    )
+  }
+
+  if (type === 'wins') {
+    return (
+      <svg {...commonProps}>
+        <path
+          d="M5 12.5L10 17L19 7"
+          stroke={color}
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'losses') {
+    return (
+      <svg {...commonProps}>
+        <path d="M7 7L17 17" stroke={color} strokeWidth="2.6" strokeLinecap="round" />
+        <path d="M17 7L7 17" stroke={color} strokeWidth="2.6" strokeLinecap="round" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg {...commonProps}>
+      <path
+        d="M4 16L9 11L13 15L20 8"
+        stroke={color}
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M15 8H20V13" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 export default function Profile() {
   const { user, saveProfile } = useAuth()
   const navigate = useNavigate()
@@ -70,6 +148,17 @@ export default function Profile() {
   const [avatarUrl, setAvatarUrl] = useState('')
   const [mediaItems, setMediaItems] = useState([])
   const [mediaType, setMediaType] = useState('Match Clip')
+
+  const [profileId, setProfileId] = useState(null)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [skillsData, setSkillsData] = useState(skills)
+  const [matchSummary, setMatchSummary] = useState({
+    total_matches: 0,
+    wins: 0,
+    losses: 0,
+    win_rate: 0,
+  })
 
   const [form, setForm] = useState({
     name: user?.name || 'Demo Player',
@@ -107,6 +196,125 @@ export default function Profile() {
     }
   }, [avatarKey, mediaKey])
 
+  useEffect(() => {
+    let mounted = true
+
+    const loadProfileFromSupabase = async () => {
+      setIsLoadingProfile(true)
+
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+
+      if (authError || !authData?.user) {
+        if (mounted) setIsLoadingProfile(false)
+        return
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('player_profiles')
+        .select(`
+          *,
+          player_skill_ratings (*),
+          player_equipment (*)
+        `)
+        .eq('user_id', authData.user.id)
+        .maybeSingle()
+
+      if (profileError) {
+        console.error('Profile load error:', profileError)
+        if (mounted) setIsLoadingProfile(false)
+        return
+      }
+
+      if (!profile) {
+        if (mounted) setIsLoadingProfile(false)
+        return
+      }
+
+      const rating = Array.isArray(profile.player_skill_ratings)
+        ? profile.player_skill_ratings[0]
+        : profile.player_skill_ratings
+
+      const equipmentData = Array.isArray(profile.player_equipment)
+        ? profile.player_equipment[0]
+        : profile.player_equipment
+
+      if (mounted) {
+        setProfileId(profile.id)
+
+        if (profile.profile_photo_url) {
+          setAvatarUrl(profile.profile_photo_url)
+        }
+
+        setForm(prev => ({
+          ...prev,
+          name: profile.display_name || prev.name,
+          age: profile.age ? String(profile.age) : prev.age,
+          height: profile.height_cm ? String(profile.height_cm) : prev.height,
+          weight: profile.weight_kg ? String(profile.weight_kg) : prev.weight,
+          hand: profile.playing_hand || prev.hand,
+          club: profile.club || prev.club,
+          state: profile.state || prev.state,
+          bio: profile.bio || prev.bio,
+          instagram: profile.instagram || prev.instagram,
+          showInstagram: profile.show_instagram ?? prev.showInstagram,
+          racket: equipmentData?.racket || prev.racket,
+          string: equipmentData?.string || prev.string,
+          tension: equipmentData?.tension_lbs
+            ? `${equipmentData.tension_lbs} lbs`
+            : prev.tension,
+          shoes: equipmentData?.shoes || prev.shoes,
+          lastStringing: equipmentData?.last_stringing_date || prev.lastStringing,
+        }))
+
+        if (rating) {
+          setSkillsData(
+            skillColumns.map(item => {
+              const value = Number(rating[item.column] ?? 0)
+
+              return {
+                name: item.name,
+                val: value,
+                low: value < 70,
+                source: rating.source || 'Self-reported',
+                updatedBy: rating.updated_by_name || profile.display_name || 'Player',
+                updatedAt: rating.updated_at
+                  ? new Date(rating.updated_at).toLocaleDateString('en-MY', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })
+                  : 'Not updated',
+              }
+            })
+          )
+        }
+      }
+
+      const { data: summary, error: summaryError } = await supabase
+        .from('player_match_summary')
+        .select('*')
+        .eq('player_id', profile.id)
+        .maybeSingle()
+
+      if (!summaryError && summary && mounted) {
+        setMatchSummary({
+          total_matches: summary.total_matches ?? 0,
+          wins: summary.wins ?? 0,
+          losses: summary.losses ?? 0,
+          win_rate: summary.win_rate ?? 0,
+        })
+      }
+
+      if (mounted) setIsLoadingProfile(false)
+    }
+
+    loadProfileFromSupabase()
+
+    return () => {
+      mounted = false
+    }
+  }, [user?.id])
+
   const set = key => e => {
     setForm(prev => ({
       ...prev,
@@ -126,6 +334,19 @@ export default function Profile() {
       .slice(0, 2)
 
   const cleanInstagram = form.instagram.replace('@', '').trim()
+
+  const rawPlayerMindset = String(
+    user?.playerType ||
+      user?.reaction ||
+      user?.underPressure ||
+      user?.pressure ||
+      user?.mindset ||
+      'Calm'
+  )
+
+  const playerMindsetText = rawPlayerMindset.toLowerCase().includes('player')
+    ? rawPlayerMindset
+    : `${rawPlayerMindset} Player`
 
   const handleAvatarChange = e => {
     const file = e.target.files?.[0]
@@ -246,24 +467,134 @@ export default function Profile() {
       instagram: form.instagram,
       showInstagram: form.showInstagram,
       bio: form.bio,
+      playerType: rawPlayerMindset,
+      reaction: rawPlayerMindset,
+      underPressure: rawPlayerMindset,
     }
   }
 
-  const handleSaveProfile = () => {
-    saveProfile(buildProfilePayload())
-    setShowProfileModal(false)
+  const getSupabaseUser = async () => {
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !authData?.user) {
+      throw new Error('User not logged in with Supabase Auth')
+    }
+
+    return authData.user
   }
 
-  const handleSaveEquipment = () => {
-    saveProfile(buildProfilePayload())
-    setShowEquipmentModal(false)
+  const saveMainProfileToSupabase = async authUser => {
+    const { data: savedProfile, error } = await supabase
+      .from('player_profiles')
+      .upsert(
+        {
+          user_id: authUser.id,
+          display_name: form.name || 'Demo Player',
+          player_category: user?.event || 'Singles Player',
+          state: form.state || null,
+          club: form.club || null,
+          age: form.age ? Number(form.age) : null,
+          height_cm: form.height ? Number(form.height) : null,
+          weight_kg: form.weight ? Number(form.weight) : null,
+          playing_hand: form.hand || null,
+          bio: form.bio || null,
+          instagram: form.instagram || null,
+          show_instagram: form.showInstagram,
+          profile_photo_url: avatarUrl || null,
+          info_source: 'Self-reported',
+        },
+        { onConflict: 'user_id' }
+      )
+      .select('id')
+      .single()
+
+    if (error) throw error
+
+    setProfileId(savedProfile.id)
+    return savedProfile.id
+  }
+
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true)
+
+    try {
+      const authUser = await getSupabaseUser()
+      await saveMainProfileToSupabase(authUser)
+
+      saveProfile?.(buildProfilePayload())
+      setShowProfileModal(false)
+      alert('Profile saved successfully')
+    } catch (error) {
+      console.error('Profile save error:', error)
+      alert(error.message || 'Failed to save profile')
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  const handleSaveEquipment = async () => {
+    setIsSavingProfile(true)
+
+    try {
+      const authUser = await getSupabaseUser()
+      const currentProfileId = profileId || (await saveMainProfileToSupabase(authUser))
+
+      const { error } = await supabase
+        .from('player_equipment')
+        .upsert(
+          {
+            player_id: currentProfileId,
+            racket: form.racket || null,
+            string: form.string || null,
+            tension_lbs: form.tension ? parseInt(form.tension, 10) : null,
+            shoes: form.shoes || null,
+            last_stringing_date: normaliseDateForSupabase(form.lastStringing),
+          },
+          { onConflict: 'player_id' }
+        )
+
+      if (error) throw error
+
+      saveProfile?.(buildProfilePayload())
+      setShowEquipmentModal(false)
+      alert('Equipment saved successfully')
+    } catch (error) {
+      console.error('Equipment save error:', error)
+      alert(error.message || 'Failed to save equipment')
+    } finally {
+      setIsSavingProfile(false)
+    }
   }
 
   const stats = [
-    { label: 'Total matches', value: 24, color: '#1A5FFF', bg: '#E8EFFE' },
-    { label: 'Wins', value: 16, color: '#00C48C', bg: '#E0FAF3' },
-    { label: 'Losses', value: 8, color: '#EF4444', bg: '#FEE2E2' },
-    { label: 'Win rate', value: '67%', color: '#1A5FFF', bg: '#E8EFFE' },
+    {
+      label: 'Total matches',
+      value: matchSummary.total_matches,
+      color: '#1A5FFF',
+      bg: '#E8EFFE',
+      icon: 'matches',
+    },
+    {
+      label: 'Wins',
+      value: matchSummary.wins,
+      color: '#00C48C',
+      bg: '#E0FAF3',
+      icon: 'wins',
+    },
+    {
+      label: 'Losses',
+      value: matchSummary.losses,
+      color: '#EF4444',
+      bg: '#FEE2E2',
+      icon: 'losses',
+    },
+    {
+      label: 'Win rate',
+      value: `${matchSummary.win_rate}%`,
+      color: '#1A5FFF',
+      bg: '#E8EFFE',
+      icon: 'winRate',
+    },
   ]
 
   const equipment = [
@@ -274,9 +605,9 @@ export default function Profile() {
     { label: 'Last stringing', value: form.lastStringing },
   ]
 
-  const skillSources = [...new Set(skills.map(skill => skill.source))]
+  const skillSources = [...new Set(skillsData.map(skill => skill.source))]
   const skillSourceText = skillSources.length === 1 ? skillSources[0] : 'Mixed'
-  const latestSkillUpdate = skills[0]
+  const latestSkillUpdate = skillsData[0] || skills[0]
 
   const modalStyle = {
     background: '#FFFFFF',
@@ -302,6 +633,7 @@ export default function Profile() {
             <div className={styles.pageTitle}>My Profile</div>
             <div className={styles.pageSub}>
               Personal, player and lifestyle information
+              {isLoadingProfile ? ' · Loading saved profile...' : ''}
             </div>
           </div>
 
@@ -549,7 +881,7 @@ export default function Profile() {
                 { label: 'Style', value: user?.style || 'Aggressive Attacker' },
                 { label: 'Strength', value: user?.strength || 'Smash Power' },
                 { label: 'Weakness', value: user?.weakness || 'Defense Under Pressure' },
-                { label: 'Racket', value: form.racket },
+                { label: 'What player are you?', value: playerMindsetText },
               ].map(item => (
                 <div
                   key={item.label}
@@ -683,14 +1015,7 @@ export default function Profile() {
                     marginBottom: 12,
                   }}
                 >
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      background: item.color,
-                    }}
-                  />
+                  <StatIcon type={item.icon} color={item.color} />
                 </div>
 
                 <div
@@ -759,7 +1084,7 @@ export default function Profile() {
               </div>
             </div>
 
-            {skills.map(skill => (
+            {skillsData.map(skill => (
               <div key={skill.name} className={styles.skillRow}>
                 <div className={styles.skillLbl}>{skill.name}</div>
 
@@ -1148,8 +1473,12 @@ export default function Profile() {
                 Cancel
               </button>
 
-              <button className={styles.btnPrimary} onClick={handleSaveProfile}>
-                Save Profile
+              <button
+                className={styles.btnPrimary}
+                onClick={handleSaveProfile}
+                disabled={isSavingProfile}
+              >
+                {isSavingProfile ? 'Saving...' : 'Save Profile'}
               </button>
             </div>
           </div>
@@ -1247,8 +1576,12 @@ export default function Profile() {
                 Cancel
               </button>
 
-              <button className={styles.btnPrimary} onClick={handleSaveEquipment}>
-                Save Equipment
+              <button
+                className={styles.btnPrimary}
+                onClick={handleSaveEquipment}
+                disabled={isSavingProfile}
+              >
+                {isSavingProfile ? 'Saving...' : 'Save Equipment'}
               </button>
             </div>
           </div>
