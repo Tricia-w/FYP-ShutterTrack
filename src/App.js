@@ -101,17 +101,19 @@ function CoachRoute({ children }) {
 }
 
 function PlayerSetupRoute({ children }) {
-  const { user, profile, loading } = useAuth()
+  const { user, profile, loading, isAdmin } = useAuth()
 
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/" replace />
 
-  if (profile?.role === 'coach') {
-    return <Navigate to="/coach" replace />
+  const role = getUserRole(profile, isAdmin)
+
+  if (role === 'admin') {
+    return <Navigate to="/admin" replace />
   }
 
-  if (profile?.setup_completed === true) {
-    return <Navigate to="/dashboard" replace />
+  if (role === 'coach') {
+    return <Navigate to="/coach" replace />
   }
 
   return children

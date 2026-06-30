@@ -5,9 +5,9 @@ import styles from './Pages.module.css'
 // ── Mock data ────────────────────────────────────────────────────────────────
 
 const ALL_PLAYERS = [
-  { id: 1, name: 'Ahmad Hakim',    club: 'Penang BC',    level: 'Advanced',     style: 'Aggressive', smash: 82, defense: 70, footwork: 78, net: 72, serve: 68, stamina: 75, assigned: true  },
-  { id: 2, name: 'Razif Zulkifli', club: 'Seberang BC',  level: 'Intermediate', style: 'Defensive',  smash: 65, defense: 80, footwork: 70, net: 76, serve: 64, stamina: 68, assigned: true  },
-  { id: 3, name: 'Khairul Hassan', club: 'Penang BC',    level: 'Advanced',     style: 'All-round',  smash: 78, defense: 75, footwork: 80, net: 74, serve: 72, stamina: 80, assigned: true  },
+  { id: 1, name: 'Adeline',    club: 'Penang BC',    level: 'Advanced',     style: 'Aggressive', smash: 82, defense: 70, footwork: 78, net: 72, serve: 68, stamina: 75, assigned: true  },
+  { id: 2, name: 'Yee En', club: 'Seberang BC',  level: 'Intermediate', style: 'Defensive',  smash: 65, defense: 80, footwork: 70, net: 76, serve: 64, stamina: 68, assigned: true  },
+  { id: 3, name: 'JetHow', club: 'Penang BC',    level: 'Advanced',     style: 'All-round',  smash: 78, defense: 75, footwork: 80, net: 74, serve: 72, stamina: 80, assigned: true  },
   { id: 4, name: 'Syafiq Yusuf',   club: 'USM BC',       level: 'Intermediate', style: 'Attacking',  smash: 74, defense: 60, footwork: 68, net: 62, serve: 60, stamina: 64, assigned: false },
   { id: 5, name: 'Farid Noor',     club: 'Penang BC',    level: 'Beginner',     style: 'Defensive',  smash: 50, defense: 65, footwork: 55, net: 58, serve: 52, stamina: 60, assigned: false },
   { id: 6, name: 'Hafiz Rahman',   club: 'Kedah BC',     level: 'Advanced',     style: 'Aggressive', smash: 88, defense: 68, footwork: 82, net: 70, serve: 74, stamina: 78, assigned: false },
@@ -21,9 +21,9 @@ const INIT_SESSIONS = [
 ]
 
 const INIT_NOTES = [
-  { id: 1, playerId: 1, date: '28 Apr', text: 'Ahmad shows great improvement in back court smash. Needs to work on net play consistency.' },
-  { id: 2, playerId: 2, date: '25 Apr', text: 'Razif defense is solid. Encourage more aggressive attacking opportunities.' },
-  { id: 3, playerId: 3, date: '22 Apr', text: 'Khairul is the most balanced player. Ready to compete at state level.' },
+  { id: 1, playerId: 1, date: '28 Apr', text: 'Adeline shows great improvement in back court smash. Needs to work on net play consistency.' },
+  { id: 2, playerId: 2, date: '25 Apr', text: 'Yee En defense is solid. Encourage more aggressive attacking opportunities.' },
+  { id: 3, playerId: 3, date: '22 Apr', text: 'JetHow is the most balanced player. Ready to compete at state level.' },
 ]
 
 const SESSION_TYPES = [

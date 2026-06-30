@@ -19,7 +19,6 @@ const skills = [
   { name: 'Serve', val: 78, low: false },
 ]
 
-// Matched with Expenses.js logic
 const expenses = [
   { label: 'Court rental', val: 60, pct: 36, color: '#1A5FFF' },
   { label: 'Equipment', val: 45, pct: 27, color: '#00C48C' },
@@ -62,7 +61,15 @@ export default function Dashboard() {
   return (
     <div>
       <div className={styles.pageHead}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 14,
+            flexWrap: 'wrap',
+          }}
+        >
           <div>
             <div className={styles.pageTitle}>
               {getGreeting()}, {name} 👋
@@ -92,7 +99,6 @@ export default function Dashboard() {
         <strong style={{ color: '#1A5FFF' }}>{weakness}</strong>. Focus on targeted drills to improve this area.
       </div>
 
-      {/* Metric Cards */}
       <div className={styles.g4} style={{ marginBottom: 16 }}>
         <div className={styles.metricHighlight}>
           <div className={styles.metricIcon} style={{ background: 'rgba(255,255,255,0.12)' }}>
@@ -161,7 +167,6 @@ export default function Dashboard() {
       </div>
 
       <div className={styles.g2} style={{ marginBottom: 16 }}>
-        {/* Recent Matches */}
         <div className={styles.card}>
           <div className={styles.cardTitle}>Recent Matches</div>
 
@@ -169,7 +174,7 @@ export default function Dashboard() {
             <div key={i} className={styles.listRow}>
               <div className={styles.av}>{m.init}</div>
 
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{m.name}</div>
                 <div style={{ fontSize: 11, color: '#8892A4' }}>
                   {m.type} · {m.date}
@@ -189,11 +194,17 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Skill Overview — Radar Chart */}
         <div className={styles.card}>
           <div className={styles.cardTitle}>Skill Overview</div>
 
-          <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              marginBottom: 12,
+              flexWrap: 'wrap',
+            }}
+          >
             <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#8892A4' }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: '#1A5FFF', display: 'inline-block' }} />
               Strong (≥75)
@@ -205,7 +216,9 @@ export default function Dashboard() {
             </span>
           </div>
 
-          <SkillRadarChart skills={skills} />
+          <div className={styles.chartWrap}>
+            <SkillRadarChart skills={skills} />
+          </div>
 
           <div style={{ marginTop: 14 }}>
             <button className={styles.btnOutline} onClick={() => navigate('/performance')}>
@@ -216,11 +229,12 @@ export default function Dashboard() {
       </div>
 
       <div className={styles.g2}>
-        {/* Expenses */}
         <div className={styles.card}>
           <div className={styles.cardTitle}>Expense Breakdown — April 2026</div>
 
-          <ExpensePieChart expenses={expenses} />
+          <div className={styles.chartWrap}>
+            <ExpensePieChart expenses={expenses} />
+          </div>
 
           <div style={{ marginTop: 14 }}>
             {expenses.map((e, i) => (
@@ -261,6 +275,7 @@ export default function Dashboard() {
               paddingTop: 10,
               display: 'flex',
               justifyContent: 'space-between',
+              gap: 12,
             }}
           >
             <span style={{ color: '#8892A4', fontWeight: 500 }}>Total</span>
@@ -277,7 +292,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Schedule */}
         <div className={styles.card}>
           <div className={styles.cardTitle}>Upcoming Schedule</div>
 
@@ -293,7 +307,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{s.title}</div>
                 <div style={{ fontSize: 11, color: '#8892A4' }}>{s.sub}</div>
               </div>

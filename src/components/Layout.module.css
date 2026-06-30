@@ -14,6 +14,10 @@
   --red: #ef4444;
   --purple: #7c3aed;
 
+  --bg: #f6f8ff;
+  --text: #0d1b3e;
+  --sidebar-bg: #0d1b3e;
+
   --sidebar-width: 220px;
 
   --font-display: 'Syne', sans-serif;
@@ -107,6 +111,7 @@
   margin-bottom: 2px;
   text-decoration: none;
   box-sizing: border-box;
+  font-family: var(--font-body);
 }
 
 .navItem:hover {
@@ -185,5 +190,97 @@
   background: var(--bg);
   color: var(--text);
   transition: background 0.2s ease, color 0.2s ease;
+  min-width: 0;
 }
 
+/* MOBILE FIX */
+@media (max-width: 768px) {
+  .app {
+    display: block;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--sidebar-bg);
+    overflow: hidden;
+  }
+
+  .sidebarLogo {
+    padding: 14px 16px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logoMark {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .logoName {
+    font-size: 16px;
+  }
+
+  .logoSub {
+    display: none;
+  }
+
+  .navSection {
+    padding: 10px 12px;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .navSection::-webkit-scrollbar {
+    display: none;
+  }
+
+  .navLabel {
+    display: none;
+  }
+
+  .navItem {
+    width: auto;
+    flex: 0 0 auto;
+    margin-bottom: 0;
+    padding: 9px 12px;
+    font-size: 12px;
+    text-decoration: none;
+  }
+
+  .sidebarUser,
+  .sidebarLogout {
+    display: none;
+  }
+
+  .main {
+    width: 100%;
+    padding: 18px 14px;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+}
+
+@media (max-width: 480px) {
+  .main {
+    padding: 14px 10px;
+  }
+
+  .navItem {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+}

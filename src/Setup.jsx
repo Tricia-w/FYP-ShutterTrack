@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import { supabase } from './lib/supabase'
 import styles from './Setup.module.css'
@@ -7,8 +7,13 @@ import styles from './Setup.module.css'
 const PRESSURE_OPTIONS = ['Calm', 'Aggressive', 'Careful']
 
 export default function Setup() {
-  const { user, loading } = useAuth()
+  const { user, loading, saveProfile } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // If user comes from Profile page, go back to Profile.
+  // If user comes from login/register, go to Dashboard.
+  const returnTo = location.state?.returnTo || '/dashboard'
 
   const [form, setForm] = useState({
     event: 'Singles',
@@ -20,7 +25,10 @@ export default function Setup() {
   })
 
   const [saving, setSaving] = useState(false)
+  const [skipping, setSkipping] = useState(false)
   const [error, setError] = useState('')
+
+  const busy = saving || skipping
 
   const set = (key) => (e) => {
     setForm((prev) => ({
@@ -29,43 +37,50 @@ export default function Setup() {
     }))
   }
 
+  async function getActiveUser() {
+    if (user?.id) {
+      return user
+    }
+
+    const {
+      data: { user: currentUser },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError) {
+      throw userError
+    }
+
+    return currentUser
+  }
+
   async function handleFinish() {
     setError('')
     setSaving(true)
 
     try {
-      let activeUser = user
+      const activeUser = await getActiveUser()
 
       if (!activeUser?.id) {
-        const {
-          data: { user: currentUser },
-          error: userError,
-        } = await supabase.auth.getUser()
-
-        if (userError) {
-          throw userError
-        }
-
-        activeUser = currentUser
-      }
-
-      if (!activeUser?.id) {
-        setError('Account is not ready yet. Please refresh or login again.')
-        setSaving(false)
-        return
+        throw new Error('Account is not ready yet. Please refresh or login again.')
       }
 
       const { error: setupError } = await supabase
         .from('player_setup')
-        .upsert({
-          user_id: activeUser.id,
-          preferred_event: form.event,
-          play_style: form.style,
-          biggest_strength: form.strength,
-          current_weakness: form.weakness,
-          stamina_level: form.stamina,
-          pressure_reaction: form.pressure,
-        })
+        .upsert(
+          {
+            user_id: activeUser.id,
+            preferred_event: form.event,
+            play_style: form.style,
+            biggest_strength: form.strength,
+            current_weakness: form.weakness,
+            stamina_level: form.stamina,
+            pressure_reaction: form.pressure,
+          },
+          {
+            onConflict: 'user_id',
+          }
+        )
 
       if (setupError) {
         throw setupError
@@ -82,11 +97,46 @@ export default function Setup() {
         throw updateError
       }
 
-      setSaving(false)
-      navigate('/dashboard', { replace: true })
+      saveProfile?.({
+        ...user,
+        event: form.event,
+        style: form.style,
+        strength: form.strength,
+        weakness: form.weakness,
+        stamina: form.stamina,
+        pressure: form.pressure,
+        playerType: form.pressure,
+        reaction: form.pressure,
+        underPressure: form.pressure,
+        setup_completed: true,
+      })
+
+      navigate(returnTo, { replace: true })
     } catch (err) {
       setError(err.message || 'Failed to save setup. Please try again.')
+    } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleSkip() {
+    setError('')
+    setSkipping(true)
+
+    try {
+      const activeUser = await getActiveUser()
+
+      if (!activeUser?.id) {
+        throw new Error('Account is not ready yet. Please refresh or login again.')
+      }
+
+      // Do not update setup_completed here.
+      // User skipped setup, so setup_completed should remain false.
+      navigate(returnTo, { replace: true })
+    } catch (err) {
+      setError(err.message || 'Failed to skip setup. Please try again.')
+    } finally {
+      setSkipping(false)
     }
   }
 
@@ -123,7 +173,7 @@ export default function Setup() {
 
         <h1 className={styles.title}>New Player Setup</h1>
         <p className={styles.sub}>
-          Answer a few questions so the system can create your initial player status
+          Answer a few questions so the system can create your initial player status.
         </p>
 
         {error && (
@@ -150,6 +200,7 @@ export default function Setup() {
               className={styles.select}
               value={form.event}
               onChange={set('event')}
+              disabled={busy}
             >
               <option>Singles</option>
               <option>Doubles</option>
@@ -163,6 +214,7 @@ export default function Setup() {
               className={styles.select}
               value={form.style}
               onChange={set('style')}
+              disabled={busy}
             >
               <option>Aggressive Attacker</option>
               <option>Defensive Player</option>
@@ -179,6 +231,7 @@ export default function Setup() {
               className={styles.select}
               value={form.strength}
               onChange={set('strength')}
+              disabled={busy}
             >
               <option>Smash Power</option>
               <option>Net Play</option>
@@ -194,6 +247,7 @@ export default function Setup() {
               className={styles.select}
               value={form.weakness}
               onChange={set('weakness')}
+              disabled={busy}
             >
               <option>Defense Under Pressure</option>
               <option>Net Play</option>
@@ -210,6 +264,7 @@ export default function Setup() {
             className={styles.select}
             value={form.stamina}
             onChange={set('stamina')}
+            disabled={busy}
           >
             <option>High</option>
             <option>Medium</option>
@@ -225,6 +280,7 @@ export default function Setup() {
               <button
                 key={option}
                 type="button"
+                disabled={busy}
                 className={`${styles.pressureBtn} ${
                   form.pressure === option ? styles.pressureActive : ''
                 }`}
@@ -246,14 +302,44 @@ export default function Setup() {
           strength summary, weakness summary, and default radar status for first-time setup.
         </div>
 
-        <button
-          className={styles.btn}
-          onClick={handleFinish}
-          disabled={saving}
-          style={{ opacity: saving ? 0.7 : 1 }}
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            marginTop: 18,
+          }}
         >
-          {saving ? 'Saving setup...' : 'Finish Setup'}
-        </button>
+          <button
+            type="button"
+            className={styles.btn}
+            onClick={handleFinish}
+            disabled={busy}
+            style={{
+              opacity: busy ? 0.7 : 1,
+              flex: 1,
+            }}
+          >
+            {saving ? 'Saving setup...' : 'Finish Setup'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSkip}
+            disabled={busy}
+            style={{
+              flex: 1,
+              border: '1px solid rgba(255, 255, 255, 0.18)',
+              borderRadius: 14,
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: '#ffffff',
+              fontWeight: 700,
+              cursor: busy ? 'not-allowed' : 'pointer',
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {skipping ? 'Skipping...' : 'Set Up Later'}
+          </button>
+        </div>
       </div>
     </div>
   )
