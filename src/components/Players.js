@@ -1,273 +1,95 @@
-import { useMemo, useState } from 'react'
-import styles from './Pages.module.css'
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "../lib/supabase";
+import styles from "./Pages.module.css";
 
 const C = {
-  text: 'var(--text, #0D1B3E)',
-  muted: 'var(--text-muted, #8892A4)',
-  card: 'var(--card, #FFFFFF)',
-  soft: 'var(--soft, #F6F8FF)',
-  line: 'var(--line, #EEF1F8)',
-  blue: '#1A5FFF',
-}
+  text: "var(--text, #0D1B3E)",
+  muted: "var(--text-muted, #8892A4)",
+  card: "var(--card, #FFFFFF)",
+  soft: "var(--soft, #F6F8FF)",
+  line: "var(--line, #EEF1F8)",
+};
 
 const CURRENT_PLAYER = {
-  level: 'Intermediate',
-  style: 'Aggressive',
-  state: 'Penang',
-  weakness: 'Defense',
-  preferredCourt: 'Doubles',
-}
-
-const allPlayers = [
-  {
-    init: 'A', name: 'Adeline', club: 'Selangor BC', state: 'Selangor',
-    level: 'Advanced', style: 'Aggressive',
-    smash: 88, defense: 72, footwork: 80, net: 70, serve: 75, stamina: 66,
-    overall: 77, matches: 142, winRate: 64, streak: 'W4',
-    ig: '@adelinee.smash',
-    hand: 'Right', since: '2015', court: 'Singles',
-    videos: [
-      { opp: 'vs Ali — Selangor Open 2024', score: '21–18, 21–14', result: 'Win', dur: '34 min', w: true },
-      { opp: 'vs Danial — KL Masters 2024', score: '19–21, 17–21', result: 'Loss', dur: '41 min', w: false },
-      { opp: 'vs Adam — Club League 2024', score: '21–15, 21–19', result: 'Win', dur: '28 min', w: true },
-    ],
-    isOpp: false,
-  },
-  {
-    init: 'A', name: 'Adam', club: 'KL Badminton', state: 'Kuala Lumpur',
-    level: 'Intermediate', style: 'Defensive',
-    smash: 60, defense: 85, footwork: 70, net: 78, serve: 68, stamina: 72,
-    overall: 65, matches: 87, winRate: 52, streak: 'L2',
-    ig: null,
-    hand: 'Left', since: '2018', court: 'Doubles',
-    videos: [
-      { opp: 'vs Ali — KL Open 2024', score: '21–16, 21–18', result: 'Win', dur: '38 min', w: true },
-      { opp: 'vs Adeline — Club League 2024', score: '18–21, 14–21', result: 'Loss', dur: '44 min', w: false },
-    ],
-    isOpp: false,
-  },
-  {
-    init: 'D', name: 'Danial', club: 'Johor BC', state: 'Johor',
-    level: 'Advanced', style: 'All-round',
-    smash: 80, defense: 80, footwork: 78, net: 75, serve: 77, stamina: 80,
-    overall: 81, matches: 203, winRate: 71, streak: 'W6',
-    ig: '@dddanial.bwf',
-    hand: 'Right', since: '2012', court: 'Singles',
-    videos: [
-      { opp: 'vs Ali — Johor State 2024', score: '21–14, 21–11', result: 'Win', dur: '29 min', w: true },
-      { opp: 'vs Adeline — Selangor Open 2024', score: '21–19, 21–17', result: 'Win', dur: '51 min', w: true },
-    ],
-    isOpp: false,
-  },
-  {
-    init: 'A', name: 'Ali', club: 'Penang BC', state: 'Penang',
-    level: 'Intermediate', style: 'Attacking',
-    smash: 76, defense: 60, footwork: 72, net: 65, serve: 65, stamina: 58,
-    overall: 61, matches: 54, winRate: 46, streak: 'W1',
-    ig: null,
-    hand: 'Right', since: '2020', court: 'Singles',
-    videos: [
-      { opp: 'vs Danial — Penang League 2024', score: '21–18, 21–19', result: 'Win', dur: '48 min', w: true },
-    ],
-    isOpp: false,
-  },
-  {
-    init: 'R', name: 'Razif', club: 'Seberang BC', state: 'Penang',
-    level: 'Intermediate', style: 'Defensive',
-    smash: 65, defense: 80, footwork: 70, net: 76, serve: 64, stamina: 68,
-    overall: 71, matches: 88, winRate: 59, streak: 'W3',
-    ig: '@razif.netplay',
-    hand: 'Right', since: '2019', court: 'Doubles',
-    videos: [
-      { opp: 'vs Adam — Club Match', score: '21–16, 18–21, 21–19', result: 'Win', dur: '49 min', w: true },
-    ],
-    isOpp: false,
-  },
-  {
-    init: 'K', name: 'Khairul', club: 'Penang BC', state: 'Penang',
-    level: 'Advanced', style: 'All-round',
-    smash: 78, defense: 75, footwork: 80, net: 74, serve: 72, stamina: 80,
-    overall: 77, matches: 134, winRate: 66, streak: 'W5',
-    ig: null,
-    hand: 'Right', since: '2014', court: 'Singles',
-    videos: [
-      { opp: 'vs Danial — Friendly Match', score: '21–18, 16–21, 19–21', result: 'Loss', dur: '50 min', w: false },
-    ],
-    isOpp: false,
-  },
-]
+  level: "Intermediate",
+  style: "Aggressive",
+  state: "Penang",
+  weakness: "Defense",
+};
 
 function SkillBar({ name, val, dim }) {
   return (
     <div className={styles.skillRow}>
       <div className={styles.skillLbl}>{name}</div>
-
       <div className={styles.skillTrack}>
         <div
           className={styles.skillFill}
           style={{
             width: `${val}%`,
             background: dim
-              ? 'linear-gradient(90deg,#93b4f5,#bdd1fb)'
-              : 'linear-gradient(90deg,#1A5FFF,#3B7BFF)',
+              ? "linear-gradient(90deg,#93b4f5,#bdd1fb)"
+              : "linear-gradient(90deg,#1A5FFF,#3B7BFF)",
           }}
         />
       </div>
-
       <div className={styles.skillVal}>{val}</div>
     </div>
-  )
-}
-
-function VideoRow({ video }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 10,
-        alignItems: 'center',
-        padding: '9px 10px',
-        background: C.soft,
-        borderRadius: 10,
-        cursor: 'pointer',
-      }}
-    >
-      <div
-        style={{
-          width: 72,
-          height: 44,
-          borderRadius: 6,
-          flexShrink: 0,
-          background: video.w ? '#DCE8FB' : '#FEE2E2',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <div
-          style={{
-            width: 0,
-            height: 0,
-            borderStyle: 'solid',
-            borderWidth: '6px 0 6px 12px',
-            borderColor: `transparent transparent transparent ${video.w ? '#1A5FFF' : '#DC2626'}`,
-          }}
-        />
-      </div>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: C.text,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {video.opp}
-        </div>
-
-        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-          {video.score} · {video.result} · {video.dur}
-        </div>
-      </div>
-
-      <span
-        style={{
-          fontSize: 10,
-          fontWeight: 700,
-          borderRadius: 20,
-          padding: '3px 8px',
-          flexShrink: 0,
-          background: video.w ? '#DCFCE7' : '#FEE2E2',
-          color: video.w ? '#15803D' : '#B91C1C',
-        }}
-      >
-        {video.w ? 'W' : 'L'}
-      </span>
-    </div>
-  )
+  );
 }
 
 function getPartnerMatch(player, criteria) {
-  let score = 0
-  const reasons = []
+  let score = 0;
+  const reasons = [];
 
-  if (criteria.level === 'Any' || player.level === criteria.level) {
-    score += 25
-    reasons.push(criteria.level === 'Any' ? 'Level suitable' : 'Same level')
+  if (criteria.level === "Any" || player.level === criteria.level) {
+    score += 25;
+    reasons.push(criteria.level === "Any" ? "Level suitable" : "Same level");
   }
 
-  if (criteria.state === 'Any' || player.state === criteria.state) {
-    score += 20
-    reasons.push(criteria.state === 'Any' ? 'Location okay' : 'Same state')
+  if (criteria.state === "Any" || player.state === criteria.state) {
+    score += 20;
+    reasons.push(criteria.state === "Any" ? "Location okay" : "Same state");
   }
 
-  if (criteria.style === 'Auto') {
-    if (CURRENT_PLAYER.style === 'Aggressive' && ['Defensive', 'All-round'].includes(player.style)) {
-      score += 20
-      reasons.push('Balances your attacking style')
-    } else if (CURRENT_PLAYER.style === 'Defensive' && ['Aggressive', 'Attacking', 'All-round'].includes(player.style)) {
-      score += 20
-      reasons.push('Adds attacking support')
-    } else if (player.style === 'All-round') {
-      score += 15
-      reasons.push('Flexible style')
+  if (criteria.style === "Auto") {
+    if (
+      CURRENT_PLAYER.style === "Aggressive" &&
+      ["Defensive", "All-round"].includes(player.style)
+    ) {
+      score += 20;
+      reasons.push("Balances your attacking style");
+    } else if (player.style === "All-round") {
+      score += 15;
+      reasons.push("Flexible style");
     }
-  } else if (criteria.style === 'Any' || player.style === criteria.style) {
-    score += 18
-    reasons.push(criteria.style === 'Any' ? 'Style suitable' : `Matches ${criteria.style}`)
+  } else if (criteria.style === "Any" || player.style === criteria.style) {
+    score += 18;
+    reasons.push(
+      criteria.style === "Any" ? "Style suitable" : `Matches ${criteria.style}`,
+    );
   }
 
-  if (criteria.gameType === 'Doubles' || criteria.gameType === 'Mixed Doubles') {
+  if (criteria.gameType !== "Singles") {
     if (player.net >= 70) {
-      score += 12
-      reasons.push('Good net play')
+      score += 12;
+      reasons.push("Good net play");
     }
 
     if (player.defense >= 70) {
-      score += 10
-      reasons.push('Strong defense')
+      score += 10;
+      reasons.push("Strong defense");
     }
   }
 
-  if (criteria.gameType === 'Singles') {
-    if (player.footwork >= 75) {
-      score += 12
-      reasons.push('Good movement')
-    }
-
-    if (player.stamina >= 75) {
-      score += 10
-      reasons.push('Good stamina')
-    }
-  }
-
-  if (CURRENT_PLAYER.weakness === 'Defense' && player.defense >= 75) {
-    score += 13
-    reasons.push('Covers your defense weakness')
+  if (CURRENT_PLAYER.weakness === "Defense" && player.defense >= 75) {
+    score += 13;
+    reasons.push("Covers defense weakness");
   }
 
   return {
     score: Math.min(score, 100),
     reasons: reasons.slice(0, 3),
-  }
-}
-
-function SmallInfo({ label, value }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>
-        {label}
-      </div>
-
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-        {value}
-      </div>
-    </div>
-  )
+  };
 }
 
 function FormSelect({ label, value, onChange, options }) {
@@ -275,13 +97,13 @@ function FormSelect({ label, value, onChange, options }) {
     <div style={{ marginBottom: 12 }}>
       <label
         style={{
-          display: 'block',
+          display: "block",
           fontSize: 11,
           fontWeight: 700,
           color: C.muted,
           marginBottom: 6,
           letterSpacing: 1,
-          textTransform: 'uppercase',
+          textTransform: "uppercase",
         }}
       >
         {label}
@@ -290,15 +112,28 @@ function FormSelect({ label, value, onChange, options }) {
       <select
         className={styles.formSelect}
         value={value}
-        onChange={e => onChange(e.target.value)}
-        style={{ width: '100%' }}
+        onChange={(event) => onChange(event.target.value)}
+        style={{ width: "100%" }}
       >
-        {options.map(opt => (
-          <option key={opt}>{opt}</option>
+        {options.map((option) => (
+          <option key={option}>{option}</option>
         ))}
       </select>
     </div>
-  )
+  );
+}
+
+function SmallInfo({ label, value }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+        {value || "—"}
+      </div>
+    </div>
+  );
 }
 
 function PlayerDetail({
@@ -309,16 +144,23 @@ function PlayerDetail({
   onAddPartner,
   onRemovePartner,
 }) {
-  const streakColor = p.streak?.startsWith('W') ? '#16a34a' : '#DC2626'
-  const [showAllVideos, setShowAllVideos] = useState(false)
-  const PREVIEW = 3
-  const visibleVideos = showAllVideos ? p.videos : p.videos.slice(0, PREVIEW)
+  const streakColor = p.streak?.startsWith("W") ? "#16a34a" : "#DC2626";
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div className={styles.card}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
-          <div className={styles.av} style={{ width: 48, height: 48, fontSize: 16, flexShrink: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            marginBottom: 14,
+          }}
+        >
+          <div
+            className={styles.av}
+            style={{ width: 48, height: 48, fontSize: 16 }}
+          >
             {p.init}
           </div>
 
@@ -326,15 +168,20 @@ function PlayerDetail({
             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>
               {p.name}
             </div>
-
             <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
               {p.club} · {p.state}
             </div>
 
-            <div style={{ marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                marginTop: 6,
+                display: "flex",
+                gap: 4,
+                flexWrap: "wrap",
+              }}
+            >
               <span className={styles.badgeBlue}>{p.level}</span>
               <span className={styles.badgeGray}>{p.style}</span>
-
               {p.isOpp && <span className={styles.badgeAmber}>Opponent</span>}
               {isPartner && <span className={styles.badgeGreen}>Partner</span>}
             </div>
@@ -344,54 +191,50 @@ function PlayerDetail({
         {p.ig && (
           <div style={{ marginBottom: 14 }}>
             <a
-              href={`https://instagram.com/${p.ig.replace('@', '')}`}
+              href={`https://instagram.com/${p.ig.replace("@", "")}`}
               target="_blank"
               rel="noreferrer"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 12px',
-                background: '#FFF0F6',
-                border: '1px solid #FBC8DC',
+                display: "inline-flex",
+                padding: "4px 12px",
+                background: "#FFF0F6",
+                border: "1px solid #FBC8DC",
                 borderRadius: 20,
-                textDecoration: 'none',
+                textDecoration: "none",
               }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                <rect x="2" y="2" width="20" height="20" rx="5" stroke="#B5305A" strokeWidth="2" />
-                <circle cx="12" cy="12" r="4.5" stroke="#B5305A" strokeWidth="2" />
-                <circle cx="17.5" cy="6.5" r="1" fill="#B5305A" />
-              </svg>
-
-              <span style={{ fontSize: 11, color: '#B5305A', fontWeight: 600 }}>
+              <span style={{ fontSize: 11, color: "#B5305A", fontWeight: 600 }}>
                 {p.ig}
               </span>
             </a>
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3,1fr)",
+            gap: 8,
+            marginBottom: 16,
+          }}
+        >
           {[
-            { label: 'Matches', value: p.matches, color: C.text },
-            { label: 'Win rate', value: `${p.winRate}%`, color: '#1A5FFF' },
-            { label: 'Streak', value: p.streak, color: streakColor },
-          ].map(s => (
+            { label: "Matches", value: p.matches, color: C.text },
+            { label: "Win rate", value: `${p.winRate}%`, color: "#1A5FFF" },
+            { label: "Streak", value: p.streak, color: streakColor },
+          ].map((stat) => (
             <div
-              key={s.label}
+              key={stat.label}
               style={{
                 background: C.soft,
                 borderRadius: 10,
-                padding: '10px',
-                textAlign: 'center',
+                padding: 10,
+                textAlign: "center",
               }}
             >
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>
-                {s.label}
-              </div>
-
-              <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>
-                {s.value}
+              <div style={{ fontSize: 10, color: C.muted }}>{stat.label}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: stat.color }}>
+                {stat.value}
               </div>
             </div>
           ))}
@@ -399,66 +242,46 @@ function PlayerDetail({
 
         <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
           <div className={styles.cardTitle}>Skill profile</div>
-          <SkillBar name="Smash" val={p.smash} dim={false} />
-          <SkillBar name="Footwork" val={p.footwork} dim={false} />
-          <SkillBar name="Defense" val={p.defense} dim={false} />
-          <SkillBar name="Net play" val={p.net} dim={false} />
-          <SkillBar name="Serve" val={p.serve} dim={true} />
-          <SkillBar name="Stamina" val={p.stamina} dim={true} />
+          <SkillBar name="Smash" val={p.smash} />
+          <SkillBar name="Footwork" val={p.footwork} />
+          <SkillBar name="Defense" val={p.defense} />
+          <SkillBar name="Net play" val={p.net} />
+          <SkillBar name="Serve" val={p.serve} dim />
+          <SkillBar name="Stamina" val={p.stamina} dim />
         </div>
       </div>
-
-      {p.videos.length > 0 && (
-        <div className={styles.card}>
-          <div className={styles.cardTitle}>Match videos</div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {visibleVideos.map((v, i) => (
-              <VideoRow key={i} video={v} />
-            ))}
-          </div>
-
-          {p.videos.length > PREVIEW && (
-            <button
-              onClick={() => setShowAllVideos(prev => !prev)}
-              style={{
-                width: '100%',
-                marginTop: 10,
-                padding: '8px',
-                fontSize: 12,
-                color: '#1A5FFF',
-                fontFamily: 'inherit',
-                fontWeight: 500,
-                background: 'transparent',
-                border: `1px solid ${C.line}`,
-                borderRadius: 9,
-                cursor: 'pointer',
-              }}
-            >
-              {showAllVideos ? 'Show less ↑' : `View all ${p.videos.length} videos ↓`}
-            </button>
-          )}
-        </div>
-      )}
 
       {p.isOpp && (
         <div className={styles.card}>
           <div className={styles.cardTitle}>Head-to-head vs you</div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-around', padding: '16px 0', textAlign: 'center' }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-around",
+              padding: "16px 0",
+              textAlign: "center",
+            }}
+          >
             <div>
-              <div style={{ fontSize: 32, fontWeight: 800, color: '#00C48C' }}>
+              <div style={{ fontSize: 32, fontWeight: 800, color: "#00C48C" }}>
                 {p.w}
               </div>
               <div style={{ fontSize: 12, color: C.muted }}>Your wins</div>
             </div>
 
-            <div style={{ fontSize: 18, fontWeight: 700, color: C.muted, alignSelf: 'center' }}>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: C.muted,
+                alignSelf: "center",
+              }}
+            >
               vs
             </div>
 
             <div>
-              <div style={{ fontSize: 32, fontWeight: 800, color: '#EF4444' }}>
+              <div style={{ fontSize: 32, fontWeight: 800, color: "#EF4444" }}>
                 {p.l}
               </div>
               <div style={{ fontSize: 12, color: C.muted }}>Your losses</div>
@@ -473,37 +296,44 @@ function PlayerDetail({
 
       <div className={styles.card}>
         <div className={styles.cardTitle}>About</div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {[
-            { label: 'Club', value: p.club },
-            { label: 'Hand', value: p.hand },
-            { label: 'Playing since', value: p.since },
-            { label: 'Preferred court', value: p.court },
-          ].map(item => (
-            <SmallInfo key={item.label} label={item.label} value={item.value} />
-          ))}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+          }}
+        >
+          <SmallInfo label="Club" value={p.club} />
+          <SmallInfo label="Hand" value={p.hand} />
+          <SmallInfo label="Playing since" value={p.since} />
+          <SmallInfo label="Preferred court" value={p.court} />
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+        }}
+      >
         {isPartner ? (
           <button
             className={styles.btnOutline}
             style={{
-              width: '100%',
-              color: '#DC2626',
-              borderColor: '#FECACA',
-              background: '#FEF2F2',
+              width: "100%",
+              color: "#DC2626",
+              borderColor: "#FECACA",
+              background: "#FEF2F2",
             }}
-            onClick={() => onRemovePartner(p.name)}
+            onClick={() => onRemovePartner(p)}
           >
             Remove partner
           </button>
         ) : (
           <button
             className={styles.btnPrimary}
-            style={{ width: '100%' }}
+            style={{ width: "100%" }}
             onClick={() => onAddPartner(p)}
           >
             + Add partner
@@ -514,189 +344,915 @@ function PlayerDetail({
           <button
             className={styles.btnOutline}
             style={{
-              width: '100%',
-              color: '#DC2626',
-              borderColor: '#FECACA',
-              background: '#FEF2F2',
+              width: "100%",
+              color: "#DC2626",
+              borderColor: "#FECACA",
+              background: "#FEF2F2",
             }}
-            onClick={() => onRemoveOpponent(p.name)}
+            onClick={() => onRemoveOpponent(p)}
           >
             Remove opponent
           </button>
         ) : (
           <button
             className={styles.btnOutline}
-            style={{ width: '100%' }}
-            onClick={() => onAddOpponent(p.name)}
+            style={{ width: "100%" }}
+            onClick={() => onAddOpponent(p)}
           >
             + Add opponent
           </button>
         )}
       </div>
     </div>
-  )
+  );
+}
+
+function CoachStatusBadge({ status }) {
+  if (status === "accepted") {
+    return <span className={styles.badgeGreen}>My coach</span>;
+  }
+
+  if (status === "pending") {
+    return <span className={styles.badgeAmber}>Request pending</span>;
+  }
+
+  if (status === "rejected") {
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          borderRadius: 999,
+          padding: "3px 8px",
+          background: "#FEF2F2",
+          color: "#DC2626",
+          fontSize: 10,
+          fontWeight: 700,
+        }}
+      >
+        Request declined
+      </span>
+    );
+  }
+
+  return null;
+}
+
+function CoachDetail({ coach, onRequest, onCancel }) {
+  const [message, setMessage] = useState(coach.requestMessage || "");
+  const requestStatus = coach.requestStatus;
+
+  useEffect(() => {
+    setMessage(coach.requestMessage || "");
+  }, [coach.id, coach.requestMessage]);
+
+  const requestButtonLabel =
+    requestStatus === "rejected" || requestStatus === "cancelled"
+      ? "Send request again"
+      : "Request coach";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className={styles.card}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            marginBottom: 16,
+          }}
+        >
+          <div
+            className={styles.av}
+            style={{ width: 52, height: 52, fontSize: 17 }}
+          >
+            {coach.init}
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>
+              {coach.name}
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
+              {coach.club} · {coach.state}
+            </div>
+
+            {coach.headline && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: C.text,
+                  marginTop: 7,
+                  lineHeight: 1.5,
+                }}
+              >
+                {coach.headline}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 5,
+                marginTop: 7,
+              }}
+            >
+              <span className={styles.badgeBlue}>{coach.coachingLevel}</span>
+              {coach.isAccepting ? (
+                <span className={styles.badgeGreen}>Accepting players</span>
+              ) : (
+                <span className={styles.badgeGray}>Not accepting players</span>
+              )}
+              <CoachStatusBadge status={requestStatus} />
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              background: C.soft,
+              borderRadius: 12,
+              padding: 12,
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 10, color: C.muted }}>Experience</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#1A5FFF" }}>
+              {coach.yearsExperience} year
+              {coach.yearsExperience === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: C.soft,
+              borderRadius: 12,
+              padding: 12,
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 10, color: C.muted }}>Player capacity</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>
+              Up to {coach.maxPlayers}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
+          <div className={styles.cardTitle}>Coaching specialties</div>
+
+          {coach.specialties.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.muted }}>
+              No specialties added yet.
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {coach.specialties.map((specialty) => (
+                <span key={specialty} className={styles.badgeBlue}>
+                  {specialty}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className={styles.card}>
+        <div className={styles.cardTitle}>About coach</div>
+        <div
+          style={{
+            fontSize: 13,
+            color: C.text,
+            lineHeight: 1.7,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {coach.bio || "This coach has not added a biography yet."}
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+            marginTop: 16,
+          }}
+        >
+          <SmallInfo label="Club" value={coach.club} />
+          <SmallInfo label="State" value={coach.state} />
+          <div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>
+              Certification
+            </div>
+
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+              {coach.certification || "Not provided"}
+            </div>
+
+            {coach.certificationIssuer && (
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                Issued by {coach.certificationIssuer}
+              </div>
+            )}
+
+            {coach.certificationFileUrl && (
+              <a
+                href={coach.certificationFileUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  marginTop: 6,
+                  padding: "5px 10px",
+                  borderRadius: 8,
+                  background: "#E8EFFE",
+                  color: "#1A5FFF",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textDecoration: "none",
+                }}
+              >
+                View certificate
+              </a>
+            )}
+          </div>
+
+          <SmallInfo label="Coaching level" value={coach.coachingLevel} />
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+            marginTop: 16,
+          }}
+        >
+          <SmallInfo label="Training venue" value={coach.trainingVenue} />
+          <SmallInfo label="Availability" value={coach.availability} />
+          <SmallInfo
+            label="Player levels"
+            value={coach.playerLevels.join(", ")}
+          />
+          <SmallInfo
+            label="Session types"
+            value={coach.sessionTypes.join(", ")}
+          />
+        </div>
+
+        {coach.coachingPhilosophy && (
+          <div style={{ marginTop: 16 }}>
+            <div className={styles.cardTitle}>Coaching philosophy</div>
+            <div
+              style={{
+                fontSize: 13,
+                color: C.text,
+                lineHeight: 1.7,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {coach.coachingPhilosophy}
+            </div>
+          </div>
+        )}
+
+        {coach.achievements && (
+          <div style={{ marginTop: 16 }}>
+            <div className={styles.cardTitle}>Achievements</div>
+            <div
+              style={{
+                fontSize: 13,
+                color: C.text,
+                lineHeight: 1.7,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {coach.achievements}
+            </div>
+          </div>
+        )}
+
+        {coach.instagram && (
+          <a
+            href={`https://instagram.com/${coach.instagram.replace("@", "")}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "inline-flex",
+              marginTop: 14,
+              padding: "5px 12px",
+              background: "#FFF0F6",
+              border: "1px solid #FBC8DC",
+              borderRadius: 20,
+              textDecoration: "none",
+              color: "#B5305A",
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            {coach.instagram}
+          </a>
+        )}
+      </div>
+
+      {(requestStatus === null ||
+        requestStatus === "rejected" ||
+        requestStatus === "cancelled") && (
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Request this coach</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
+            Add a short message about your training goal. This is optional.
+          </div>
+
+          <textarea
+            className={styles.formInput}
+            rows={4}
+            placeholder="Example: I want to improve my footwork and match consistency."
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            style={{ width: "100%", resize: "vertical", marginBottom: 10 }}
+          />
+
+          <button
+            className={styles.btnPrimary}
+            style={{ width: "100%", opacity: coach.isAccepting ? 1 : 0.55 }}
+            disabled={!coach.isAccepting}
+            onClick={() => onRequest(coach, message)}
+          >
+            {coach.isAccepting
+              ? requestButtonLabel
+              : "Coach is not accepting players"}
+          </button>
+        </div>
+      )}
+
+      {requestStatus === "pending" && (
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Request sent</div>
+          <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>
+            The coach can accept or decline this request from the coach page.
+          </div>
+
+          <button
+            className={styles.btnOutline}
+            style={{
+              width: "100%",
+              marginTop: 12,
+              color: "#DC2626",
+              borderColor: "#FECACA",
+              background: "#FEF2F2",
+            }}
+            onClick={() => onCancel(coach, false)}
+          >
+            Cancel request
+          </button>
+        </div>
+      )}
+
+      {requestStatus === "accepted" && (
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Coach connected</div>
+          <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>
+            This coach can now manage your coaching progress and leave feedback.
+          </div>
+
+          <button
+            className={styles.btnOutline}
+            style={{
+              width: "100%",
+              marginTop: 12,
+              color: "#DC2626",
+              borderColor: "#FECACA",
+              background: "#FEF2F2",
+            }}
+            onClick={() => onCancel(coach, true)}
+          >
+            Remove coach
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function normaliseSpecialties(value) {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 export default function Players() {
-  const [tab, setTab] = useState('all')
-  const [search, setSearch] = useState('')
-  const [levelFilter, setLevelFilter] = useState('')
-  const [styleFilter, setStyleFilter] = useState('')
-  const [selected, setSelected] = useState(null)
-  const [players, setPlayers] = useState(allPlayers)
-  const [savedPartners, setSavedPartners] = useState([])
+  const [tab, setTab] = useState("all");
+
+  const [search, setSearch] = useState("");
+  const [levelFilter, setLevelFilter] = useState("");
+  const [styleFilter, setStyleFilter] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [players, setPlayers] = useState([]);
+
+  const [coachSearch, setCoachSearch] = useState("");
+  const [coachLevelFilter, setCoachLevelFilter] = useState("");
+  const [coachStateFilter, setCoachStateFilter] = useState("");
+  const [coachSpecialtyFilter, setCoachSpecialtyFilter] = useState("");
+  const [coaches, setCoaches] = useState([]);
+  const [selectedCoach, setSelectedCoach] = useState(null);
+
+  const [loading, setLoading] = useState(true);
 
   const [partnerCriteria, setPartnerCriteria] = useState({
-    gameType: 'Doubles',
-    level: 'Intermediate',
-    style: 'Auto',
-    state: 'Penang',
-    goal: 'Training',
-  })
+    gameType: "Doubles",
+    level: "Intermediate",
+    style: "Auto",
+    state: "Penang",
+    goal: "Training",
+  });
 
-  const pool = players.filter(p => {
-    if (tab === 'opp') return p.isOpp
+  const fetchData = useCallback(async () => {
+    setLoading(true);
 
-    // Important:
-    // All players should still show everyone,
-    // even after they are added as opponent.
-    return true
-  })
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-  const filtered = pool.filter(p => {
-    const mq =
+      if (userError) {
+        console.error("Failed to read current user:", userError);
+      }
+
+      const [playerResult, coachResult] = await Promise.all([
+        supabase
+          .from("public_players")
+          .select("*")
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("coach_profiles")
+          .select("*")
+          .order("display_name", { ascending: true }),
+      ]);
+
+      if (playerResult.error) {
+        console.error("Failed to load players:", playerResult.error);
+      }
+
+      if (coachResult.error) {
+        console.error("Failed to load coaches:", coachResult.error);
+      }
+
+      let connectionData = [];
+      let coachRelationshipData = [];
+
+      if (user) {
+        const [connectionResult, relationshipResult] = await Promise.all([
+          supabase
+            .from("player_connections")
+            .select("*")
+            .eq("user_id", user.id),
+          supabase
+            .from("coach_player_relationships")
+            .select("*")
+            .eq("player_user_id", user.id),
+        ]);
+
+        if (connectionResult.error) {
+          console.error(
+            "Failed to load player connections:",
+            connectionResult.error,
+          );
+        } else {
+          connectionData = connectionResult.data || [];
+        }
+
+        if (relationshipResult.error) {
+          console.error(
+            "Failed to load coach relationships:",
+            relationshipResult.error,
+          );
+        } else {
+          coachRelationshipData = relationshipResult.data || [];
+        }
+      }
+
+      const formattedPlayers = (playerResult.data || [])
+        .filter((player) => !user || player.user_id !== user.id)
+        .map((player) => {
+          const partner = connectionData.find(
+            (connection) =>
+              connection.target_player_id === player.id &&
+              connection.type === "partner",
+          );
+
+          const opponent = connectionData.find(
+            (connection) =>
+              connection.target_player_id === player.id &&
+              connection.type === "opponent",
+          );
+
+          return {
+            id: player.id,
+            init: player.name?.charAt(0)?.toUpperCase() || "?",
+            name: player.name || "Unknown",
+            club: player.club || "-",
+            state: player.state || "-",
+            level: player.level || "Beginner",
+            style: player.style || "All-round",
+            hand: player.hand || "-",
+            since: player.since || "-",
+            court: player.court || "-",
+            ig: player.instagram || null,
+            smash: Number(player.smash || 50),
+            defense: Number(player.defense || 50),
+            footwork: Number(player.footwork || 50),
+            net: Number(player.net_play || 50),
+            serve: Number(player.serve || 50),
+            stamina: Number(player.stamina || 50),
+            matches: Number(player.matches || 0),
+            winRate: Number(player.win_rate || 0),
+            streak: player.streak || "W0",
+            isPartner: Boolean(partner),
+            isOpp: Boolean(opponent),
+            w: Number(opponent?.h2h_wins || 0),
+            l: Number(opponent?.h2h_losses || 0),
+            last: opponent?.last_played || "—",
+          };
+        });
+
+      const formattedCoaches = (coachResult.data || [])
+        .filter((coach) => !user || coach.user_id !== user.id)
+        .map((coach) => {
+          const relationship = coachRelationshipData.find(
+            (item) => item.coach_user_id === coach.user_id,
+          );
+
+          return {
+            id: coach.id,
+            userId: coach.user_id,
+            init: coach.display_name?.charAt(0)?.toUpperCase() || "?",
+            name: coach.display_name || "Unknown coach",
+            club: coach.club || "-",
+            state: coach.state || "-",
+            coachingLevel: coach.coaching_level || "Community Coach",
+            yearsExperience: Number(coach.experience_years || 0),
+            specialties: normaliseSpecialties(coach.specialties),
+            bio: coach.bio || "",
+            instagram: coach.instagram || null,
+            headline: coach.headline || "",
+            playerLevels: Array.isArray(coach.player_levels) ? coach.player_levels : [],
+            sessionTypes: Array.isArray(coach.session_types) ? coach.session_types : [],
+            trainingVenue: coach.training_venue || "-",
+            availability: coach.availability || "-",
+            coachingPhilosophy: coach.coaching_philosophy || "",
+            achievements: coach.achievements || "",
+            certification: coach.certification || "-",
+            certificationIssuer: coach.certification_issuer || "",
+            certificationFileUrl: coach.certification_file_url || null,
+            isAccepting: Boolean(coach.accepting_players),
+            maxPlayers: Number(coach.player_capacity || 10),
+            requestStatus: relationship?.status || null,
+            requestMessage: relationship?.message || "",
+            relationshipId: relationship?.id || null,
+          };
+        });
+
+      setPlayers(formattedPlayers);
+      setCoaches(formattedCoaches);
+
+      setSelected((previous) =>
+        previous
+          ? formattedPlayers.find((player) => player.id === previous.id) || null
+          : null,
+      );
+
+      setSelectedCoach((previous) =>
+        previous
+          ? formattedCoaches.find((coach) => coach.id === previous.id) || null
+          : null,
+      );
+    } catch (error) {
+      console.error("Unexpected loading error:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const pool = players.filter((player) =>
+    tab === "opp" ? player.isOpp : true,
+  );
+
+  const filtered = pool.filter((player) => {
+    const matchesSearch =
       !search ||
-      [p.name, p.club, p.state].some(s =>
-        s.toLowerCase().includes(search.toLowerCase())
-      )
+      [player.name, player.club, player.state].some((value) =>
+        String(value).toLowerCase().includes(search.toLowerCase()),
+      );
 
-    return mq && (!levelFilter || p.level === levelFilter) && (!styleFilter || p.style === styleFilter)
-  })
+    return (
+      matchesSearch &&
+      (!levelFilter || player.level === levelFilter) &&
+      (!styleFilter || player.style === styleFilter)
+    );
+  });
 
   const partnerRecommendations = useMemo(() => {
     return players
-      .map(p => {
-        const match = getPartnerMatch(p, partnerCriteria)
-
+      .map((player) => {
+        const match = getPartnerMatch(player, partnerCriteria);
         return {
-          ...p,
+          ...player,
           matchScore: match.score,
           reasons: match.reasons,
-        }
+        };
       })
-      .filter(p => p.matchScore >= 45)
-      .sort((a, b) => b.matchScore - a.matchScore)
-  }, [players, partnerCriteria])
+      .filter((player) => player.matchScore >= 45)
+      .sort((a, b) => b.matchScore - a.matchScore);
+  }, [players, partnerCriteria]);
 
-  function handleAddOpponent(name) {
-    const found = players.find(p => p.name === name)
-    if (!found) return
+  const savedPartners = players.filter((player) => player.isPartner);
 
-    const updated = {
-      ...found,
-      isOpp: true,
-      w: found.w ?? 0,
-      l: found.l ?? 0,
-      last: found.last ?? '—',
+  const coachLevels = useMemo(
+    () =>
+      [
+        ...new Set(coaches.map((coach) => coach.coachingLevel).filter(Boolean)),
+      ].sort(),
+    [coaches],
+  );
+
+  const coachStates = useMemo(
+    () =>
+      [...new Set(coaches.map((coach) => coach.state).filter(Boolean))].sort(),
+    [coaches],
+  );
+
+  const coachSpecialties = useMemo(
+    () =>
+      [
+        ...new Set(
+          coaches.flatMap((coach) => coach.specialties).filter(Boolean),
+        ),
+      ].sort(),
+    [coaches],
+  );
+
+  const filteredCoaches = useMemo(() => {
+    const query = coachSearch.trim().toLowerCase();
+
+    return coaches.filter((coach) => {
+      const matchesSearch =
+        !query ||
+        [
+          coach.name,
+          coach.club,
+          coach.state,
+          coach.coachingLevel,
+          ...coach.specialties,
+        ].some((value) => String(value).toLowerCase().includes(query));
+
+      const matchesLevel =
+        !coachLevelFilter || coach.coachingLevel === coachLevelFilter;
+
+      const matchesState =
+        !coachStateFilter || coach.state === coachStateFilter;
+
+      const matchesSpecialty =
+        !coachSpecialtyFilter ||
+        coach.specialties.includes(coachSpecialtyFilter);
+
+      return matchesSearch && matchesLevel && matchesState && matchesSpecialty;
+    });
+  }, [
+    coaches,
+    coachSearch,
+    coachLevelFilter,
+    coachStateFilter,
+    coachSpecialtyFilter,
+  ]);
+
+  async function addConnection(player, type) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("Please log in first.");
+      return;
     }
 
-    setPlayers(prev => prev.map(p => (p.name === name ? updated : p)))
-    setSelected(updated)
-    setTab('opp')
-  }
+    const { error } = await supabase.from("player_connections").upsert(
+      {
+        user_id: user.id,
+        target_player_id: player.id,
+        type,
+        h2h_wins: type === "opponent" ? player.w || 0 : 0,
+        h2h_losses: type === "opponent" ? player.l || 0 : 0,
+        last_played: type === "opponent" ? player.last || "—" : null,
+      },
+      { onConflict: "user_id,target_player_id,type" },
+    );
 
-  function handleRemoveOpponent(name) {
-    const found = players.find(p => p.name === name)
-    if (!found) return
-
-    const updated = {
-      ...found,
-      isOpp: false,
-      w: undefined,
-      l: undefined,
-      last: undefined,
+    if (error) {
+      console.error(error);
+      alert("Failed to save.");
+      return;
     }
 
-    setPlayers(prev => prev.map(p => (p.name === name ? updated : p)))
-    setSelected(updated)
-    setTab('all')
+    await fetchData();
   }
 
-  function handleAddPartner(player) {
-    setSavedPartners(prev => {
-      const exists = prev.some(p => p.name === player.name)
-      if (exists) return prev
+  async function removeConnection(player, type) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-      return [...prev, player]
-    })
+    if (!user) return;
+
+    const { error } = await supabase
+      .from("player_connections")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("target_player_id", player.id)
+      .eq("type", type);
+
+    if (error) {
+      console.error(error);
+      alert("Failed to remove.");
+      return;
+    }
+
+    await fetchData();
   }
 
-  function handleRemovePartner(name) {
-    setSavedPartners(prev => prev.filter(p => p.name !== name))
+  async function requestCoach(coach, message) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("Please log in first.");
+      return;
+    }
+
+    if (!coach.isAccepting) {
+      alert("This coach is not accepting players right now.");
+      return;
+    }
+
+    const { error } = await supabase.from("coach_player_relationships").upsert(
+      {
+        player_user_id: user.id,
+        coach_user_id: coach.userId,
+        status: "pending",
+        message: message.trim() || null,
+        responded_at: null,
+      },
+      { onConflict: "player_user_id,coach_user_id" },
+    );
+
+    if (error) {
+      console.error("Failed to request coach:", error);
+      alert(error.message || "Failed to send coach request.");
+      return;
+    }
+
+    await fetchData();
+    alert("Coach request sent.");
   }
 
-  function isSavedPartner(name) {
-    return savedPartners.some(p => p.name === name)
+  async function cancelCoachRelationship(coach, isAccepted) {
+    const actionText = isAccepted ? "remove this coach" : "cancel this request";
+
+    if (!window.confirm(`Are you sure you want to ${actionText}?`)) {
+      return;
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const { error } = await supabase
+      .from("coach_player_relationships")
+      .update({
+        status: "cancelled",
+        responded_at: null,
+      })
+      .eq("player_user_id", user.id)
+      .eq("coach_user_id", coach.userId);
+
+    if (error) {
+      console.error("Failed to cancel coach relationship:", error);
+      alert(error.message || "Failed to update coach request.");
+      return;
+    }
+
+    await fetchData();
+  }
+
+  function switchTab(nextTab) {
+    setTab(nextTab);
+    setSelected(null);
+    setSelectedCoach(null);
   }
 
   return (
     <div>
       <div className={styles.pageHead}>
-        <div className={styles.pageTitle}>Players & Opponents</div>
+        <div className={styles.pageTitle}>Players, Opponents & Coaches</div>
         <div className={styles.pageSub}>
-          Search players, find suitable partners and review opponent records
+          Search players, find partners, review opponents and connect with a
+          coach
         </div>
       </div>
 
       <div className={styles.tabs} style={{ marginBottom: 16 }}>
         <button
-          className={`${styles.tab} ${tab === 'all' ? styles.tabActive : ''}`}
-          onClick={() => {
-            setTab('all')
-            setSelected(null)
-          }}
+          className={`${styles.tab} ${tab === "all" ? styles.tabActive : ""}`}
+          onClick={() => switchTab("all")}
         >
           All players
         </button>
 
         <button
-          className={`${styles.tab} ${tab === 'partner' ? styles.tabActive : ''}`}
-          onClick={() => {
-            setTab('partner')
-            setSelected(null)
-          }}
+          className={`${styles.tab} ${
+            tab === "partner" ? styles.tabActive : ""
+          }`}
+          onClick={() => switchTab("partner")}
         >
           Find partner
         </button>
 
         <button
-          className={`${styles.tab} ${tab === 'opp' ? styles.tabActive : ''}`}
-          onClick={() => {
-            setTab('opp')
-            setSelected(null)
-          }}
+          className={`${styles.tab} ${tab === "opp" ? styles.tabActive : ""}`}
+          onClick={() => switchTab("opp")}
         >
           My opponents
         </button>
+
+        <button
+          className={`${styles.tab} ${tab === "coach" ? styles.tabActive : ""}`}
+          onClick={() => switchTab("coach")}
+        >
+          Find coach
+        </button>
       </div>
 
-      {tab !== 'partner' && (
+      {loading && (
+        <div
+          className={styles.card}
+          style={{ marginBottom: 16, color: C.muted }}
+        >
+          Loading directory...
+        </div>
+      )}
+
+      {tab !== "partner" && tab !== "coach" && (
         <div className={styles.g2}>
           <div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 12,
+                flexWrap: "wrap",
+              }}
+            >
               <input
                 className={styles.formInput}
                 style={{ flex: 1, minWidth: 160 }}
                 placeholder="Search by name, club or state..."
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
               />
 
               <select
                 className={styles.formSelect}
                 style={{ width: 130 }}
                 value={levelFilter}
-                onChange={e => setLevelFilter(e.target.value)}
+                onChange={(event) => setLevelFilter(event.target.value)}
               >
                 <option value="">All levels</option>
                 <option>Beginner</option>
@@ -708,7 +1264,7 @@ export default function Players() {
                 className={styles.formSelect}
                 style={{ width: 130 }}
                 value={styleFilter}
-                onChange={e => setStyleFilter(e.target.value)}
+                onChange={(event) => setStyleFilter(event.target.value)}
               >
                 <option value="">All styles</option>
                 <option>Aggressive</option>
@@ -718,86 +1274,91 @@ export default function Players() {
               </select>
             </div>
 
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 10, fontWeight: 600 }}>
-              {filtered.length} player{filtered.length !== 1 ? 's' : ''} found
+            <div
+              style={{
+                fontSize: 12,
+                color: C.muted,
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              {filtered.length} player{filtered.length !== 1 ? "s" : ""} found
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {filtered.length === 0 && (
                 <div
                   className={styles.card}
-                  style={{ textAlign: 'center', padding: 40, color: C.muted }}
+                  style={{ textAlign: "center", padding: 40, color: C.muted }}
                 >
                   No players match your search.
                 </div>
               )}
 
-              {filtered.map((p, i) => {
-                const sel = selected?.name === p.name
-                const partner = isSavedPartner(p.name)
+              {filtered.map((player) => {
+                const isSelected = selected?.id === player.id;
 
                 return (
                   <div
-                    key={i}
-                    onClick={() => setSelected(p)}
+                    key={player.id}
+                    onClick={() => setSelected(player)}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
+                      display: "flex",
+                      alignItems: "center",
                       gap: 12,
-                      padding: '14px 16px',
+                      padding: "14px 16px",
                       borderRadius: 16,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s',
-                      background: sel ? C.soft : C.card,
-                      border: sel ? '2px solid #1A5FFF' : `1.5px solid ${C.line}`,
+                      cursor: "pointer",
+                      background: isSelected ? C.soft : C.card,
+                      border: isSelected
+                        ? "2px solid #1A5FFF"
+                        : `1.5px solid ${C.line}`,
                     }}
                   >
-                    <div className={styles.av}>{p.init}</div>
+                    <div className={styles.av}>{player.init}</div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>
-                        {p.name}
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 13,
+                          color: C.text,
+                        }}
+                      >
+                        {player.name}
+                      </div>
+                      <div
+                        style={{ fontSize: 11, color: C.muted, marginTop: 2 }}
+                      >
+                        {player.club} · {player.state}
                       </div>
 
-                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                        {p.club} · {p.state}
-                      </div>
-
-                      <div style={{ marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        <span className={styles.badgeBlue}>{p.level}</span>
-                        <span className={styles.badgeGray}>{p.style}</span>
-
-                        {p.isOpp && <span className={styles.badgeAmber}>Opponent</span>}
-                        {partner && <span className={styles.badgeGreen}>Partner</span>}
+                      <div
+                        style={{
+                          marginTop: 6,
+                          display: "flex",
+                          gap: 4,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span className={styles.badgeBlue}>{player.level}</span>
+                        <span className={styles.badgeGray}>{player.style}</span>
+                        {player.isOpp && (
+                          <span className={styles.badgeAmber}>Opponent</span>
+                        )}
+                        {player.isPartner && (
+                          <span className={styles.badgeGreen}>Partner</span>
+                        )}
                       </div>
                     </div>
 
-                    {p.isOpp && (
-                      <span
-                        className={
-                          p.w > p.l
-                            ? styles.badgeGreen
-                            : p.w < p.l
-                            ? styles.badgeRed
-                            : styles.badgeAmber
-                        }
-                        style={{ marginRight: 8 }}
-                      >
-                        H2H {p.w}W {p.l}L
+                    {player.isOpp && (
+                      <span className={styles.badgeAmber}>
+                        H2H {player.w}W {player.l}L
                       </span>
                     )}
-
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                      <path
-                        d="M5 3l4 4-4 4"
-                        stroke={sel ? '#1A5FFF' : '#8892A4'}
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
                   </div>
-                )
+                );
               })}
             </div>
           </div>
@@ -808,45 +1369,38 @@ export default function Players() {
                 className={styles.card}
                 style={{
                   height: 200,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'column',
-                  gap: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   color: C.muted,
                 }}
               >
-                <svg viewBox="0 0 40 40" fill="none" width="40" height="40">
-                  <circle cx="20" cy="20" r="18" stroke="currentColor" strokeWidth="1.5" />
-                  <circle cx="20" cy="15" r="5" stroke="currentColor" strokeWidth="1.5" />
-                  <path
-                    d="M8 36c0-6.6 5.4-12 12-12s12 5.4 12 12"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-
-                <div style={{ fontSize: 13, fontWeight: 600 }}>
-                  Select a player
-                </div>
+                Select a player
               </div>
             ) : (
               <PlayerDetail
-                key={`${selected.name}-${selected.isOpp}-${isSavedPartner(selected.name)}`}
+                key={`${selected.id}-${selected.isOpp}-${selected.isPartner}`}
                 p={selected}
-                isPartner={isSavedPartner(selected.name)}
-                onAddOpponent={handleAddOpponent}
-                onRemoveOpponent={handleRemoveOpponent}
-                onAddPartner={handleAddPartner}
-                onRemovePartner={handleRemovePartner}
+                isPartner={selected.isPartner}
+                onAddOpponent={(player) => {
+                  addConnection(player, "opponent");
+                  setTab("opp");
+                }}
+                onRemoveOpponent={(player) => {
+                  removeConnection(player, "opponent");
+                  setTab("all");
+                }}
+                onAddPartner={(player) => addConnection(player, "partner")}
+                onRemovePartner={(player) =>
+                  removeConnection(player, "partner")
+                }
               />
             )}
           </div>
         </div>
       )}
 
-      {tab === 'partner' && (
+      {tab === "partner" && (
         <div className={styles.g2}>
           <div>
             <div className={styles.card}>
@@ -855,43 +1409,75 @@ export default function Players() {
               <FormSelect
                 label="Game type"
                 value={partnerCriteria.gameType}
-                onChange={value => setPartnerCriteria(prev => ({ ...prev, gameType: value }))}
-                options={['Singles', 'Doubles', 'Mixed Doubles']}
+                onChange={(value) =>
+                  setPartnerCriteria((previous) => ({
+                    ...previous,
+                    gameType: value,
+                  }))
+                }
+                options={["Singles", "Doubles", "Mixed Doubles"]}
               />
 
               <FormSelect
                 label="Preferred level"
                 value={partnerCriteria.level}
-                onChange={value => setPartnerCriteria(prev => ({ ...prev, level: value }))}
-                options={['Any', 'Beginner', 'Intermediate', 'Advanced']}
+                onChange={(value) =>
+                  setPartnerCriteria((previous) => ({
+                    ...previous,
+                    level: value,
+                  }))
+                }
+                options={["Any", "Beginner", "Intermediate", "Advanced"]}
               />
 
               <FormSelect
                 label="Preferred style"
                 value={partnerCriteria.style}
-                onChange={value => setPartnerCriteria(prev => ({ ...prev, style: value }))}
-                options={['Auto', 'Any', 'Aggressive', 'Defensive', 'All-round', 'Attacking']}
+                onChange={(value) =>
+                  setPartnerCriteria((previous) => ({
+                    ...previous,
+                    style: value,
+                  }))
+                }
+                options={[
+                  "Auto",
+                  "Any",
+                  "Aggressive",
+                  "Defensive",
+                  "All-round",
+                  "Attacking",
+                ]}
               />
 
               <FormSelect
                 label="State"
                 value={partnerCriteria.state}
-                onChange={value => setPartnerCriteria(prev => ({ ...prev, state: value }))}
-                options={['Any', 'Penang', 'Selangor', 'Kuala Lumpur', 'Johor']}
+                onChange={(value) =>
+                  setPartnerCriteria((previous) => ({
+                    ...previous,
+                    state: value,
+                  }))
+                }
+                options={["Any", "Penang", "Selangor", "Kuala Lumpur", "Johor"]}
               />
 
               <FormSelect
                 label="Goal"
                 value={partnerCriteria.goal}
-                onChange={value => setPartnerCriteria(prev => ({ ...prev, goal: value }))}
-                options={['Casual', 'Training', 'Tournament']}
+                onChange={(value) =>
+                  setPartnerCriteria((previous) => ({
+                    ...previous,
+                    goal: value,
+                  }))
+                }
+                options={["Casual", "Training", "Tournament"]}
               />
 
               <div
                 style={{
                   marginTop: 14,
                   padding: 12,
-                  background: '#F0F5FF',
+                  background: "#F0F5FF",
                   borderRadius: 12,
                   fontSize: 12,
                   color: C.text,
@@ -919,17 +1505,17 @@ export default function Players() {
                 </div>
               )}
 
-              {savedPartners.map(p => (
-                <div key={p.name} className={styles.listRow}>
-                  <div className={styles.av}>{p.init}</div>
-
+              {savedPartners.map((player) => (
+                <div key={player.id} className={styles.listRow}>
+                  <div className={styles.av}>{player.init}</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
-                      {p.name}
+                    <div
+                      style={{ fontSize: 13, fontWeight: 700, color: C.text }}
+                    >
+                      {player.name}
                     </div>
-
                     <div style={{ fontSize: 11, color: C.muted }}>
-                      {p.club} · {p.level} · {p.style}
+                      {player.club} · {player.level} · {player.style}
                     </div>
                   </div>
 
@@ -937,12 +1523,12 @@ export default function Players() {
                     className={styles.btnOutline}
                     style={{
                       fontSize: 11,
-                      padding: '5px 10px',
-                      color: '#DC2626',
-                      borderColor: '#FECACA',
-                      background: '#FEF2F2',
+                      padding: "5px 10px",
+                      color: "#DC2626",
+                      borderColor: "#FECACA",
+                      background: "#FEF2F2",
                     }}
-                    onClick={() => handleRemovePartner(p.name)}
+                    onClick={() => removeConnection(player, "partner")}
                   >
                     Remove
                   </button>
@@ -954,94 +1540,266 @@ export default function Players() {
           <div className={styles.card}>
             <div className={styles.cardTitle}>Recommended partners</div>
 
-            {partnerRecommendations.length === 0 && (
-              <div style={{ fontSize: 13, color: C.muted }}>
-                No suitable partners found. Try changing the filters.
-              </div>
-            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {partnerRecommendations.map((player) => (
+                <div
+                  key={player.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "44px minmax(0,1fr) 76px 110px",
+                    gap: 12,
+                    alignItems: "center",
+                    padding: "12px 0",
+                    borderBottom: `1px solid ${C.line}`,
+                  }}
+                >
+                  <div className={styles.av}>{player.init}</div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {partnerRecommendations.map(p => {
-                const saved = isSavedPartner(p.name)
-
-                return (
-                  <div
-                    key={p.name}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '44px 1fr 76px 110px',
-                      gap: 12,
-                      alignItems: 'center',
-                      padding: '12px 0',
-                      borderBottom: `1px solid ${C.line}`,
-                    }}
-                  >
-                    <div className={styles.av}>{p.init}</div>
-
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>
-                        {p.name}
-                      </div>
-
-                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                        {p.club} · {p.state}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
-                        <span className={styles.badgeBlue}>{p.level}</span>
-                        <span className={styles.badgeGray}>{p.style}</span>
-
-                        {p.reasons.map(reason => (
-                          <span key={reason} className={styles.badgeAmber}>
-                            {reason}
-                          </span>
-                        ))}
-                      </div>
+                  <div>
+                    <div
+                      style={{ fontSize: 14, fontWeight: 800, color: C.text }}
+                    >
+                      {player.name}
                     </div>
-
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 10, color: C.muted }}>
-                        Match
-                      </div>
-
-                      <div
-                        style={{
-                          fontSize: 20,
-                          fontWeight: 900,
-                          color: p.matchScore >= 75 ? '#00976C' : '#1A5FFF',
-                        }}
-                      >
-                        {p.matchScore}%
-                      </div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                      {player.club} · {player.state}
                     </div>
-
-                    {saved ? (
-                      <button
-                        className={styles.btnOutline}
-                        style={{
-                          color: '#DC2626',
-                          borderColor: '#FECACA',
-                          background: '#FEF2F2',
-                        }}
-                        onClick={() => handleRemovePartner(p.name)}
-                      >
-                        Remove
-                      </button>
-                    ) : (
-                      <button
-                        className={styles.btnPrimary}
-                        onClick={() => handleAddPartner(p)}
-                      >
-                        Save
-                      </button>
-                    )}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 5,
+                        flexWrap: "wrap",
+                        marginTop: 6,
+                      }}
+                    >
+                      <span className={styles.badgeBlue}>{player.level}</span>
+                      <span className={styles.badgeGray}>{player.style}</span>
+                      {player.reasons.map((reason) => (
+                        <span key={reason} className={styles.badgeAmber}>
+                          {reason}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                )
-              })}
+
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: C.muted }}>Match</div>
+                    <div
+                      style={{
+                        fontSize: 20,
+                        fontWeight: 900,
+                        color: player.matchScore >= 75 ? "#00976C" : "#1A5FFF",
+                      }}
+                    >
+                      {player.matchScore}%
+                    </div>
+                  </div>
+
+                  {player.isPartner ? (
+                    <button
+                      className={styles.btnOutline}
+                      style={{
+                        color: "#DC2626",
+                        borderColor: "#FECACA",
+                        background: "#FEF2F2",
+                      }}
+                      onClick={() => removeConnection(player, "partner")}
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <button
+                      className={styles.btnPrimary}
+                      onClick={() => addConnection(player, "partner")}
+                    >
+                      Save
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
+
+      {tab === "coach" && (
+        <div className={styles.g2}>
+          <div>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <input
+                className={styles.formInput}
+                style={{ flex: 1, minWidth: 180 }}
+                placeholder="Search coach, club, state or specialty..."
+                value={coachSearch}
+                onChange={(event) => setCoachSearch(event.target.value)}
+              />
+
+              <select
+                className={styles.formSelect}
+                style={{ width: 150 }}
+                value={coachLevelFilter}
+                onChange={(event) => setCoachLevelFilter(event.target.value)}
+              >
+                <option value="">All coaching levels</option>
+                {coachLevels.map((level) => (
+                  <option key={level}>{level}</option>
+                ))}
+              </select>
+
+              <select
+                className={styles.formSelect}
+                style={{ width: 135 }}
+                value={coachStateFilter}
+                onChange={(event) => setCoachStateFilter(event.target.value)}
+              >
+                <option value="">All states</option>
+                {coachStates.map((state) => (
+                  <option key={state}>{state}</option>
+                ))}
+              </select>
+
+              <select
+                className={styles.formSelect}
+                style={{ width: 150 }}
+                value={coachSpecialtyFilter}
+                onChange={(event) =>
+                  setCoachSpecialtyFilter(event.target.value)
+                }
+              >
+                <option value="">All specialties</option>
+                {coachSpecialties.map((specialty) => (
+                  <option key={specialty}>{specialty}</option>
+                ))}
+              </select>
+            </div>
+
+            <div
+              style={{
+                fontSize: 12,
+                color: C.muted,
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              {filteredCoaches.length} coach
+              {filteredCoaches.length !== 1 ? "es" : ""} found
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {filteredCoaches.length === 0 && (
+                <div
+                  className={styles.card}
+                  style={{ textAlign: "center", padding: 40, color: C.muted }}
+                >
+                  No coaches match your search.
+                </div>
+              )}
+
+              {filteredCoaches.map((coach) => {
+                const isSelected = selectedCoach?.id === coach.id;
+
+                return (
+                  <div
+                    key={coach.id}
+                    onClick={() => setSelectedCoach(coach)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "14px 16px",
+                      borderRadius: 16,
+                      cursor: "pointer",
+                      background: isSelected ? C.soft : C.card,
+                      border: isSelected
+                        ? "2px solid #1A5FFF"
+                        : `1.5px solid ${C.line}`,
+                    }}
+                  >
+                    <div className={styles.av}>{coach.init}</div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 13,
+                          color: C.text,
+                        }}
+                      >
+                        {coach.name}
+                      </div>
+                      <div
+                        style={{ fontSize: 11, color: C.muted, marginTop: 2 }}
+                      >
+                        {coach.club} · {coach.state} · {coach.yearsExperience}{" "}
+                        year
+                        {coach.yearsExperience === 1 ? "" : "s"} experience
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 6,
+                          display: "flex",
+                          gap: 4,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span className={styles.badgeBlue}>
+                          {coach.coachingLevel}
+                        </span>
+
+                        {coach.specialties.slice(0, 2).map((specialty) => (
+                          <span key={specialty} className={styles.badgeGray}>
+                            {specialty}
+                          </span>
+                        ))}
+
+                        <CoachStatusBadge status={coach.requestStatus} />
+                      </div>
+                    </div>
+
+                    {coach.isAccepting ? (
+                      <span className={styles.badgeGreen}>Available</span>
+                    ) : (
+                      <span className={styles.badgeGray}>Unavailable</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            {!selectedCoach ? (
+              <div
+                className={styles.card}
+                style={{
+                  height: 200,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: C.muted,
+                }}
+              >
+                Select a coach
+              </div>
+            ) : (
+              <CoachDetail
+                key={`${selectedCoach.id}-${selectedCoach.requestStatus}`}
+                coach={selectedCoach}
+                onRequest={requestCoach}
+                onCancel={cancelCoachRelationship}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
-  )
+  );
 }

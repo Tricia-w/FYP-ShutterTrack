@@ -121,7 +121,6 @@ export default function Profile() {
 
   const [avatarUrl, setAvatarUrl] = useState('')
   const [mediaItems, setMediaItems] = useState([])
-  const mediaType = 'Profile Media'
 
   const [profileId, setProfileId] = useState(null)
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
@@ -190,13 +189,13 @@ export default function Profile() {
 
         let equipmentData = null
         let rating = null
-        let summary = null
+        let matchRows = []
         let mediaData = []
 
         if (profile?.id) {
           setProfileId(profile.id)
 
-          const [equipmentRes, ratingRes, summaryRes, mediaRes] = await Promise.all([
+          const [equipmentRes, ratingRes, matchesRes, mediaRes] = await Promise.all([
             supabase
               .from('player_equipment')
               .select('*')
@@ -208,10 +207,9 @@ export default function Profile() {
               .eq('player_id', profile.id)
               .maybeSingle(),
             supabase
-              .from('player_match_summary')
-              .select('*')
-              .eq('player_id', profile.id)
-              .maybeSingle(),
+              .from('player_matches')
+              .select('result')
+              .eq('player_id', profile.id),
             supabase
               .from('player_profile_media')
               .select('*')
@@ -221,7 +219,7 @@ export default function Profile() {
 
           equipmentData = equipmentRes.data
           rating = ratingRes.data
-          summary = summaryRes.data
+          matchRows = matchesRes.data || []
           mediaData = mediaRes.data || []
         }
 
@@ -254,7 +252,7 @@ export default function Profile() {
         if (rating) {
           setSkillsData(
             skillColumns.map(item => {
-              const value = Number(rating[item.column] ?? 0)
+              const value = Number(rating[item.column] ?? 50)
               return {
                 name: item.name,
                 val: value,
@@ -267,14 +265,15 @@ export default function Profile() {
           )
         }
 
-        if (summary) {
-          setMatchSummary({
-            total_matches: summary.total_matches ?? 0,
-            wins: summary.wins ?? 0,
-            losses: summary.losses ?? 0,
-            win_rate: summary.win_rate ?? 0,
-          })
-        }
+        const wins = matchRows.filter(match => match.result === 'Win').length
+        const losses = matchRows.filter(match => match.result === 'Loss').length
+
+        setMatchSummary({
+          total_matches: matchRows.length,
+          wins,
+          losses,
+          win_rate: matchRows.length ? Math.round((wins / matchRows.length) * 100) : 0,
+        })
 
         if (mediaData.length > 0) {
           setMediaItems(
@@ -649,26 +648,240 @@ export default function Profile() {
 
   return (
     <div
+      className="profileResponsivePage"
       style={{
         opacity: isLoadingProfile ? 0.4 : 1,
         transition: 'opacity 160ms ease',
         pointerEvents: isLoadingProfile ? 'none' : 'auto',
       }}
     >
+      <style>{`
+        .profileResponsivePage {
+          width: 100%;
+          min-width: 0;
+          overflow-x: hidden;
+        }
+
+        .profileHeaderRow {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+        }
+
+        .profileMainGrid {
+          display: grid;
+          grid-template-columns: minmax(260px, 3fr) minmax(0, 7fr);
+          gap: 18px;
+          align-items: start;
+          width: 100%;
+        }
+
+        .profileLeftColumn,
+        .profileRightColumn {
+          min-width: 0;
+        }
+
+        .profileHeroCard {
+          background: linear-gradient(180deg, #111827 0%, #0B1220 100%);
+          border-radius: 22px;
+          padding: 24px;
+          color: #FFFFFF;
+          margin-bottom: 16px;
+          box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+          min-width: 0;
+        }
+
+        .profileHeroTop {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 18px;
+        }
+
+        .profileTraitsGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .profileHeroActions {
+          display: flex;
+          gap: 8px;
+          margin-top: 16px;
+        }
+
+        .profileStatsGrid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .profileStatCard {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 16px;
+          padding: 18px;
+          min-height: 106px;
+          box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+          min-width: 0;
+          overflow: hidden;
+        }
+
+        .profileSectionHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 14px;
+          flex-wrap: wrap;
+        }
+
+        .profileMediaHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+
+        .profileMediaGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 10px;
+        }
+
+        @media (max-width: 900px) {
+          .profileMainGrid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .profileLeftColumn,
+          .profileRightColumn {
+            width: 100%;
+          }
+
+          .profileStatsGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 640px) {
+          .profileHeaderRow {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+
+          .profileEditButton {
+            width: 100%;
+          }
+
+          .profileMainGrid {
+            gap: 14px;
+          }
+
+          .profileHeroCard {
+            padding: 18px;
+            border-radius: 18px;
+          }
+
+          .profileHeroTop {
+            gap: 12px;
+          }
+
+          .profileTraitsGrid {
+            gap: 8px;
+          }
+
+          .profileStatsGrid {
+            gap: 10px;
+            margin-bottom: 14px;
+          }
+
+          .profileStatCard {
+            min-height: 118px;
+            padding: 16px;
+          }
+
+          .profileSectionHeader {
+            align-items: flex-start;
+          }
+
+          .profileSectionHeader > div:last-child {
+            max-width: 100%;
+          }
+
+          .profileMediaHeader {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .profileMediaHeader > div:last-child,
+          .profileMediaHeader button {
+            width: 100%;
+          }
+
+          .profileMediaGrid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .profileResponsivePage .${styles.g2} {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+
+          .profileResponsivePage .${styles.skillRow} {
+            grid-template-columns: 72px minmax(0, 1fr) 30px;
+            gap: 8px;
+          }
+
+          .profileResponsivePage .${styles.statRow} {
+            gap: 12px;
+          }
+
+          .profileResponsivePage .${styles.statVal} {
+            max-width: 58%;
+            text-align: right;
+            overflow-wrap: anywhere;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .profileTraitsGrid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .profileHeroActions {
+            flex-direction: column;
+          }
+
+          .profileHeroActions button {
+            width: 100%;
+            min-height: 42px;
+          }
+
+          .profileResponsivePage .${styles.skillRow} {
+            grid-template-columns: 64px minmax(0, 1fr) 28px;
+            gap: 6px;
+          }
+        }
+      `}</style>
       <div className={styles.pageHead}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+        <div className="profileHeaderRow">
           <div>
             <div className={styles.pageTitle}>My Profile</div>
             <div className={styles.pageSub}>Personal, player and lifestyle information{isLoadingProfile ? ' · Loading saved profile...' : ''}</div>
           </div>
-          <button className={styles.btnPrimary} onClick={() => setShowProfileModal(true)}>Edit Profile</button>
+          <button className={`${styles.btnPrimary} profileEditButton`} onClick={() => setShowProfileModal(true)}>Edit Profile</button>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 7fr', gap: 18, alignItems: 'start', width: '100%' }}>
-        <div>
-          <div style={{ background: 'linear-gradient(180deg, #111827 0%, #0B1220 100%)', borderRadius: 22, padding: 24, color: '#FFFFFF', marginBottom: 16, boxShadow: '0 16px 40px rgba(15, 23, 42, 0.18)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, marginBottom: 18 }}>
+      <div className="profileMainGrid">
+        <div className="profileLeftColumn">
+          <div className="profileHeroCard">
+            <div className="profileHeroTop">
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 11, color: '#93A4BC', fontWeight: 700, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 }}>Player Profile</div>
                 <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.1, color: '#FFFFFF', marginBottom: 6 }}>{name}</div>
@@ -697,7 +910,7 @@ export default function Profile() {
 
             <div style={{ fontSize: 13, color: '#D1D5DB', lineHeight: 1.7, marginBottom: 18, fontWeight: 400 }}>{form.bio || 'No bio added yet.'}</div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div className="profileTraitsGrid">
               {[
                 { label: 'Style', value: playStyle },
                 { label: 'Strength', value: strength },
@@ -711,7 +924,7 @@ export default function Profile() {
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <div className="profileHeroActions">
               <button className={styles.btnOutline} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: '#FFFFFF', borderColor: 'rgba(255,255,255,0.12)' }} onClick={() => navigate('/setup', { state: { returnTo: '/profile' } })}>Re-do setup</button>
               {avatarUrl && <button type="button" onClick={handleRemoveAvatar} style={{ border: 'none', background: 'rgba(239, 68, 68, 0.14)', color: '#FCA5A5', borderRadius: 10, padding: '0 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove photo</button>}
             </div>
@@ -737,10 +950,10 @@ export default function Profile() {
           </div>
         </div>
 
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
+        <div className="profileRightColumn">
+          <div className="profileStatsGrid">
             {stats.map(item => (
-              <div key={item.label} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 16, padding: 18, minHeight: 106, boxShadow: '0 8px 20px rgba(15, 23, 42, 0.04)' }}>
+              <div key={item.label} className="profileStatCard">
                 <div style={{ width: 40, height: 40, borderRadius: 10, background: item.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}><StatIcon type={item.icon} color={item.color} /></div>
                 <div style={{ fontSize: 24, fontWeight: 800, color: item.color, lineHeight: 1 }}>{item.value}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>{item.label}</div>
@@ -749,7 +962,7 @@ export default function Profile() {
           </div>
 
           <div className={styles.card} style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+            <div className="profileSectionHeader">
               <div className={styles.cardTitle}>Skill ratings</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: '#1A5FFF', background: '#E8EFFE', padding: '4px 9px', borderRadius: 999 }}>Source: {skillSourceText}</span>
@@ -768,7 +981,7 @@ export default function Profile() {
           </div>
 
           <div className={styles.card} style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+            <div className="profileSectionHeader" style={{ marginBottom: 10 }}>
               <div className={styles.cardTitle}>Equipment</div>
               <button className={styles.btnOutline} onClick={() => setShowEquipmentModal(true)}>Edit equipment</button>
             </div>
@@ -781,7 +994,7 @@ export default function Profile() {
           </div>
 
           <div className={styles.card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div className="profileMediaHeader">
               <div className={styles.cardTitle}>Profile media</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className={styles.btnPrimary} onClick={() => setShowMediaModal(true)}>Upload</button>
@@ -791,7 +1004,7 @@ export default function Profile() {
             {mediaItems.length === 0 ? (
               <div style={{ padding: 22, background: 'var(--soft)', borderRadius: 14, color: 'var(--text-muted)', fontSize: 13, textAlign: 'center' }}>No media uploaded yet. Add images or videos.</div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <div className="profileMediaGrid">
                 {mediaItems.map(item => (
                   <div key={item.id} style={{ background: 'var(--soft)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--line)' }}>
                     <div style={{ height: 110, background: '#E8EFFE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>

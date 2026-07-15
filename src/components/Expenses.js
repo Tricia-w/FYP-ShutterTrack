@@ -1,79 +1,7 @@
 import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
 import MonthlyTrendLineChart from './MonthlyTrendLineChart'
 import styles from './Pages.module.css'
-
-const initExpenses = [
-  {
-    id: 1,
-    isoDate: '2026-04-20',
-    month: 'April 2026',
-    date: '20 Apr',
-    category: 'Court',
-    desc: 'Kompleks Sukan',
-    amount: 20,
-    color: 'blue',
-  },
-  {
-    id: 2,
-    isoDate: '2026-04-18',
-    month: 'April 2026',
-    date: '18 Apr',
-    category: 'Equipment',
-    desc: 'Yonex AS-30 shuttlecocks',
-    amount: 45,
-    color: 'green',
-  },
-  {
-    id: 3,
-    isoDate: '2026-04-15',
-    month: 'April 2026',
-    date: '15 Apr',
-    category: 'Court',
-    desc: 'Dewan Sukan USM',
-    amount: 20,
-    color: 'blue',
-  },
-  {
-    id: 4,
-    isoDate: '2026-04-12',
-    month: 'April 2026',
-    date: '12 Apr',
-    category: 'Stringing',
-    desc: 'BG80 Power 26 lbs',
-    amount: 35,
-    color: 'purple',
-  },
-  {
-    id: 5,
-    isoDate: '2026-04-10',
-    month: 'April 2026',
-    date: '10 Apr',
-    category: 'Transport',
-    desc: 'Grab to tournament',
-    amount: 18,
-    color: 'amber',
-  },
-  {
-    id: 6,
-    isoDate: '2026-04-08',
-    month: 'April 2026',
-    date: '8 Apr',
-    category: 'Court',
-    desc: 'Penang BC court',
-    amount: 20,
-    color: 'blue',
-  },
-  {
-    id: 7,
-    isoDate: '2026-04-03',
-    month: 'April 2026',
-    date: '3 Apr',
-    category: 'Transport',
-    desc: 'Grab to training',
-    amount: 7,
-    color: 'amber',
-  },
-]
 
 const categoryInfo = {
   Court: { label: 'Court rental', badge: 'blue', color: '#1A5FFF' },
@@ -84,33 +12,13 @@ const categoryInfo = {
 }
 
 const MONTH_NAMES_LONG = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
 const MONTH_NAMES_SHORT = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ]
 
 const today = new Date()
@@ -132,20 +40,18 @@ const C = {
 }
 
 function formatRM(v) {
-  return `RM ${Number(v).toFixed(2)}`
+  return `RM ${Number(v || 0).toFixed(2)}`
 }
 
 function formatRMNoDecimal(v) {
-  return `RM ${Math.round(Number(v))}`
+  return `RM ${Math.round(Number(v || 0))}`
 }
 
 function getTodayISO() {
   const d = new Date()
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`
 }
 
 function createEmptyExpenseForm() {
@@ -159,17 +65,16 @@ function createEmptyExpenseForm() {
 
 function parseMonth(monthStr) {
   const [monthName, yearText] = monthStr.split(' ')
-  const monthIdx = MONTH_NAMES_LONG.indexOf(monthName)
-  const year = Number(yearText)
-
-  return { monthIdx, year }
+  return {
+    monthIdx: MONTH_NAMES_LONG.indexOf(monthName),
+    year: Number(yearText),
+  }
 }
 
 function sortMonths(months) {
   return [...months].sort((a, b) => {
     const ma = parseMonth(a)
     const mb = parseMonth(b)
-
     if (ma.year !== mb.year) return ma.year - mb.year
     return ma.monthIdx - mb.monthIdx
   })
@@ -204,22 +109,12 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
       <div className={styles.modal} style={{ maxWidth: 480 }}>
         <div className={styles.modalHead}>
           <div className={styles.modalTitle}>{title}</div>
-
-          <button className={styles.modalClose} onClick={onClose}>
-            ✕
-          </button>
+          <button className={styles.modalClose} onClick={onClose}>✕</button>
         </div>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 14,
-          }}
-        >
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <div className={styles.formRow}>
             <label className={styles.formLabel}>Date</label>
-
             <input
               className={styles.formInput}
               type="date"
@@ -230,7 +125,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
 
           <div className={styles.formRow}>
             <label className={styles.formLabel}>Category</label>
-
             <select
               className={styles.formSelect}
               value={form.category}
@@ -247,7 +141,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
 
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Description optional</label>
-
           <input
             className={styles.formInput}
             placeholder="e.g. Kompleks Sukan court"
@@ -258,7 +151,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
 
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Amount RM</label>
-
           <input
             className={styles.formInput}
             type="number"
@@ -268,13 +160,7 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
           />
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-          }}
-        >
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
           {onDelete ? (
             <button
               onClick={onDelete}
@@ -291,18 +177,11 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
             >
               Delete
             </button>
-          ) : (
-            <div />
-          )}
+          ) : <div />}
 
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className={styles.btnOutline} onClick={onClose}>
-              Cancel
-            </button>
-
-            <button className={styles.btnPrimary} onClick={onSave}>
-              Save
-            </button>
+            <button className={styles.btnOutline} onClick={onClose}>Cancel</button>
+            <button className={styles.btnPrimary} onClick={onSave}>Save</button>
           </div>
         </div>
       </div>
@@ -316,6 +195,7 @@ function BudgetModal({
   selectedMonthTotal,
   budgetUsedPercent,
   onClose,
+  onSave,
 }) {
   return (
     <div
@@ -325,15 +205,11 @@ function BudgetModal({
       <div className={styles.modal} style={{ maxWidth: 420 }}>
         <div className={styles.modalHead}>
           <div className={styles.modalTitle}>Set Monthly Budget</div>
-
-          <button className={styles.modalClose} onClick={onClose}>
-            ✕
-          </button>
+          <button className={styles.modalClose} onClick={onClose}>✕</button>
         </div>
 
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Monthly badminton budget</label>
-
           <input
             className={styles.formInput}
             type="number"
@@ -353,21 +229,9 @@ function BudgetModal({
           <span className={styles.statVal}>{budgetUsedPercent}%</span>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 10,
-            marginTop: 18,
-          }}
-        >
-          <button className={styles.btnOutline} onClick={onClose}>
-            Cancel
-          </button>
-
-          <button className={styles.btnPrimary} onClick={onClose}>
-            Save Budget
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+          <button className={styles.btnOutline} onClick={onClose}>Cancel</button>
+          <button className={styles.btnPrimary} onClick={onSave}>Save Budget</button>
         </div>
       </div>
     </div>
@@ -422,14 +286,7 @@ function RuleSuggestionsCard({ suggestions }) {
               {s.title}
             </div>
 
-            <div
-              style={{
-                fontSize: 12,
-                color: C.text,
-                lineHeight: 1.5,
-                fontWeight: 500,
-              }}
-            >
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5, fontWeight: 500 }}>
               {s.text}
             </div>
           </div>
@@ -440,63 +297,138 @@ function RuleSuggestionsCard({ suggestions }) {
 }
 
 export default function Expenses() {
-  const [expenses, setExpenses] = useState(initExpenses)
-  const [nextExpenseId, setNextExpenseId] = useState(8)
+  const [expenses, setExpenses] = useState([])
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
+  const [loading, setLoading] = useState(true)
 
   const [showAddExpense, setShowAddExpense] = useState(false)
   const [editingExpense, setEditingExpense] = useState(null)
   const [expenseForm, setExpenseForm] = useState(createEmptyExpenseForm)
 
-  const [monthlyBudget, setMonthlyBudget] = useState(() => {
-    const saved = localStorage.getItem('monthlyBudget')
-    return saved ? Number(saved) : 200
-  })
-
+  const [monthlyBudget, setMonthlyBudget] = useState(0)
   const [showBudgetModal, setShowBudgetModal] = useState(false)
 
   useEffect(() => {
-    localStorage.setItem('monthlyBudget', monthlyBudget)
-  }, [monthlyBudget])
+    fetchExpenses()
+    fetchBudget()
+  }, [])
+
+  const fetchExpenses = async () => {
+    setLoading(true)
+
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData?.user
+
+    if (!user) {
+      setLoading(false)
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false })
+
+    if (error) {
+      console.log(error)
+      setLoading(false)
+      return
+    }
+
+    const formatted = (data || []).map(item => {
+      const { dateStr, monthKey } = isoToDisplay(item.date)
+      const cat = categoryInfo[item.category] || categoryInfo.Other
+
+      return {
+        id: item.id,
+        isoDate: item.date,
+        month: monthKey,
+        date: dateStr,
+        category: item.category,
+        desc: item.description || 'No description',
+        amount: Number(item.amount),
+        color: cat.badge,
+      }
+    })
+
+    setExpenses(formatted)
+    setLoading(false)
+  }
+
+  const fetchBudget = async () => {
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData?.user
+    if (!user) return
+
+    const { data, error } = await supabase
+      .from('expense_budgets')
+      .select('budget')
+      .eq('user_id', user.id)
+      .eq('month', selectedMonth)
+      .maybeSingle()
+
+    if (error) {
+      console.log(error)
+      return
+    }
+
+    if (data?.budget !== undefined) {
+      setMonthlyBudget(Number(data.budget))
+    }
+  }
+
+  useEffect(() => {
+    fetchBudget()
+  }, [selectedMonth])
+
+  const saveBudget = async () => {
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData?.user
+    if (!user) return
+
+    const { error } = await supabase.from('expense_budgets').upsert(
+      {
+        user_id: user.id,
+        month: selectedMonth,
+        budget: Number(monthlyBudget),
+      },
+      {
+        onConflict: 'user_id,month',
+      }
+    )
+
+    if (error) {
+      console.log(error)
+      alert('Failed to save budget.')
+      return
+    }
+
+    setShowBudgetModal(false)
+  }
 
   const handleExpenseChange = (key, value) => {
-    setExpenseForm(f => ({
-      ...f,
-      [key]: value,
-    }))
+    setExpenseForm(f => ({ ...f, [key]: value }))
   }
 
   const availableMonths = sortMonths(
-    Array.from(
-      new Set([
-        ...baseMonthOptions,
-        ...expenses.map(e => e.month),
-        selectedMonth,
-      ])
-    )
+    Array.from(new Set([...baseMonthOptions, ...expenses.map(e => e.month), selectedMonth]))
   )
 
   const filteredExpenses = expenses
     .filter(e => e.month === selectedMonth)
     .sort((a, b) => b.isoDate.localeCompare(a.isoDate))
 
-  const selectedMonthTotal = filteredExpenses.reduce(
-    (s, e) => s + Number(e.amount),
-    0
-  )
+  const selectedMonthTotal = filteredExpenses.reduce((s, e) => s + Number(e.amount), 0)
 
   const monthly = availableMonths.map(month => ({
     month,
-    amt: expenses
-      .filter(e => e.month === month)
-      .reduce((s, e) => s + Number(e.amount), 0),
+    amt: expenses.filter(e => e.month === month).reduce((s, e) => s + Number(e.amount), 0),
     current: month === selectedMonth,
   }))
 
   const selectedMonthIndex = availableMonths.indexOf(selectedMonth)
-
-  const previousMonthName =
-    selectedMonthIndex > 0 ? availableMonths[selectedMonthIndex - 1] : null
+  const previousMonthName = selectedMonthIndex > 0 ? availableMonths[selectedMonthIndex - 1] : null
 
   const previousMonthTotal = previousMonthName
     ? monthly.find(m => m.month === previousMonthName)?.amt || 0
@@ -517,23 +449,16 @@ export default function Expenses() {
     .reduce((s, m) => s + m.amt, 0)
 
   const monthsPassed = currentMonthIndex + 1
-
   const avgMonth = monthsPassed > 0 ? thisYearTotal / monthsPassed : 0
 
   const budgetUsedPercent =
-    monthlyBudget > 0
-      ? Math.round((selectedMonthTotal / monthlyBudget) * 100)
-      : 0
+    monthlyBudget > 0 ? Math.round((selectedMonthTotal / monthlyBudget) * 100) : 0
 
   const remainingBudget = monthlyBudget - selectedMonthTotal
 
   let budgetStatus = 'Safe'
-
-  if (budgetUsedPercent >= 100) {
-    budgetStatus = 'Exceeded'
-  } else if (budgetUsedPercent >= 80) {
-    budgetStatus = 'Near Limit'
-  }
+  if (budgetUsedPercent >= 100) budgetStatus = 'Exceeded'
+  else if (budgetUsedPercent >= 80) budgetStatus = 'Near Limit'
 
   const byCategory = Object.keys(categoryInfo)
     .map(category => {
@@ -545,10 +470,7 @@ export default function Expenses() {
         category,
         label: categoryInfo[category].label,
         val,
-        pct:
-          selectedMonthTotal > 0
-            ? Math.round((val / selectedMonthTotal) * 100)
-            : 0,
+        pct: selectedMonthTotal > 0 ? Math.round((val / selectedMonthTotal) * 100) : 0,
         color: categoryInfo[category].color,
       }
     })
@@ -565,20 +487,14 @@ export default function Expenses() {
     }
 
     if (budgetStatus === 'Exceeded') {
-      return `You have spent ${formatRM(
-        selectedMonthTotal
-      )}, which is over your monthly budget of ${formatRM(monthlyBudget)}.`
+      return `You have spent ${formatRM(selectedMonthTotal)}, which is over your monthly budget of ${formatRM(monthlyBudget)}.`
     }
 
     if (budgetStatus === 'Near Limit') {
-      return `You have used ${budgetUsedPercent}% of your monthly budget. Remaining budget is ${formatRM(
-        remainingBudget
-      )}.`
+      return `You have used ${budgetUsedPercent}% of your monthly budget. Remaining budget is ${formatRM(remainingBudget)}.`
     }
 
-    return `You are within budget. Remaining budget for ${selectedMonth} is ${formatRM(
-      remainingBudget
-    )}.`
+    return `You are within budget. Remaining budget for ${selectedMonth} is ${formatRM(remainingBudget)}.`
   })()
 
   const ruleSuggestions = []
@@ -623,9 +539,7 @@ export default function Expenses() {
     ruleSuggestions.push({
       type: 'warning',
       title: 'Above average monthly spending',
-      text: `This month’s spending is higher than your average monthly spending this year of ${formatRM(
-        avgMonth
-      )}.`,
+      text: `This month’s spending is higher than your average monthly spending this year of ${formatRM(avgMonth)}.`,
     })
   }
 
@@ -658,32 +572,10 @@ export default function Expenses() {
     setExpenseForm(createEmptyExpenseForm())
   }
 
-  const buildExpenseFromForm = id => {
-    const amount = Number(expenseForm.amount)
-    const { dateStr, monthKey } = isoToDisplay(expenseForm.date)
-    const cat = categoryInfo[expenseForm.category] || categoryInfo.Other
-
-    return {
-      id,
-      isoDate: expenseForm.date,
-      month: monthKey,
-      date: dateStr,
-      category: expenseForm.category,
-      desc: expenseForm.desc.trim() || 'No description',
-      amount,
-      color: cat.badge,
-    }
-  }
-
   const validateExpense = () => {
     const amount = Number(expenseForm.amount)
 
-    if (
-      !expenseForm.date ||
-      !expenseForm.amount ||
-      Number.isNaN(amount) ||
-      amount <= 0
-    ) {
+    if (!expenseForm.date || !expenseForm.amount || Number.isNaN(amount) || amount <= 0) {
       alert('Please enter a valid date and amount.')
       return false
     }
@@ -691,48 +583,82 @@ export default function Expenses() {
     return true
   }
 
-  const handleAddExpense = () => {
+  const handleAddExpense = async () => {
     if (!validateExpense()) return
 
-    const newExpense = buildExpenseFromForm(nextExpenseId)
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData?.user
 
-    setExpenses(prev => [newExpense, ...prev])
-    setNextExpenseId(n => n + 1)
-    setSelectedMonth(newExpense.month)
+    if (!user) {
+      alert('Please login first.')
+      return
+    }
+
+    const { error } = await supabase.from('expenses').insert({
+      user_id: user.id,
+      date: expenseForm.date,
+      category: expenseForm.category,
+      description: expenseForm.desc.trim() || null,
+      amount: Number(expenseForm.amount),
+    })
+
+    if (error) {
+      console.log(error)
+      alert('Failed to add expense.')
+      return
+    }
+
+    const { monthKey } = isoToDisplay(expenseForm.date)
+    setSelectedMonth(monthKey)
+
+    await fetchExpenses()
     closeExpenseModal()
   }
 
-  const handleSaveEditExpense = () => {
+  const handleSaveEditExpense = async () => {
     if (!validateExpense()) return
 
-    const updatedExpense = buildExpenseFromForm(editingExpense.id)
+    const { error } = await supabase
+      .from('expenses')
+      .update({
+        date: expenseForm.date,
+        category: expenseForm.category,
+        description: expenseForm.desc.trim() || null,
+        amount: Number(expenseForm.amount),
+      })
+      .eq('id', editingExpense.id)
 
-    setExpenses(prev =>
-      prev.map(expense =>
-        expense.id === editingExpense.id ? updatedExpense : expense
-      )
-    )
+    if (error) {
+      console.log(error)
+      alert('Failed to update expense.')
+      return
+    }
 
-    setSelectedMonth(updatedExpense.month)
+    const { monthKey } = isoToDisplay(expenseForm.date)
+    setSelectedMonth(monthKey)
+
+    await fetchExpenses()
     closeExpenseModal()
   }
 
-  const handleDeleteExpense = () => {
-    setExpenses(prev =>
-      prev.filter(expense => expense.id !== editingExpense.id)
-    )
+  const handleDeleteExpense = async () => {
+    const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', editingExpense.id)
 
+    if (error) {
+      console.log(error)
+      alert('Failed to delete expense.')
+      return
+    }
+
+    await fetchExpenses()
     closeExpenseModal()
   }
 
   const pencilIcon = (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 14 14"
-      fill="none"
-      style={{ color: C.muted, flexShrink: 0 }}
-    >
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: C.muted, flexShrink: 0 }}>
       <path
         d="M9.5 2.5l2 2L4 12H2v-2L9.5 2.5Z"
         stroke="currentColor"
@@ -746,50 +672,32 @@ export default function Expenses() {
   return (
     <div>
       <div className={styles.pageHead}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-          }}
-        >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <div className={styles.pageTitle}>Expense Tracker</div>
-            <div className={styles.pageSub}>
-              Record and monitor all badminton-related spending
-            </div>
+            <div className={styles.pageSub}>Record and monitor all badminton-related spending</div>
           </div>
 
           <button className={styles.btnPrimary} onClick={openAddExpense}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M7 1v12M1 7h12"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
+              <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
             Add Expense
           </button>
         </div>
       </div>
 
+      {loading && (
+        <div className={styles.card} style={{ marginBottom: 16, fontSize: 13, color: C.muted }}>
+          Loading expenses...
+        </div>
+      )}
+
       <div className={styles.g4} style={{ marginBottom: 16 }}>
         <div className={styles.metricHighlight}>
-          <div
-            className={styles.metricIcon}
-            style={{ background: 'rgba(255,255,255,0.12)' }}
-          >
+          <div className={styles.metricIcon} style={{ background: 'rgba(255,255,255,0.12)' }}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <rect
-                x="2"
-                y="4"
-                width="14"
-                height="10"
-                rx="2"
-                stroke="white"
-                strokeWidth="1.5"
-              />
+              <rect x="2" y="4" width="14" height="10" rx="2" stroke="white" strokeWidth="1.5" />
               <path d="M2 8h14" stroke="white" strokeWidth="1.5" />
             </svg>
           </div>
@@ -798,38 +706,16 @@ export default function Expenses() {
             {formatRMNoDecimal(selectedMonthTotal)}
           </div>
 
-          <div
-            className={styles.metricLbl}
-            style={{ color: 'rgba(255,255,255,0.6)' }}
-          >
+          <div className={styles.metricLbl} style={{ color: 'rgba(255,255,255,0.6)' }}>
             {selectedMonth}
           </div>
         </div>
 
         <div className={styles.metric}>
           <div className={styles.metricIcon} style={{ background: '#E8EFFE' }}>
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              style={{ color: '#1A5FFF' }}
-            >
-              <rect
-                x="3"
-                y="3"
-                width="12"
-                height="12"
-                rx="2"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              />
-              <path
-                d="M6 7h6M6 10h4"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ color: '#1A5FFF' }}>
+              <rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M6 7h6M6 10h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </div>
 
@@ -841,12 +727,7 @@ export default function Expenses() {
 
           <button
             className={styles.btnOutline}
-            style={{
-              marginTop: 10,
-              fontSize: 11,
-              padding: '6px 10px',
-              borderRadius: 8,
-            }}
+            style={{ marginTop: 10, fontSize: 11, padding: '6px 10px', borderRadius: 8 }}
             onClick={() => setShowBudgetModal(true)}
           >
             Set Budget
@@ -855,13 +736,7 @@ export default function Expenses() {
 
         <div className={styles.metric}>
           <div className={styles.metricIcon} style={{ background: '#FEF3C7' }}>
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              style={{ color: '#F59E0B' }}
-            >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ color: '#F59E0B' }}>
               <polyline
                 points="2,14 6,8 9,10 12,5 16,7"
                 stroke="currentColor"
@@ -882,20 +757,8 @@ export default function Expenses() {
 
         <div className={styles.metric}>
           <div className={styles.metricIcon} style={{ background: '#E0FAF3' }}>
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              style={{ color: '#00C48C' }}
-            >
-              <path
-                d="M3 10L7 14L15 4"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ color: '#00C48C' }}>
+              <path d="M3 10L7 14L15 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
 
@@ -913,31 +776,16 @@ export default function Expenses() {
             <div className={styles.cardTitle}>By category — {selectedMonth}</div>
 
             {byCategory.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  color: C.muted,
-                  padding: 20,
-                  fontSize: 13,
-                }}
-              >
+              <div style={{ textAlign: 'center', color: C.muted, padding: 20, fontSize: 13 }}>
                 No category breakdown for this month.
               </div>
             ) : (
               byCategory.map((e, i) => (
                 <div key={i} className={styles.expBarRow}>
                   <div className={styles.expBarLbl}>{e.label}</div>
-
                   <div className={styles.expBarTrack}>
-                    <div
-                      className={styles.expBarFill}
-                      style={{
-                        width: `${e.pct}%`,
-                        background: e.color,
-                      }}
-                    />
+                    <div className={styles.expBarFill} style={{ width: `${e.pct}%`, background: e.color }} />
                   </div>
-
                   <div className={styles.expBarVal}>{formatRM(e.val)}</div>
                 </div>
               ))
@@ -945,15 +793,7 @@ export default function Expenses() {
           </div>
 
           <div className={styles.card}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 14,
-                gap: 12,
-              }}
-            >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12 }}>
               <div>
                 <div className={styles.cardTitle} style={{ marginBottom: 0 }}>
                   Expense log — {selectedMonth}
@@ -976,14 +816,7 @@ export default function Expenses() {
             </div>
 
             {filteredExpenses.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  color: C.muted,
-                  padding: 20,
-                  fontSize: 13,
-                }}
-              >
+              <div style={{ textAlign: 'center', color: C.muted, padding: 20, fontSize: 13 }}>
                 No expenses recorded for this month.
               </div>
             ) : (
@@ -992,103 +825,39 @@ export default function Expenses() {
                   key={expense.id}
                   className={styles.listRow}
                   onClick={() => openEditExpense(expense)}
-                  style={{
-                    cursor: 'pointer',
-                    borderRadius: 8,
-                    transition: 'background 0.15s',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.background = C.soft
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.background = 'transparent'
-                  }}
+                  style={{ cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = C.soft }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                 >
-                  <div
-                    style={{
-                      width: 56,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: C.muted,
-                    }}
-                  >
+                  <div style={{ width: 56, fontSize: 11, fontWeight: 700, color: C.muted }}>
                     {expense.date}
                   </div>
 
                   <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        marginBottom: 3,
-                      }}
-                    >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                       <span className={getCategoryBadgeClass(expense.color)}>
                         {expense.category}
                       </span>
 
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: C.text,
-                        }}
-                      >
+                      <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
                         {expense.desc}
                       </span>
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: C.text,
-                      }}
-                    >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
                       {formatRM(expense.amount)}
                     </span>
-
                     {pencilIcon}
                   </div>
                 </div>
               ))
             )}
 
-            <div
-              style={{
-                borderTop: `2px solid ${C.line}`,
-                marginTop: 12,
-                paddingTop: 12,
-                display: 'flex',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 13,
-                  color: C.muted,
-                  fontWeight: 600,
-                }}
-              >
-                Total
-              </span>
-
-              <span
-                style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  color: C.text,
-                }}
-              >
+            <div style={{ borderTop: `2px solid ${C.line}`, marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>Total</span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: C.text }}>
                 {formatRM(selectedMonthTotal)}
               </span>
             </div>
@@ -1098,7 +867,6 @@ export default function Expenses() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className={styles.card}>
             <div className={styles.cardTitle}>Monthly trend</div>
-
             <MonthlyTrendLineChart monthly={monthly} />
 
             {previousMonthName && previousMonthTotal > 0 ? (
@@ -1118,17 +886,7 @@ export default function Expenses() {
                   : `↑ ${savedPercent}% more than previous month — review spending.`}
               </div>
             ) : (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 10,
-                  background: C.soft,
-                  borderRadius: 10,
-                  fontSize: 12,
-                  color: C.muted,
-                  fontWeight: 600,
-                }}
-              >
+              <div style={{ marginTop: 12, padding: 10, background: C.soft, borderRadius: 10, fontSize: 12, color: C.muted, fontWeight: 600 }}>
                 No previous month data available for comparison.
               </div>
             )}
@@ -1160,62 +918,29 @@ export default function Expenses() {
               Budget Alert
             </div>
 
-            <div
-              style={{
-                fontSize: 13,
-                color: C.text,
-                lineHeight: 1.6,
-                fontWeight: 600,
-              }}
-            >
+            <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, fontWeight: 600 }}>
               {budgetAlertMessage}
             </div>
 
             <div style={{ marginTop: 12 }}>
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Budget used</span>
-
-                <span
-                  className={styles.statVal}
-                  style={{
-                    color:
-                      budgetStatus === 'Exceeded'
-                        ? '#EF4444'
-                        : budgetStatus === 'Near Limit'
-                        ? '#F59E0B'
-                        : '#00C48C',
-                  }}
-                >
+                <span className={styles.statVal} style={{ color: budgetStatus === 'Exceeded' ? '#EF4444' : budgetStatus === 'Near Limit' ? '#F59E0B' : '#00C48C' }}>
                   {budgetUsedPercent}%
                 </span>
               </div>
 
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Remaining</span>
-
-                <span
-                  className={styles.statVal}
-                  style={{
-                    color: remainingBudget < 0 ? '#EF4444' : '#00C48C',
-                  }}
-                >
+                <span className={styles.statVal} style={{ color: remainingBudget < 0 ? '#EF4444' : '#00C48C' }}>
                   {formatRM(remainingBudget)}
                 </span>
               </div>
 
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Status</span>
-
                 <span className={styles.statVal}>
-                  <span
-                    className={
-                      budgetStatus === 'Exceeded'
-                        ? styles.badgeRed
-                        : budgetStatus === 'Near Limit'
-                        ? styles.badgeAmber
-                        : styles.badgeGreen
-                    }
-                  >
+                  <span className={budgetStatus === 'Exceeded' ? styles.badgeRed : budgetStatus === 'Near Limit' ? styles.badgeAmber : styles.badgeGreen}>
                     {budgetStatus}
                   </span>
                 </span>
@@ -1223,16 +948,8 @@ export default function Expenses() {
             </div>
 
             {highestCategory && (
-              <div
-                style={{
-                  marginTop: 10,
-                  fontSize: 12,
-                  color: C.muted,
-                  fontWeight: 600,
-                }}
-              >
-                Highest category: {highestCategory.label} —{' '}
-                {formatRM(highestCategory.val)} ({highestCategory.pct}%)
+              <div style={{ marginTop: 10, fontSize: 12, color: C.muted, fontWeight: 600 }}>
+                Highest category: {highestCategory.label} — {formatRM(highestCategory.val)} ({highestCategory.pct}%)
               </div>
             )}
           </div>
@@ -1269,6 +986,7 @@ export default function Expenses() {
           selectedMonthTotal={selectedMonthTotal}
           budgetUsedPercent={budgetUsedPercent}
           onClose={() => setShowBudgetModal(false)}
+          onSave={saveBudget}
         />
       )}
     </div>

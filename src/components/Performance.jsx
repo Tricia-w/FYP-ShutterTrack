@@ -154,6 +154,7 @@ export default function Performance() {
   const [viewMatch, setViewMatch] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [form, setForm] = useState(emptyForm)
+  const [removeVideo, setRemoveVideo] = useState(false)
   const [skillVals, setSkillVals] = useState(defaultSkills.map(skill => skill.val))
 
   const [partnerSuggestions, setPartnerSuggestions] = useState([])
@@ -213,26 +214,23 @@ export default function Performance() {
       const currentProfileId = await getOrCreateProfile(authUser)
       setProfileId(currentProfileId)
 
-      const [matchRes, ratingRes] = await Promise.all([
-        supabase
-          .from('player_matches')
-          .select('*')
-          .eq('player_id', currentProfileId)
-          .order('match_date', { ascending: false })
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('player_skill_ratings')
-          .select('*')
-          .eq('player_id', currentProfileId)
-          .maybeSingle(),
-      ])
+      const { data: matchRows, error: matchError } = await supabase
+        .from('player_matches')
+        .select('*')
+        .eq('player_id', currentProfileId)
+        .order('match_date', { ascending: false })
+        .order('created_at', { ascending: false })
 
-      if (matchRes.error) throw matchRes.error
-      if (ratingRes.error) throw ratingRes.error
+      if (matchError) throw matchError
+      setMatches((matchRows || []).map(mapDbMatch))
 
-      setMatches((matchRes.data || []).map(mapDbMatch))
+      const { data: rating, error: ratingError } = await supabase
+        .from('player_skill_ratings')
+        .select('*')
+        .eq('player_id', currentProfileId)
+        .maybeSingle()
 
-      const rating = ratingRes.data
+      if (ratingError) throw ratingError
 
       if (rating) {
         setHasSkillRecord(true)
@@ -248,6 +246,7 @@ export default function Performance() {
       }
     } catch (error) {
       console.error('Performance load error:', error)
+      alert(error.message || 'Failed to load performance data')
     } finally {
       setIsLoading(false)
     }
@@ -259,6 +258,7 @@ export default function Performance() {
 
   const searchPlayers = async (keyword, setter) => {
     const term = keyword.trim()
+
     if (term.length < 2) {
       setter([])
       return
@@ -267,19 +267,53 @@ export default function Performance() {
     const { data: authData } = await supabase.auth.getUser()
     const currentUserId = authData?.user?.id
 
-    const { data, error } = await supabase
-      .from('player_profiles')
-      .select('id, user_id, display_name, profile_photo_url')
-      .ilike('display_name', `%${term}%`)
-      .limit(6)
+    const [registeredRes, publicRes] = await Promise.all([
+      supabase
+        .from('player_profiles')
+        .select('id, user_id, display_name, profile_photo_url')
+        .ilike('display_name', `%${term}%`)
+        .limit(6),
 
-    if (error) {
-      console.error('Search player error:', error)
-      setter([])
-      return
+      supabase
+        .from('public_players')
+        .select('id, name')
+        .ilike('name', `%${term}%`)
+        .limit(6),
+    ])
+
+    if (registeredRes.error) {
+      console.error('Registered player search error:', registeredRes.error)
     }
 
-    setter((data || []).filter(player => player.user_id !== currentUserId))
+    if (publicRes.error) {
+      console.error('Public player search error:', publicRes.error)
+    }
+
+    const registeredPlayers = (registeredRes.data || [])
+      .filter(player => player.user_id !== currentUserId)
+      .map(player => ({
+        id: `registered-${player.id}`,
+        profileId: player.id,
+        user_id: player.user_id,
+        display_name: player.display_name,
+        profile_photo_url: player.profile_photo_url || '',
+        source: 'Account',
+      }))
+
+    const publicPlayers = (publicRes.data || []).map(player => ({
+      id: `public-${player.id}`,
+      publicId: player.id,
+      user_id: null,
+      display_name: player.name,
+      profile_photo_url: '',
+      source: 'Public player',
+    }))
+
+    const merged = [...registeredPlayers, ...publicPlayers]
+      .filter(player => player.display_name)
+      .slice(0, 8)
+
+    setter(merged)
   }
 
   useEffect(() => {
@@ -385,12 +419,16 @@ export default function Performance() {
 
   const openAdd = () => {
     setEditingId(null)
+    setRemoveVideo(false)
     setForm(emptyForm)
+    if (videoInputRef.current) videoInputRef.current.value = ''
     setShowMatchModal(true)
   }
 
   const openEdit = (match, event) => {
     event.stopPropagation()
+    setRemoveVideo(false)
+    if (videoInputRef.current) videoInputRef.current.value = ''
     setEditingId(match.id)
     setForm({
       type: match.match_type,
@@ -428,6 +466,8 @@ export default function Performance() {
       event.target.value = ''
       return
     }
+
+    setRemoveVideo(false)
 
     setForm(prev => ({
       ...prev,
@@ -478,9 +518,12 @@ export default function Performance() {
       const currentProfileId = profileId || (await getOrCreateProfile(authUser))
       setProfileId(currentProfileId)
 
-      let finalVideoUrl = form.videoUrl || null
-      if (form.videoFile) {
+      let finalVideoUrl = removeVideo ? null : form.videoUrl || null
+      let finalVideoFileName = removeVideo ? null : form.videoFileName || null
+
+      if (!removeVideo && form.videoFile) {
         finalVideoUrl = await uploadMatchVideo(authUser, form.videoFile)
+        finalVideoFileName = form.videoFile.name
       }
 
       const payload = {
@@ -499,7 +542,7 @@ export default function Performance() {
         result: form.result,
         notes: form.notes.trim() || null,
         video_url: finalVideoUrl,
-        video_file_name: form.videoFileName || null,
+        video_file_name: finalVideoFileName,
         updated_at: new Date().toISOString(),
       }
 
@@ -512,7 +555,9 @@ export default function Performance() {
       }
 
       setShowMatchModal(false)
+      setRemoveVideo(false)
       setForm(emptyForm)
+      if (videoInputRef.current) videoInputRef.current.value = ''
       await loadPageData()
     } catch (error) {
       console.error('Save match error:', error)
@@ -597,7 +642,9 @@ export default function Performance() {
               {getInitials(item.display_name)}
             </span>
             <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{item.display_name}</span>
-            <span style={{ fontSize: 11, color: C.muted, marginLeft: 'auto' }}>Account</span>
+            <span style={{ fontSize: 11, color: C.muted, marginLeft: 'auto' }}>
+              {item.source || 'Account'}
+            </span>
           </button>
         ))}
       </div>
@@ -754,11 +801,11 @@ export default function Performance() {
       </div>
 
       {showMatchModal && (
-        <div className={styles.modalOverlay} onClick={event => event.target === event.currentTarget && setShowMatchModal(false)}>
+        <div className={styles.modalOverlay} onClick={event => { if (event.target === event.currentTarget) { setShowMatchModal(false); setRemoveVideo(false); if (videoInputRef.current) videoInputRef.current.value = '' } }}>
           <div className={styles.modal} style={{ maxWidth: 580, maxHeight: '92vh', overflowY: 'auto' }}>
             <div className={styles.modalHead}>
               <div className={styles.modalTitle}>{editingId ? 'Edit Match' : 'Log a match'}</div>
-              <button className={styles.modalClose} onClick={() => setShowMatchModal(false)}>✕</button>
+              <button className={styles.modalClose} onClick={() => { setShowMatchModal(false); setRemoveVideo(false); if (videoInputRef.current) videoInputRef.current.value = '' }}>✕</button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
@@ -888,6 +935,50 @@ export default function Performance() {
             {form.videoUrl && (
               <div className={styles.formRow}>
                 <video src={form.videoUrl} controls style={{ width: '100%', borderRadius: 10, maxHeight: 180, background: '#000' }} />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRemoveVideo(true)
+                    setForm(prev => ({
+                      ...prev,
+                      videoFile: null,
+                      videoUrl: '',
+                      videoFileName: '',
+                    }))
+                    if (videoInputRef.current) videoInputRef.current.value = ''
+                  }}
+                  style={{
+                    marginTop: 9,
+                    border: 'none',
+                    background: '#FEE2E2',
+                    color: '#DC2626',
+                    borderRadius: 9,
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Remove video
+                </button>
+              </div>
+            )}
+
+            {removeVideo && (
+              <div
+                style={{
+                  marginTop: -4,
+                  marginBottom: 14,
+                  padding: '9px 12px',
+                  borderRadius: 10,
+                  background: '#FFF7ED',
+                  color: '#C2410C',
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                Video will be removed after you save this match.
               </div>
             )}
 
@@ -897,7 +988,7 @@ export default function Performance() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
-              <button className={styles.btnOutline} onClick={() => setShowMatchModal(false)}>Cancel</button>
+              <button className={styles.btnOutline} onClick={() => { setShowMatchModal(false); setRemoveVideo(false); if (videoInputRef.current) videoInputRef.current.value = '' }}>Cancel</button>
               <button className={styles.btnPrimary} onClick={handleSaveMatch} disabled={isSaving}>{isSaving ? 'Saving...' : editingId ? 'Update' : 'Save'}</button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 import styles from './Layout.module.css'
 
 export default function Layout() {
@@ -17,6 +18,29 @@ export default function Layout() {
 
   const avatarKey = `profileAvatar:${user?.id || user?.email || 'default'}`
   const [sidebarAvatar, setSidebarAvatar] = useState('')
+  const [sidebarProfile, setSidebarProfile] = useState(profile || null)
+  const [showAccessDenied, setShowAccessDenied] = useState(false)
+
+  useEffect(() => {
+    setSidebarProfile(profile || null)
+  }, [profile])
+
+  useEffect(() => {
+    const handleProfileUpdated = (event) => {
+      if (event?.detail) {
+        setSidebarProfile(prev => ({
+          ...(prev || {}),
+          ...event.detail,
+        }))
+      }
+    }
+
+    window.addEventListener('profile-updated', handleProfileUpdated)
+
+    return () => {
+      window.removeEventListener('profile-updated', handleProfileUpdated)
+    }
+  }, [])
 
   useEffect(() => {
     if (location.pathname.startsWith('/coach')) {
@@ -41,26 +65,83 @@ export default function Layout() {
     }
   }, [avatarKey])
 
-  const handleLogout = () => {
-    logout()
-    navigate('/')
-  }
+  const activeProfile = sidebarProfile || profile || {}
+
+  const displayName =
+    activeProfile?.display_name ||
+    activeProfile?.full_name ||
+    activeProfile?.name ||
+    user?.user_metadata?.display_name ||
+    user?.user_metadata?.full_name ||
+    user?.name ||
+    user?.email?.split('@')[0] ||
+    'Player'
+
+  const clubName =
+    activeProfile?.club ||
+    activeProfile?.club_name ||
+    user?.user_metadata?.club ||
+    user?.club ||
+    'Club'
 
   const initials =
-    user?.name
+    displayName
       ?.split(' ')
+      .filter(Boolean)
       .map(w => w[0])
       .join('')
       .toUpperCase()
       .slice(0, 2) || 'PL'
 
-  const switchMode = (m) => {
-    setMode(m)
+  const handleLogout = () => {
+    logout()
+    navigate('/')
+  }
 
-    if (m === 'coach') {
+  const switchMode = async (selectedMode) => {
+    if (selectedMode === 'coach') {
+      setMode('coach')
       navigate('/coach')
-    } else {
+      return
+    }
+
+    try {
+      const {
+        data: { user: currentUser },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError) throw userError
+
+      if (!currentUser) {
+        navigate('/')
+        return
+      }
+
+      const { data: playerProfile, error: profileError } = await supabase
+        .from('player_profiles')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .maybeSingle()
+
+      if (profileError) throw profileError
+
+      if (!playerProfile) {
+        setShowAccessDenied(true)
+        setMode('coach')
+        navigate('/coach')
+        return
+      }
+
+      setMode('player')
       navigate('/dashboard')
+    } catch (error) {
+      console.error('Error checking player profile:', error)
+
+      setShowAccessDenied(true)
+
+      setMode('coach')
+      navigate('/coach')
     }
   }
 
@@ -170,6 +251,29 @@ export default function Layout() {
               </svg>
               Progress
             </NavLink>
+
+            <div className={styles.navLabel} style={{ marginTop: 14 }}>
+              Account
+            </div>
+
+            <NavLink to="/coach/profile" className={navClass}>
+              <svg viewBox="0 0 16 16" fill="none" width="16" height="16">
+                <circle
+                  cx="8"
+                  cy="5"
+                  r="3"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              My Profile
+            </NavLink>
           </nav>
         )}
 
@@ -275,10 +379,10 @@ export default function Layout() {
           </div>
 
           <div>
-            <div className={styles.userName}>{user?.name || 'Player'}</div>
+            <div className={styles.userName}>{displayName}</div>
 
             <div className={styles.userRole}>
-              {isCoach ? 'Coach' : 'Player'} · {profile?.club || user?.club || 'Club'}
+              {isCoach ? 'Coach' : 'Player'} · {clubName}
             </div>
           </div>
         </div>
@@ -303,6 +407,98 @@ export default function Layout() {
       <main className={styles.main}>
         <Outlet />
       </main>
+
+      {showAccessDenied && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="player-access-title"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowAccessDenied(false)
+            }
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 420,
+              background: '#ffffff',
+              borderRadius: 18,
+              padding: 28,
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.2)',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: '50%',
+                background: '#FEF2F2',
+                color: '#DC2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                fontSize: 28,
+              }}
+            >
+              🔒
+            </div>
+
+            <h2
+              id="player-access-title"
+              style={{
+                margin: '0 0 10px',
+                color: '#0D1B3E',
+                fontSize: 22,
+              }}
+            >
+              Player access unavailable
+            </h2>
+
+            <p
+              style={{
+                margin: '0 0 22px',
+                color: '#64748B',
+                fontSize: 14,
+                lineHeight: 1.6,
+              }}
+            >
+              This account does not have a player profile, so Player Mode cannot be opened.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setShowAccessDenied(false)}
+              style={{
+                width: '100%',
+                padding: '11px 16px',
+                border: 'none',
+                borderRadius: 10,
+                background: '#1A5FFF',
+                color: '#ffffff',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Back to Coach Mode
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

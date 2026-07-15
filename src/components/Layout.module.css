@@ -193,7 +193,107 @@
   min-width: 0;
 }
 
-/* MOBILE FIX */
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.notificationWrap {
+  position: relative;
+}
+
+.notificationBtn {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid var(--gray-light);
+  background: var(--white);
+  cursor: pointer;
+  font-size: 18px;
+  position: relative;
+}
+
+.notificationBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: var(--red);
+  color: white;
+  border-radius: 999px;
+  min-width: 18px;
+  height: 18px;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notificationPanel {
+  position: absolute;
+  right: 0;
+  top: 50px;
+  width: 320px;
+  background: var(--white);
+  border: 1px solid var(--gray-light);
+  border-radius: 16px;
+  box-shadow: 0 18px 45px rgba(13, 27, 62, 0.14);
+  padding: 12px;
+  z-index: 999;
+}
+
+.notificationTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.notificationEmpty {
+  font-size: 13px;
+  color: var(--gray);
+  padding: 18px;
+  text-align: center;
+}
+
+.notificationItem {
+  padding: 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  margin-bottom: 8px;
+}
+
+.notificationItem:hover {
+  background: var(--off);
+}
+
+.notificationUnread {
+  background: var(--blue-light);
+  border-color: #c7d8ff;
+}
+
+.notificationItemTitle {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.notificationMessage {
+  font-size: 12px;
+  color: var(--gray);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.notificationTime {
+  font-size: 10px;
+  color: var(--gray);
+  margin-top: 5px;
+}
+
 @media (max-width: 768px) {
   .app {
     display: block;
@@ -272,6 +372,15 @@
     box-sizing: border-box;
     overflow-x: hidden;
   }
+
+  .topBar {
+    margin-bottom: 12px;
+  }
+
+  .notificationPanel {
+    right: 0;
+    width: 290px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -282,5 +391,9 @@
   .navItem {
     font-size: 11px;
     padding: 8px 10px;
+  }
+
+  .notificationPanel {
+    width: 270px;
   }
 }

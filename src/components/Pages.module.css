@@ -1232,3 +1232,432 @@
     padding: 3px 8px;
   }
 }
+/* =========================
+   FINAL DARK MODE FIXES
+   Supports: html[data-theme='dark'], body.dark, .dark
+========================= */
+:global(html[data-theme='dark']),
+:global(body.dark),
+:global(.dark) {
+  --bg: #0b1220;
+  --card: #111c33;
+  --soft: #16233d;
+  --input: #0f1a30;
+  --line: #263754;
+  --text: #ffffff;
+  --text-muted: #aab7d4;
+  --text-soft: #cbd5e1;
+}
+
+:global(html[data-theme='dark']) .pageTitle,
+:global(body.dark) .pageTitle,
+:global(.dark) .pageTitle,
+:global(html[data-theme='dark']) .modalTitle,
+:global(body.dark) .modalTitle,
+:global(.dark) .modalTitle,
+:global(html[data-theme='dark']) .metricVal,
+:global(body.dark) .metricVal,
+:global(.dark) .metricVal,
+:global(html[data-theme='dark']) .statVal,
+:global(body.dark) .statVal,
+:global(.dark) .statVal,
+:global(html[data-theme='dark']) .skillVal,
+:global(body.dark) .skillVal,
+:global(.dark) .skillVal,
+:global(html[data-theme='dark']) .expBarVal,
+:global(body.dark) .expBarVal,
+:global(.dark) .expBarVal,
+:global(html[data-theme='dark']) .psrVal,
+:global(body.dark) .psrVal,
+:global(.dark) .psrVal {
+  color: var(--text) !important;
+}
+
+:global(html[data-theme='dark']) .pageSub,
+:global(body.dark) .pageSub,
+:global(.dark) .pageSub,
+:global(html[data-theme='dark']) .cardTitle,
+:global(body.dark) .cardTitle,
+:global(.dark) .cardTitle,
+:global(html[data-theme='dark']) .statLabel,
+:global(body.dark) .statLabel,
+:global(.dark) .statLabel,
+:global(html[data-theme='dark']) .formLabel,
+:global(body.dark) .formLabel,
+:global(.dark) .formLabel,
+:global(html[data-theme='dark']) .metricLbl,
+:global(body.dark) .metricLbl,
+:global(.dark) .metricLbl,
+:global(html[data-theme='dark']) .skillLbl,
+:global(body.dark) .skillLbl,
+:global(.dark) .skillLbl,
+:global(html[data-theme='dark']) .expBarLbl,
+:global(body.dark) .expBarLbl,
+:global(.dark) .expBarLbl,
+:global(html[data-theme='dark']) .psrLabel,
+:global(body.dark) .psrLabel,
+:global(.dark) .psrLabel,
+:global(html[data-theme='dark']) .h2hLbl,
+:global(body.dark) .h2hLbl,
+:global(.dark) .h2hLbl,
+:global(html[data-theme='dark']) .scoreSetLabel,
+:global(body.dark) .scoreSetLabel,
+:global(.dark) .scoreSetLabel,
+:global(html[data-theme='dark']) .scheduleDateMon,
+:global(body.dark) .scheduleDateMon,
+:global(.dark) .scheduleDateMon {
+  color: var(--text-muted) !important;
+}
+
+:global(html[data-theme='dark']) .card,
+:global(body.dark) .card,
+:global(.dark) .card,
+:global(html[data-theme='dark']) .metric,
+:global(body.dark) .metric,
+:global(.dark) .metric,
+:global(html[data-theme='dark']) .modal,
+:global(body.dark) .modal,
+:global(.dark) .modal,
+:global(html[data-theme='dark']) .tabActive,
+:global(body.dark) .tabActive,
+:global(.dark) .tabActive {
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+
+:global(html[data-theme='dark']) .metricHighlight,
+:global(body.dark) .metricHighlight,
+:global(.dark) .metricHighlight {
+  background: linear-gradient(135deg, #13213b 0%, #172744 100%) !important;
+  border: 1px solid var(--line) !important;
+}
+
+:global(html[data-theme='dark']) .listRow,
+:global(body.dark) .listRow,
+:global(.dark) .listRow,
+:global(html[data-theme='dark']) .statRow,
+:global(body.dark) .statRow,
+:global(.dark) .statRow,
+:global(html[data-theme='dark']) .injuryRow,
+:global(body.dark) .injuryRow,
+:global(.dark) .injuryRow,
+:global(html[data-theme='dark']) .table td,
+:global(body.dark) .table td,
+:global(.dark) .table td,
+:global(html[data-theme='dark']) .table th,
+:global(body.dark) .table th,
+:global(.dark) .table th {
+  border-bottom-color: var(--line) !important;
+}
+
+:global(html[data-theme='dark']) .formInput,
+:global(body.dark) .formInput,
+:global(.dark) .formInput,
+:global(html[data-theme='dark']) .formSelect,
+:global(body.dark) .formSelect,
+:global(.dark) .formSelect,
+:global(html[data-theme='dark']) .formTextarea,
+:global(body.dark) .formTextarea,
+:global(.dark) .formTextarea {
+  background: var(--input) !important;
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+}
+
+:global(html[data-theme='dark']) .formInput::placeholder,
+:global(body.dark) .formInput::placeholder,
+:global(.dark) .formInput::placeholder,
+:global(html[data-theme='dark']) .formTextarea::placeholder,
+:global(body.dark) .formTextarea::placeholder,
+:global(.dark) .formTextarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+:global(html[data-theme='dark']) .formInput[type='date'],
+:global(body.dark) .formInput[type='date'],
+:global(.dark) .formInput[type='date'] {
+  color-scheme: dark;
+}
+
+:global(html[data-theme='dark']) .btnOutline,
+:global(body.dark) .btnOutline,
+:global(.dark) .btnOutline,
+:global(html[data-theme='dark']) .btnIcon,
+:global(body.dark) .btnIcon,
+:global(.dark) .btnIcon,
+:global(html[data-theme='dark']) .btnIconRed,
+:global(body.dark) .btnIconRed,
+:global(.dark) .btnIconRed,
+:global(html[data-theme='dark']) .videoAttachBtn,
+:global(body.dark) .videoAttachBtn,
+:global(.dark) .videoAttachBtn {
+  background: transparent !important;
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+}
+
+:global(html[data-theme='dark']) .btnOutline:hover,
+:global(body.dark) .btnOutline:hover,
+:global(.dark) .btnOutline:hover {
+  color: #60a5fa !important;
+  border-color: #60a5fa !important;
+  background: rgba(96, 165, 250, 0.08) !important;
+}
+
+:global(html[data-theme='dark']) .skillTrack,
+:global(body.dark) .skillTrack,
+:global(.dark) .skillTrack,
+:global(html[data-theme='dark']) .expBarTrack,
+:global(body.dark) .expBarTrack,
+:global(.dark) .expBarTrack,
+:global(html[data-theme='dark']) .tabs,
+:global(body.dark) .tabs,
+:global(.dark) .tabs,
+:global(html[data-theme='dark']) .modalClose,
+:global(body.dark) .modalClose,
+:global(.dark) .modalClose,
+:global(html[data-theme='dark']) .spinner,
+:global(body.dark) .spinner,
+:global(.dark) .spinner,
+:global(html[data-theme='dark']) .videoUploadArea,
+:global(body.dark) .videoUploadArea,
+:global(.dark) .videoUploadArea,
+:global(html[data-theme='dark']) .psr,
+:global(body.dark) .psr,
+:global(.dark) .psr,
+:global(html[data-theme='dark']) .h2hBox {
+  background: var(--soft) !important;
+  border-color: var(--line) !important;
+}
+
+:global(html[data-theme='dark']) .table th,
+:global(body.dark) .table th,
+:global(.dark) .table th,
+:global(html[data-theme='dark']) .table tbody tr:hover,
+:global(body.dark) .table tbody tr:hover,
+:global(.dark) .table tbody tr:hover {
+  background: var(--soft) !important;
+  color: var(--text-muted) !important;
+}
+
+:global(html[data-theme='dark']) .deltaUp,
+:global(body.dark) .deltaUp,
+:global(.dark) .deltaUp {
+  color: #34d399 !important;
+}
+
+:global(html[data-theme='dark']) .deltaDown,
+:global(body.dark) .deltaDown,
+:global(.dark) .deltaDown {
+  color: #fca5a5 !important;
+}
+
+:global(html[data-theme='dark']) .tip,
+:global(body.dark) .tip,
+:global(.dark) .tip {
+  background: #13213b !important;
+  color: var(--text) !important;
+  border-left-color: #60a5fa !important;
+}
+
+:global(html[data-theme='dark']) .tipStrong,
+:global(body.dark) .tipStrong,
+:global(.dark) .tipStrong {
+  color: #60a5fa !important;
+}
+
+:global(html[data-theme='dark']) .alertWarning,
+:global(body.dark) .alertWarning,
+:global(.dark) .alertWarning {
+  background: #3a2a0a !important;
+  border-color: #f59e0b !important;
+  color: #fbbf24 !important;
+}
+
+:global(html[data-theme='dark']) .alertSuccess,
+:global(body.dark) .alertSuccess,
+:global(.dark) .alertSuccess {
+  background: #062e24 !important;
+  color: #34d399 !important;
+}
+
+:global(html[data-theme='dark']) .av,
+:global(body.dark) .av,
+:global(.dark) .av {
+  background: #13213b !important;
+  color: #60a5fa !important;
+}
+
+:global(html[data-theme='dark']) .badgeBlue,
+:global(body.dark) .badgeBlue,
+:global(.dark) .badgeBlue {
+  background: #13213b !important;
+  color: #60a5fa !important;
+}
+
+:global(html[data-theme='dark']) .badgeGreen,
+:global(body.dark) .badgeGreen,
+:global(.dark) .badgeGreen {
+  background: #062e24 !important;
+  color: #34d399 !important;
+}
+
+:global(html[data-theme='dark']) .badgeRed,
+:global(body.dark) .badgeRed,
+:global(.dark) .badgeRed {
+  background: #3b1111 !important;
+  color: #fca5a5 !important;
+}
+
+:global(html[data-theme='dark']) .badgeAmber,
+:global(body.dark) .badgeAmber,
+:global(.dark) .badgeAmber {
+  background: #3a2a0a !important;
+  color: #fbbf24 !important;
+}
+
+:global(html[data-theme='dark']) .badgePurple,
+:global(body.dark) .badgePurple,
+:global(.dark) .badgePurple {
+  background: #2e1065 !important;
+  color: #c4b5fd !important;
+}
+
+:global(html[data-theme='dark']) .badgeGray,
+:global(body.dark) .badgeGray,
+:global(.dark) .badgeGray {
+  background: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+:global(html[data-theme='dark']) .badgeNavy,
+:global(body.dark) .badgeNavy,
+:global(.dark) .badgeNavy {
+  background: #e5e7eb !important;
+  color: #0d1b3e !important;
+}
+
+/* For Fitness.js text that uses inline color: '#0D1B3E' */
+.recoveryText {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0D1B3E;
+  line-height: 1.5;
+}
+
+:global(html[data-theme='dark']) .recoveryText,
+:global(body.dark) .recoveryText,
+:global(.dark) .recoveryText {
+  color: var(--text) !important;
+}
+
+:global(html[data-theme='dark']) .card [style*='color: #0D1B3E'],
+:global(body.dark) .card [style*='color: #0D1B3E'],
+:global(.dark) .card [style*='color: #0D1B3E'],
+:global(html[data-theme='dark']) .card [style*='color:#0D1B3E'],
+:global(body.dark) .card [style*='color:#0D1B3E'],
+:global(.dark) .card [style*='color:#0D1B3E'],
+:global(html[data-theme='dark']) .card [style*='color: rgb(13, 27, 62)'],
+:global(body.dark) .card [style*='color: rgb(13, 27, 62)'],
+:global(.dark) .card [style*='color: rgb(13, 27, 62)'] {
+  color: var(--text) !important;
+}
+
+:global(html[data-theme='dark']) .card [style*='color: #8892A4'],
+:global(body.dark) .card [style*='color: #8892A4'],
+:global(.dark) .card [style*='color: #8892A4'],
+:global(html[data-theme='dark']) .card [style*='color:#8892A4'],
+:global(body.dark) .card [style*='color:#8892A4'],
+:global(.dark) .card [style*='color:#8892A4'],
+:global(html[data-theme='dark']) .card [style*='color: rgb(136, 146, 164)'],
+:global(body.dark) .card [style*='color: rgb(136, 146, 164)'],
+:global(.dark) .card [style*='color: rgb(136, 146, 164)'] {
+  color: var(--text-muted) !important;
+}
+
+:global(html[data-theme='dark']) .card [style*='background: #F7F9FF'],
+:global(body.dark) .card [style*='background: #F7F9FF'],
+:global(.dark) .card [style*='background: #F7F9FF'],
+:global(html[data-theme='dark']) .card [style*='background:#F7F9FF'],
+:global(body.dark) .card [style*='background:#F7F9FF'],
+:global(.dark) .card [style*='background:#F7F9FF'],
+:global(html[data-theme='dark']) .card [style*='background: rgb(247, 249, 255)'],
+:global(body.dark) .card [style*='background: rgb(247, 249, 255)'],
+:global(.dark) .card [style*='background: rgb(247, 249, 255)'] {
+  background: var(--soft) !important;
+}
+
+/* ===== FINAL FITNESS DARK MODE FIX ===== */
+
+:global(html[data-theme='dark']) .metric,
+:global(body.dark) .metric,
+:global(.dark) .metric {
+  background: #111c33 !important;
+  border: 1px solid #263754 !important;
+}
+
+:global(html[data-theme='dark']) .metricVal,
+:global(body.dark) .metricVal,
+:global(.dark) .metricVal {
+  color: #ffffff !important;
+}
+
+:global(html[data-theme='dark']) .metricVal span,
+:global(body.dark) .metricVal span,
+:global(.dark) .metricVal span {
+  color: #ffffff !important;
+}
+
+:global(html[data-theme='dark']) .metricLbl,
+:global(body.dark) .metricLbl,
+:global(.dark) .metricLbl {
+  color: #b7c4df !important;
+}
+
+:global(html[data-theme='dark']) .metric svg text,
+:global(body.dark) .metric svg text,
+:global(.dark) .metric svg text {
+  fill: #ffffff !important;
+}
+
+:global(html[data-theme='dark']) .metric svg circle:first-child,
+:global(body.dark) .metric svg circle:first-child,
+:global(.dark) .metric svg circle:first-child {
+  stroke: #34445f !important;
+}
+
+:global(html[data-theme='dark']) .deltaUp,
+:global(body.dark) .deltaUp,
+:global(.dark) .deltaUp {
+  color: #34d399 !important;
+}
+
+:global(html[data-theme='dark']) .metric .metricIcon,
+:global(body.dark) .metric .metricIcon,
+:global(.dark) .metric .metricIcon {
+  background: #22314d !important;
+  color: #e5edff !important;
+}
+
+:global(html[data-theme='dark']) .metric .metricIcon svg,
+:global(body.dark) .metric .metricIcon svg,
+:global(.dark) .metric .metricIcon svg {
+  color: #e5edff !important;
+}
+
+:global(html[data-theme='dark']) .metric .metricIcon svg path,
+:global(html[data-theme='dark']) .metric .metricIcon svg circle,
+:global(body.dark) .metric .metricIcon svg path,
+:global(body.dark) .metric .metricIcon svg circle,
+:global(.dark) .metric .metricIcon svg path,
+:global(.dark) .metric .metricIcon svg circle {
+  stroke: #e5edff !important;
+}
+
+:global(html[data-theme='dark']) .metric .metricIcon svg text,
+:global(body.dark) .metric .metricIcon svg text,
+:global(.dark) .metric .metricIcon svg text {
+  fill: #e5edff !important;
+}

@@ -47,15 +47,19 @@ function PasswordChecklist({ password }) {
       <p style={itemStyle(checks.length)}>
         {checks.length ? '✓' : '•'} At least 8 characters
       </p>
+
       <p style={itemStyle(checks.uppercase)}>
         {checks.uppercase ? '✓' : '•'} One uppercase letter
       </p>
+
       <p style={itemStyle(checks.lowercase)}>
         {checks.lowercase ? '✓' : '•'} One lowercase letter
       </p>
+
       <p style={itemStyle(checks.number)}>
         {checks.number ? '✓' : '•'} One number
       </p>
+
       <p style={itemStyle(checks.symbol)}>
         {checks.symbol ? '✓' : '•'} One symbol
       </p>
@@ -63,9 +67,71 @@ function PasswordChecklist({ password }) {
   )
 }
 
+function EyeIcon({ hidden }) {
+  if (hidden) {
+    return (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+        <line x1="1" y1="1" x2="23" y2="23" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48">
+      <path
+        fill="#FFC107"
+        d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 20-8 20-20 0-1.3-.1-2.7-.4-4z"
+      />
+
+      <path
+        fill="#FF3D00"
+        d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"
+      />
+
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.6-2.9-11.3-7.1l-6.5 5C9.7 39.8 16.4 44 24 44z"
+      />
+
+      <path
+        fill="#1976D2"
+        d="M43.6 20H24v8h11.3c-.9 2.4-2.5 4.4-4.6 5.8l6.2 5.2C40.8 35.7 44 30.3 44 24c0-1.3-.1-2.7-.4-4z"
+      />
+    </svg>
+  )
+}
+
 export default function Register() {
+  const navigate = useNavigate()
+
   const [step, setStep] = useState(1)
   const [role, setRole] = useState('')
+
   const [form, setForm] = useState({
     name: '',
     username: '',
@@ -75,18 +141,11 @@ export default function Register() {
   })
 
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-
-  const navigate = useNavigate()
-
-  const set = (key) => (e) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: e.target.value,
-    }))
-  }
 
   const ROLES = [
     {
@@ -94,7 +153,14 @@ export default function Register() {
       label: 'Player',
       desc: 'Track your own performance, fitness, setup and progress.',
       icon: (
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <svg
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
           <circle cx="12" cy="8" r="5" />
           <path d="M3 21c0-5 4-8 9-8s9 3 9 8" />
         </svg>
@@ -103,9 +169,16 @@ export default function Register() {
     {
       key: 'coach',
       label: 'Coach',
-      desc: 'Access coach tools and manage badminton players later.',
+      desc: 'Access coach tools and manage badminton players.',
       icon: (
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <svg
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
           <circle cx="9" cy="7" r="4" />
           <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
@@ -115,20 +188,74 @@ export default function Register() {
     },
   ]
 
-  async function handleGoogle() {
-    setError('Google signup will be connected after email signup and setup are working.')
+  const set = (key) => (event) => {
+    setForm((previous) => ({
+      ...previous,
+      [key]: event.target.value,
+    }))
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function handleGoogle() {
     setError('')
+    setSuccess('')
+
+    if (!role) {
+      setError('Please select your role first.')
+      return
+    }
+
+    setGoogleLoading(true)
+
+    try {
+      sessionStorage.setItem('googleAuthMode', 'register')
+      sessionStorage.setItem('googleSelectedRole', role)
+
+      const { error: googleError } =
+        await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: `${window.location.origin}/auth/callback`,
+          },
+        })
+
+      if (googleError) {
+        throw googleError
+      }
+    } catch (err) {
+      console.error('Google signup error:', err)
+
+      sessionStorage.removeItem('googleAuthMode')
+      sessionStorage.removeItem('googleSelectedRole')
+
+      setError(
+        err.message || 'Unable to sign up with Google.',
+      )
+
+      setGoogleLoading(false)
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+
+    setError('')
+    setSuccess('')
 
     if (!role) {
       setError('Please select your role.')
       return
     }
 
-    if (!form.name || !form.email || !form.password || !form.confirm) {
+    const cleanName = form.name.trim()
+    const cleanUsername = form.username.trim()
+    const cleanEmail = form.email.trim().toLowerCase()
+
+    if (
+      !cleanName ||
+      !cleanEmail ||
+      !form.password ||
+      !form.confirm
+    ) {
       setError('Please fill in all required fields.')
       return
     }
@@ -145,89 +272,232 @@ export default function Register() {
       return
     }
 
-    try {
-      setLoading(true)
+    setLoading(true)
 
-      const { data, error: signupError } = await supabase.auth.signUp({
-        email: form.email,
-        password: form.password,
-        options: {
-          data: {
-            role,
-            full_name: form.name,
-            username: form.username,
+    try {
+      const { data, error: signupError } =
+        await supabase.auth.signUp({
+          email: cleanEmail,
+          password: form.password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/login`,
+            data: {
+              role,
+              full_name: cleanName,
+              username: cleanUsername,
+            },
           },
-        },
-      })
+        })
 
       if (signupError) {
-        setError(signupError.message)
-        setLoading(false)
-        return
+        throw signupError
       }
 
-      if (!data?.session && data?.user) {
-        setError('Account created. Please check your email to confirm your account, then login.')
-        setLoading(false)
+      const user = data?.user
+      const session = data?.session
+
+      if (!user?.id) {
+        throw new Error(
+          'Account could not be created. Please try again.',
+        )
+      }
+
+      /*
+        When Confirm Email is enabled, Supabase normally returns a user
+        without a session. The database trigger should create app_users,
+        or the record can be created after the user confirms and logs in.
+      */
+      if (!session) {
+        setSuccess(
+          'Account created. Please check your email and confirm your account before logging in.',
+        )
+
+        setForm({
+          name: '',
+          username: '',
+          email: '',
+          password: '',
+          confirm: '',
+        })
 
         setTimeout(() => {
-          navigate('/')
-        }, 1500)
+          navigate('/login', { replace: true })
+        }, 2500)
 
         return
       }
 
-      setLoading(false)
+      /*
+        This handles projects where Confirm Email is disabled.
+        Check whether app_users already exists before creating it.
+      */
+      const { data: existingAppUser, error: appUserError } =
+        await supabase
+          .from('app_users')
+          .select('user_id, role, setup_completed')
+          .eq('user_id', user.id)
+          .maybeSingle()
 
-      if (role === 'coach') {
-        navigate('/coach', { replace: true })
-      } else {
-        navigate('/setup', { replace: true })
+      if (appUserError) {
+        throw appUserError
       }
+
+      let appUser = existingAppUser
+
+      if (!appUser) {
+        const { data: createdAppUser, error: createError } =
+          await supabase
+            .from('app_users')
+            .insert({
+              user_id: user.id,
+              role,
+              setup_completed: role === 'coach',
+            })
+            .select('user_id, role, setup_completed')
+            .single()
+
+        if (createError) {
+          throw createError
+        }
+
+        appUser = createdAppUser
+      }
+
+      if (appUser.role === 'coach') {
+        navigate('/coach', { replace: true })
+        return
+      }
+
+      if (!appUser.setup_completed) {
+        navigate('/setup', { replace: true })
+        return
+      }
+
+      navigate('/dashboard', { replace: true })
     } catch (err) {
-      setError(err.message || 'Something went wrong.')
+      console.error('Registration error:', err)
+
+      setError(
+        err.message || 'Something went wrong during registration.',
+      )
+    } finally {
       setLoading(false)
     }
+  }
+
+  function handleContinueRole() {
+    if (!role) {
+      setError('Please select your role.')
+      return
+    }
+
+    setError('')
+    setSuccess('')
+    setStep(2)
   }
 
   if (step === 1) {
     return (
       <div className={styles.screen}>
-        <div className={styles.box} style={{ maxWidth: 520 }}>
+        <div
+          className={styles.box}
+          style={{ maxWidth: 520 }}
+        >
           <div className={styles.logo}>
             <div className={styles.logoMark}>
-              <svg viewBox="0 0 20 20" fill="none" width="18" height="18">
-                <circle cx="10" cy="10" r="8" stroke="white" strokeWidth="1.5" />
-                <path d="M6 10 Q10 4 14 10 Q10 16 6 10Z" fill="white" opacity="0.8" />
-                <circle cx="10" cy="10" r="2" fill="white" />
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                width="18"
+                height="18"
+              >
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="8"
+                  stroke="white"
+                  strokeWidth="1.5"
+                />
+
+                <path
+                  d="M6 10 Q10 4 14 10 Q10 16 6 10Z"
+                  fill="white"
+                  opacity="0.8"
+                />
+
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="2"
+                  fill="white"
+                />
               </svg>
             </div>
-            <span className={styles.logoName}>ShuttleTrack</span>
+
+            <span className={styles.logoName}>
+              ShuttleTrack
+            </span>
           </div>
 
           <h1 className={styles.title}>I am a...</h1>
-          <p className={styles.sub}>Choose your role to get started</p>
 
-          {error && <div className={styles.error}>{error}</div>}
+          <p className={styles.sub}>
+            Choose your role to get started
+          </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
-            {ROLES.map((r) => (
-              <div
-                key={r.key}
+          {error && (
+            <div className={styles.error}>{error}</div>
+          )}
+
+          {success && (
+            <div
+              style={{
+                background: '#10251C',
+                color: '#34D399',
+                fontSize: 13,
+                padding: '10px 14px',
+                borderRadius: 10,
+                marginBottom: 16,
+              }}
+            >
+              {success}
+            </div>
+          )}
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              marginBottom: 24,
+            }}
+          >
+            {ROLES.map((roleOption) => (
+              <button
+                key={roleOption.key}
+                type="button"
                 onClick={() => {
-                  setRole(r.key)
+                  setRole(roleOption.key)
                   setError('')
                 }}
                 style={{
+                  width: '100%',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 16,
                   padding: '16px 18px',
                   borderRadius: 14,
                   cursor: 'pointer',
-                  border: role === r.key ? '2px solid #1A5FFF' : '1.5px solid #2A3147',
-                  background: role === r.key ? 'rgba(26,95,255,0.08)' : 'transparent',
+                  border:
+                    role === roleOption.key
+                      ? '2px solid #1A5FFF'
+                      : '1.5px solid #2A3147',
+                  background:
+                    role === roleOption.key
+                      ? 'rgba(26,95,255,0.08)'
+                      : 'transparent',
                   transition: 'all 0.15s',
+                  textAlign: 'left',
                 }}
               >
                 <div
@@ -236,23 +506,43 @@ export default function Register() {
                     height: 52,
                     borderRadius: 12,
                     flexShrink: 0,
-                    background: role === r.key ? '#1A5FFF' : '#1E2535',
-                    color: role === r.key ? '#fff' : '#8892A4',
+                    background:
+                      role === roleOption.key
+                        ? '#1A5FFF'
+                        : '#1E2535',
+                    color:
+                      role === roleOption.key
+                        ? '#FFFFFF'
+                        : '#8892A4',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     transition: 'all 0.15s',
                   }}
                 >
-                  {r.icon}
+                  {roleOption.icon}
                 </div>
 
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 3 }}>
-                    {r.label}
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: '#FFFFFF',
+                      marginBottom: 3,
+                    }}
+                  >
+                    {roleOption.label}
                   </div>
-                  <div style={{ fontSize: 12, color: '#8892A4', lineHeight: 1.5 }}>
-                    {r.desc}
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: '#8892A4',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {roleOption.desc}
                   </div>
                 </div>
 
@@ -262,19 +552,30 @@ export default function Register() {
                     height: 20,
                     borderRadius: '50%',
                     flexShrink: 0,
-                    border: role === r.key ? 'none' : '2px solid #3A4460',
-                    background: role === r.key ? '#1A5FFF' : 'transparent',
+                    border:
+                      role === roleOption.key
+                        ? 'none'
+                        : '2px solid #3A4460',
+                    background:
+                      role === roleOption.key
+                        ? '#1A5FFF'
+                        : 'transparent',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     transition: 'all 0.15s',
                   }}
                 >
-                  {role === r.key && (
-                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                  {role === roleOption.key && (
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                    >
                       <path
                         d="M2 6l3 3 5-5"
-                        stroke="#fff"
+                        stroke="#FFFFFF"
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -282,26 +583,19 @@ export default function Register() {
                     </svg>
                   )}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
 
           <button
-            onClick={() => {
-              if (!role) {
-                setError('Please select your role.')
-                return
-              }
-
-              setError('')
-              setStep(2)
-            }}
+            type="button"
+            onClick={handleContinueRole}
             style={{
               width: '100%',
-              padding: '13px',
+              padding: 13,
               marginBottom: 12,
               background: role ? '#1A5FFF' : '#1E2535',
-              color: role ? '#fff' : '#4A5568',
+              color: role ? '#FFFFFF' : '#4A5568',
               border: 'none',
               borderRadius: 12,
               fontSize: 14,
@@ -313,9 +607,22 @@ export default function Register() {
             Continue →
           </button>
 
-          <p style={{ textAlign: 'center', fontSize: 13, color: '#8892A4', margin: 0 }}>
+          <p
+            style={{
+              textAlign: 'center',
+              fontSize: 13,
+              color: '#8892A4',
+              margin: 0,
+            }}
+          >
             Already have an account?{' '}
-            <Link to="/" style={{ color: '#00C48C', fontWeight: 600 }}>
+            <Link
+              to="/login"
+              style={{
+                color: '#00C48C',
+                fontWeight: 600,
+              }}
+            >
               Login
             </Link>
           </p>
@@ -329,28 +636,71 @@ export default function Register() {
       <div className={styles.box}>
         <div className={styles.logo}>
           <div className={styles.logoMark}>
-            <svg viewBox="0 0 20 20" fill="none" width="18" height="18">
-              <circle cx="10" cy="10" r="8" stroke="white" strokeWidth="1.5" />
-              <path d="M6 10 Q10 4 14 10 Q10 16 6 10Z" fill="white" opacity="0.8" />
-              <circle cx="10" cy="10" r="2" fill="white" />
+            <svg
+              viewBox="0 0 20 20"
+              fill="none"
+              width="18"
+              height="18"
+            >
+              <circle
+                cx="10"
+                cy="10"
+                r="8"
+                stroke="white"
+                strokeWidth="1.5"
+              />
+
+              <path
+                d="M6 10 Q10 4 14 10 Q10 16 6 10Z"
+                fill="white"
+                opacity="0.8"
+              />
+
+              <circle
+                cx="10"
+                cy="10"
+                r="2"
+                fill="white"
+              />
             </svg>
           </div>
-          <span className={styles.logoName}>ShuttleTrack</span>
+
+          <span className={styles.logoName}>
+            ShuttleTrack
+          </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            marginBottom: 16,
+          }}
+        >
           <button
-            onClick={() => setStep(1)}
+            type="button"
+            onClick={() => {
+              setStep(1)
+              setError('')
+              setSuccess('')
+            }}
+            disabled={loading || googleLoading}
             style={{
               background: 'none',
               border: 'none',
               color: '#8892A4',
-              cursor: 'pointer',
+              cursor:
+                loading || googleLoading
+                  ? 'not-allowed'
+                  : 'pointer',
               fontSize: 13,
               padding: 0,
               display: 'flex',
               alignItems: 'center',
               gap: 4,
+              opacity:
+                loading || googleLoading ? 0.7 : 1,
             }}
           >
             ← Back
@@ -372,13 +722,35 @@ export default function Register() {
         </div>
 
         <h1 className={styles.title}>Create Account</h1>
-        <p className={styles.sub}>Register as a new badminton {role}</p>
 
-        {error && <div className={styles.error}>{error}</div>}
+        <p className={styles.sub}>
+          Register as a new badminton {role}
+        </p>
+
+        {error && (
+          <div className={styles.error}>{error}</div>
+        )}
+
+        {success && (
+          <div
+            style={{
+              background: '#10251C',
+              color: '#34D399',
+              fontSize: 13,
+              padding: '10px 14px',
+              borderRadius: 10,
+              marginBottom: 16,
+              lineHeight: 1.5,
+            }}
+          >
+            {success}
+          </div>
+        )}
 
         <button
           type="button"
           onClick={handleGoogle}
+          disabled={loading || googleLoading}
           style={{
             width: '100%',
             padding: '13px 16px',
@@ -387,23 +759,76 @@ export default function Register() {
             justifyContent: 'center',
             gap: 10,
             background: '#1E2535',
-            color: '#fff',
+            color: '#FFFFFF',
             border: '1.5px solid #2A3147',
             borderRadius: 12,
             fontSize: 14,
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor:
+              loading || googleLoading
+                ? 'not-allowed'
+                : 'pointer',
             marginBottom: 16,
             boxSizing: 'border-box',
+            opacity:
+              loading || googleLoading ? 0.7 : 1,
           }}
         >
-          Sign up with Google
+          {googleLoading ? (
+            <div
+              style={{
+                width: 18,
+                height: 18,
+                border: '2px solid #59647A',
+                borderTopColor: '#FFFFFF',
+                borderRadius: '50%',
+                animation:
+                  'googleRegisterSpin 0.8s linear infinite',
+                boxSizing: 'border-box',
+              }}
+            />
+          ) : (
+            <GoogleIcon />
+          )}
+
+          {googleLoading
+            ? 'Connecting to Google...'
+            : 'Sign up with Google'}
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <div style={{ flex: 1, height: 1, background: '#2A3147' }} />
-          <span style={{ fontSize: 12, color: '#4A5568' }}>or register with email</span>
-          <div style={{ flex: 1, height: 1, background: '#2A3147' }} />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              height: 1,
+              background: '#2A3147',
+            }}
+          />
+
+          <span
+            style={{
+              fontSize: 12,
+              color: '#4A5568',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            or register with email
+          </span>
+
+          <div
+            style={{
+              flex: 1,
+              height: 1,
+              background: '#2A3147',
+            }}
+          />
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -414,6 +839,7 @@ export default function Register() {
               placeholder="Full Name"
               value={form.name}
               onChange={set('name')}
+              disabled={loading || googleLoading}
               required
             />
 
@@ -423,6 +849,7 @@ export default function Register() {
               placeholder="Username"
               value={form.username}
               onChange={set('username')}
+              disabled={loading || googleLoading}
             />
           </div>
 
@@ -433,24 +860,41 @@ export default function Register() {
               placeholder="Email"
               value={form.email}
               onChange={set('email')}
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck="false"
+              disabled={loading || googleLoading}
               required
             />
           </div>
 
-          <div className={styles.field} style={{ position: 'relative' }}>
+          <div
+            className={styles.field}
+            style={{ position: 'relative' }}
+          >
             <input
               className={styles.input}
               type={showPassword ? 'text' : 'password'}
               placeholder="Password"
               value={form.password}
               onChange={set('password')}
+              autoComplete="new-password"
+              disabled={loading || googleLoading}
               required
               style={{ paddingRight: 44 }}
             />
 
             <button
               type="button"
-              onClick={() => setShowPassword((prev) => !prev)}
+              onClick={() =>
+                setShowPassword((previous) => !previous)
+              }
+              aria-label={
+                showPassword
+                  ? 'Hide password'
+                  : 'Show password'
+              }
+              disabled={loading || googleLoading}
               style={{
                 position: 'absolute',
                 right: 14,
@@ -458,31 +902,49 @@ export default function Register() {
                 transform: 'translateY(-50%)',
                 background: 'none',
                 border: 'none',
-                cursor: 'pointer',
+                cursor:
+                  loading || googleLoading
+                    ? 'not-allowed'
+                    : 'pointer',
                 color: '#8892A4',
                 padding: 0,
+                display: 'flex',
+                alignItems: 'center',
               }}
             >
-              {showPassword ? '🙈' : '👁'}
+              <EyeIcon hidden={showPassword} />
             </button>
           </div>
 
           <PasswordChecklist password={form.password} />
 
-          <div className={styles.field} style={{ position: 'relative' }}>
+          <div
+            className={styles.field}
+            style={{ position: 'relative' }}
+          >
             <input
               className={styles.input}
               type={showConfirm ? 'text' : 'password'}
               placeholder="Confirm Password"
               value={form.confirm}
               onChange={set('confirm')}
+              autoComplete="new-password"
+              disabled={loading || googleLoading}
               required
               style={{ paddingRight: 44 }}
             />
 
             <button
               type="button"
-              onClick={() => setShowConfirm((prev) => !prev)}
+              onClick={() =>
+                setShowConfirm((previous) => !previous)
+              }
+              aria-label={
+                showConfirm
+                  ? 'Hide confirm password'
+                  : 'Show confirm password'
+              }
+              disabled={loading || googleLoading}
               style={{
                 position: 'absolute',
                 right: 14,
@@ -490,28 +952,53 @@ export default function Register() {
                 transform: 'translateY(-50%)',
                 background: 'none',
                 border: 'none',
-                cursor: 'pointer',
+                cursor:
+                  loading || googleLoading
+                    ? 'not-allowed'
+                    : 'pointer',
                 color: '#8892A4',
                 padding: 0,
+                display: 'flex',
+                alignItems: 'center',
               }}
             >
-              {showConfirm ? '🙈' : '👁'}
+              <EyeIcon hidden={showConfirm} />
             </button>
           </div>
 
           <button
             className={styles.btn}
             type="submit"
-            disabled={loading}
-            style={{ opacity: loading ? 0.7 : 1 }}
+            disabled={loading || googleLoading}
+            style={{
+              opacity:
+                loading || googleLoading ? 0.7 : 1,
+              cursor:
+                loading || googleLoading
+                  ? 'not-allowed'
+                  : 'pointer',
+            }}
           >
-            {loading ? 'Creating account...' : 'Continue Setup'}
+            {loading
+              ? 'Creating account...'
+              : 'Continue Setup'}
           </button>
         </form>
 
         <p className={styles.link}>
-          Already have an account? <Link to="/">Login</Link>
+          Already have an account?{' '}
+          <Link to="/login">Login</Link>
         </p>
+
+        <style>
+          {`
+            @keyframes googleRegisterSpin {
+              to {
+                transform: rotate(360deg);
+              }
+            }
+          `}
+        </style>
       </div>
     </div>
   )
