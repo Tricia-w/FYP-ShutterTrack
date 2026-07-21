@@ -237,6 +237,19 @@ function fmtTime(value) {
   })
 }
 
+function safeTimeRange(start, end) {
+  const startText = String(start || '').trim()
+  const endText = String(end || '').trim()
+
+  const validTime = value =>
+    /^\d{2}:\d{2}(:\d{2})?$/.test(value)
+
+  if (!validTime(startText)) return '-'
+  if (!validTime(endText)) return fmtTime(startText)
+
+  return `${fmtTime(startText)} - ${fmtTime(endText)}`
+}
+
 function fmtTimeRange(start, end) {
   if (!start && !end) return '-'
   if (start && end) return `${fmtTime(start)} - ${fmtTime(end)}`
@@ -1258,9 +1271,50 @@ function ScheduleModal({
   onSave,
   onClose,
   onDelete,
+  onComplete,
+  onMiss,
+  scheduleItem,
+  canChangeStatus = false,
   saving,
 }) {
-  const isTraining = form.type === 'Training'
+  const selectedType = String(form.type || 'Training')
+  const typeLower = selectedType.toLowerCase()
+
+  const isRestDay = typeLower.includes('rest')
+  const isCompetition = typeLower.includes('competition')
+  const isFriendly = typeLower.includes('friendly')
+  const isRecovery = typeLower.includes('recovery')
+  const isTraining = typeLower === 'training'
+
+  const activityLabel = isCompetition
+    ? 'Competition name'
+    : isFriendly
+      ? 'Match name'
+      : isRecovery
+        ? 'Recovery activity'
+        : selectedType === 'Other'
+          ? 'Activity name'
+          : 'Training activity'
+
+  const activityPlaceholder = isCompetition
+    ? 'e.g. Penang Open Championship'
+    : isFriendly
+      ? 'e.g. Friendly match with club team'
+      : isRecovery
+        ? 'e.g. Mobility and stretching'
+        : selectedType === 'Other'
+          ? 'e.g. Team briefing'
+          : 'e.g. Footwork drills'
+
+  const helperText = isCompetition
+    ? 'This competition will appear under Upcoming Events. After it ends, mark it Completed or Missed.'
+    : isFriendly
+      ? 'This friendly match will appear under Upcoming Events. After it ends, mark it Completed or Missed.'
+      : isRecovery
+        ? 'This recovery session will appear under Upcoming Events and can be completed after the end time.'
+        : isRestDay
+          ? 'This rest day will appear in your calendar. No training history record will be created.'
+          : 'This is a planned session. After the end time, choose Completed to add it automatically to Training Log, or Missed if you did not attend.'
 
   return (
     <ModalShell title={title} onClose={onClose}>
@@ -1288,9 +1342,14 @@ function ScheduleModal({
           <select
             className={styles.formSelect}
             value={form.type}
-            onChange={event =>
-              onChange('type', event.target.value)
-            }
+            onChange={event => {
+              const nextType = event.target.value
+              onChange('type', nextType)
+
+              if (nextType !== 'Training') {
+                onChange('focus', nextType)
+              }
+            }}
           >
             <option>Training</option>
             <option>Competition</option>
@@ -1302,7 +1361,7 @@ function ScheduleModal({
         </div>
       </div>
 
-      {isTraining ? (
+      {!isRestDay && (
         <>
           <div
             style={{
@@ -1339,17 +1398,17 @@ function ScheduleModal({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: isTraining ? '1fr 1fr' : '1fr',
               gap: 14,
             }}
           >
             <div className={styles.formRow}>
               <label className={styles.formLabel}>
-                Training activity
+                {activityLabel}
               </label>
               <input
                 className={styles.formInput}
-                placeholder="e.g. Footwork drills"
+                placeholder={activityPlaceholder}
                 value={form.activity}
                 onChange={event =>
                   onChange('activity', event.target.value)
@@ -1357,23 +1416,27 @@ function ScheduleModal({
               />
             </div>
 
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>Focus area</label>
-              <select
-                className={styles.formSelect}
-                value={form.focus}
-                onChange={event =>
-                  onChange('focus', event.target.value)
-                }
-              >
-                <option>Stamina</option>
-                <option>Speed</option>
-                <option>Strength</option>
-                <option>Flexibility</option>
-                <option>Recovery</option>
-                <option>Matches</option>
-              </select>
-            </div>
+            {isTraining && (
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Focus area
+                </label>
+                <select
+                  className={styles.formSelect}
+                  value={form.focus}
+                  onChange={event =>
+                    onChange('focus', event.target.value)
+                  }
+                >
+                  <option>Stamina</option>
+                  <option>Speed</option>
+                  <option>Strength</option>
+                  <option>Flexibility</option>
+                  <option>Recovery</option>
+                  <option>Matches</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <div className={styles.formRow}>
@@ -1390,25 +1453,17 @@ function ScheduleModal({
             />
           </div>
         </>
-      ) : (
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Time</label>
-          <input
-            className={styles.formInput}
-            type="time"
-            value={form.time}
-            onChange={event =>
-              onChange('time', event.target.value)
-            }
-          />
-        </div>
       )}
 
       <div className={styles.formRow}>
         <label className={styles.formLabel}>Venue</label>
         <input
           className={styles.formInput}
-          placeholder="e.g. Sports Arena"
+          placeholder={
+            isRestDay
+              ? 'Optional'
+              : 'e.g. Sports Arena'
+          }
           value={form.venue}
           onChange={event =>
             onChange('venue', event.target.value)
@@ -1428,20 +1483,87 @@ function ScheduleModal({
         />
       </div>
 
-      {isTraining && (
+      <div
+        style={{
+          marginBottom: 14,
+          padding: '10px 12px',
+          borderRadius: 10,
+          background:
+            'color-mix(in srgb, #1A5FFF 8%, var(--card, #FFFFFF))',
+          color: 'var(--text-muted, #8892A4)',
+          fontSize: 11,
+          lineHeight: 1.5,
+        }}
+      >
+        {helperText}
+      </div>
+
+      {scheduleItem && !isRestDay && (
         <div
           style={{
             marginBottom: 14,
-            padding: '10px 12px',
-            borderRadius: 10,
+            padding: '12px',
+            borderRadius: 12,
+            border: '1px solid var(--line, #E8EEF8)',
             background:
-              'color-mix(in srgb, #1A5FFF 8%, var(--card, #FFFFFF))',
-            color: 'var(--text-muted, #8892A4)',
-            fontSize: 11,
-            lineHeight: 1.5,
+              canChangeStatus
+                ? 'color-mix(in srgb, #2563EB 6%, var(--card, #FFFFFF))'
+                : 'var(--soft, #F7F9FF)',
           }}
         >
-          This is a planned session. After its end time, choose Completed to add it automatically to the Completed Training Log, or Missed if you did not attend.
+          <div
+            style={{
+              marginBottom: 8,
+              fontSize: 11,
+              fontWeight: 800,
+              color: 'var(--text, #0D1B3E)',
+            }}
+          >
+            Schedule status
+          </div>
+
+          {canChangeStatus ? (
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                style={{ background: '#10B981' }}
+                disabled={saving}
+                onClick={onComplete}
+              >
+                Mark Completed
+              </button>
+
+              <button
+                type="button"
+                className={styles.btnOutline}
+                style={{
+                  borderColor: '#EF4444',
+                  color: '#EF4444',
+                }}
+                disabled={saving}
+                onClick={onMiss}
+              >
+                Mark Missed
+              </button>
+            </div>
+          ) : (
+            <div
+              style={{
+                fontSize: 11,
+                lineHeight: 1.5,
+                color: 'var(--text-muted, #8892A4)',
+              }}
+            >
+              Status can be changed to Completed or Missed after the scheduled end time.
+            </div>
+          )}
         </div>
       )}
 
@@ -2396,6 +2518,7 @@ export default function Fitness() {
   const [showInjury, setShowInjury] = useState(false)
   const [editingInjury, setEditingInjury] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [hasCoach, setHasCoach] = useState(false)
 
   const [scheduleForm, setScheduleForm] = useState(emptySchedule())
   const [trainingForm, setTrainingForm] = useState(emptyTraining())
@@ -2428,6 +2551,7 @@ export default function Fitness() {
           noteRes,
           assessmentRes,
           coachAssignmentRes,
+          coachRelationshipRes,
         ] = await Promise.all([
           supabase.from('player_schedule').select('*').eq('user_id', user.id).order('event_date', { ascending: true }).order('event_time', { ascending: true }),
           supabase.from('fitness_training_logs').select('*').eq('user_id', user.id).order('training_date', { ascending: true }),
@@ -2447,6 +2571,11 @@ export default function Fitness() {
               'session_id, attendance_status, completed_at'
             )
             .eq('player_user_id', user.id),
+
+          supabase
+            .from('coach_player_relationships')
+            .select('coach_user_id, status')
+            .eq('player_user_id', user.id),
         ])
 
         const error = [
@@ -2457,9 +2586,26 @@ export default function Fitness() {
           injuryRes.error,
           noteRes.error,
           coachAssignmentRes.error,
+          coachRelationshipRes.error,
         ].find(Boolean)
         if (error) throw error
         if (!alive) return
+
+        const activeCoachRelationship = (
+          coachRelationshipRes.data || []
+        ).some(relationship => {
+          const status = String(
+            relationship.status || ''
+          ).toLowerCase()
+
+          return [
+            'accepted',
+            'active',
+            'connected',
+          ].includes(status)
+        })
+
+        setHasCoach(activeCoachRelationship)
 
         const attendanceBySession = new Map(
           (coachAssignmentRes.data || []).map(item => [
@@ -2572,15 +2718,67 @@ export default function Fitness() {
   }, [recoveryLogs])
 
   const weeklyMinutes = useMemo(() => {
-    return sessions
+    const weekDates = new Set(getThisWeekDates())
+
+    const completedTrainingLogs = sessions
       .filter(session =>
-        getThisWeekDates().includes(toKey(session.date))
+        weekDates.has(toKey(session.date))
       )
-      .reduce(
-        (sum, session) => sum + getTrainingMinutes(session),
-        0
+      .map(session => ({
+        key:
+          session.coachSessionId
+            ? `coach-${session.coachSessionId}`
+            : `training-${session.id}`,
+        minutes: getTrainingMinutes(session),
+      }))
+
+    const completedSchedules = scheduleList
+      .filter(item => {
+        const status = String(
+          item.attendanceStatus ||
+          item.attendance_status ||
+          item.status ||
+          ''
+        ).toLowerCase()
+
+        return (
+          status === 'completed' &&
+          weekDates.has(toKey(item.date))
+        )
+      })
+      .map(item => ({
+        key:
+          item.coachSessionId || item.coach_session_id
+            ? `coach-${
+                item.coachSessionId ||
+                item.coach_session_id
+              }`
+            : `schedule-${item.id}`,
+        minutes: getTrainingMinutes({
+          duration: item.duration,
+          startTime: item.time || item.startTime,
+          endTime: item.endTime,
+        }),
+      }))
+
+    const uniqueRecords = new Map()
+
+    ;[
+      ...completedTrainingLogs,
+      ...completedSchedules,
+    ].forEach(record => {
+      const previous = uniqueRecords.get(record.key) || 0
+      uniqueRecords.set(
+        record.key,
+        Math.max(previous, record.minutes)
       )
-  }, [sessions])
+    })
+
+    return [...uniqueRecords.values()].reduce(
+      (sum, minutes) => sum + minutes,
+      0
+    )
+  }, [sessions, scheduleList])
 
   const weeklyHours = Number((weeklyMinutes / 60).toFixed(1))
   const activeInjuries = injuries.filter(i => i.status !== 'Recovered').length
@@ -2607,11 +2805,85 @@ export default function Fitness() {
   const tirednessLabel = latestRecovery ? latestRecovery.tiredness <= 3 ? 'Low' : latestRecovery.tiredness <= 6 ? 'Moderate' : 'High' : 'No data'
   const suggestion = recoverySuggestion(recoveryScore, latestRecovery, activeInjuries, weeklyMinutes)
 
+  const trainingLogItems = useMemo(() => {
+    const scheduledItems = scheduleList.map(item => ({
+      id: `schedule-${item.id}`,
+      sourceId: item.id,
+      sourceType: 'schedule',
+      date: item.date,
+      time: item.time || item.startTime || '',
+      endTime: item.endTime || '',
+      activity:
+        item.activity ||
+        item.title ||
+        item.type ||
+        'Scheduled activity',
+      duration:
+        item.duration ||
+        calculateDuration(
+          item.time || item.startTime,
+          item.endTime
+        ) ||
+        '-',
+      focus: item.focus || item.type || 'Training',
+      status:
+        item.attendanceStatus ||
+        item.attendance_status ||
+        item.status ||
+        'Scheduled',
+      original: item,
+    }))
+
+    const completedItems = sessions.map(item => ({
+      id: `training-${item.id}`,
+      sourceId: item.id,
+      sourceType: 'training',
+      date: item.date,
+      time: item.time || '',
+      endTime: item.endTime || '',
+      activity:
+        item.activity ||
+        item.training ||
+        item.title ||
+        'Completed training',
+      duration: item.duration || '-',
+      focus: item.focus || item.type || 'Training',
+      status: 'Completed',
+      original: item,
+    }))
+
+    const seenCompletedCoachSessions = new Set(
+      completedItems
+        .map(item => item.original?.coachSessionId)
+        .filter(Boolean)
+    )
+
+    const filteredScheduled = scheduledItems.filter(item => {
+      const coachSessionId =
+        item.original?.coachSessionId ||
+        item.original?.coach_session_id
+
+      return !(
+        coachSessionId &&
+        seenCompletedCoachSessions.has(coachSessionId)
+      )
+    })
+
+    return [...filteredScheduled, ...completedItems].sort((a, b) => {
+      const aValue = `${a.date || ''}T${a.time || '00:00'}`
+      const bValue = `${b.date || ''}T${b.time || '00:00'}`
+      return bValue.localeCompare(aValue)
+    })
+  }, [scheduleList, sessions])
+
   const tableSessions = useMemo(() => {
-    return [...sessions]
-      .filter(s => filter.focus === 'All' || s.focus === filter.focus)
-      .sort((a, b) => b.date.localeCompare(a.date))
-  }, [sessions, filter])
+    return trainingLogItems.filter(item => {
+      return (
+        filter.focus === 'All' ||
+        item.focus === filter.focus
+      )
+    })
+  }, [trainingLogItems, filter.focus])
 
   const calendarItems = useMemo(() => {
     return [
@@ -2777,8 +3049,7 @@ export default function Fitness() {
   const markScheduledTrainingMissed = async item => {
     if (
       saving ||
-      item?.source !== 'schedule' ||
-      item?.type !== 'Training'
+      item?.source !== 'schedule'
     ) {
       return
     }
@@ -3634,14 +3905,45 @@ export default function Fitness() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div>
             <div className={styles.pageTitle}>Fitness</div>
-            <div className={styles.pageSub}>Plan future sessions or log completed training, fitness tests, recovery and injuries.</div>
+            <div className={styles.pageSub}>
+              Plan training, confirm completed sessions and track your recovery.
+            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button className={styles.btnPrimary} onClick={() => openAddSchedule()}>+ Add Schedule</button>
-            <button className={styles.btnPrimary} style={{ background: '#10B981' }} onClick={openAddTest}>+ Fitness Test</button>
-            <button className={styles.btnPrimary} style={{ background: '#7C3AED' }} onClick={openAddRecovery}>+ Recovery Check-in</button>
-            <button className={styles.btnOutline} onClick={openAddInjury}>+ Log Injury</button>
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+            }}
+          >
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              style={{ background: '#10B981' }}
+              onClick={openAddTest}
+            >
+              + Fitness Test
+            </button>
+
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              style={{ background: '#7C3AED' }}
+              onClick={openAddRecovery}
+            >
+              + Recovery Check-in
+            </button>
+
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={openAddInjury}
+            >
+              + Log Injury
+            </button>
+
             <PageNotificationBell userId={userId} />
           </div>
         </div>
@@ -3663,6 +3965,31 @@ export default function Fitness() {
           {loadError || 'Saving record...'}
         </div>
       )}
+
+      <div
+        style={{
+          marginBottom: 16,
+          padding: '12px 14px',
+          borderRadius: 12,
+          border: '1px solid var(--line, #E8EEF8)',
+          background: 'var(--card, #FFFFFF)',
+          fontSize: 12,
+          lineHeight: 1.55,
+          color: 'var(--text-muted, #64748B)',
+        }}
+      >
+        <span
+          style={{
+            fontWeight: 800,
+            color: 'var(--text, #0D1B3E)',
+          }}
+        >
+          {hasCoach ? 'Coach-connected mode: ' : 'Self-managed mode: '}
+        </span>
+        {hasCoach
+          ? 'Sessions created or completed by your coach sync automatically. You only need to confirm your own planned sessions and add unplanned training when necessary.'
+          : 'You can plan your own sessions, mark them completed or missed, and log unplanned training. A coach is not required to use this page.'}
+      </div>
 
       <div className={styles.g4} style={{ marginBottom: 16 }}>
         <div className={styles.metricHighlight}>
@@ -3907,6 +4234,7 @@ export default function Fitness() {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
+              gap: 12,
               marginBottom: 14,
             }}
           >
@@ -3916,6 +4244,19 @@ export default function Fitness() {
             >
               Schedule Calendar
             </div>
+
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              style={{
+                fontSize: 12,
+                padding: '7px 14px',
+                whiteSpace: 'nowrap',
+              }}
+              onClick={() => openAddSchedule(selectedDate)}
+            >
+              + Add Schedule
+            </button>
           </div>
 
           <ScheduleCalendar
@@ -4102,9 +4443,18 @@ export default function Fitness() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 0.9fr', gap: 16, marginBottom: 16 }}>
         <div className={styles.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Completed Training Log</div>
-            <button className={styles.btnOutline} style={{ fontSize: 12, padding: '7px 14px' }} onClick={() => openAddTraining()}>+ Log Completed</button>
+          <div style={{ marginBottom: 14 }}>
+            <div className={styles.cardTitle} style={{ marginBottom: 4 }}>
+              Training Log
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-muted, #8892A4)',
+              }}
+            >
+              Upcoming schedules are highlighted in blue. Completed sessions remain as training history.
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
@@ -4119,45 +4469,163 @@ export default function Fitness() {
             </select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '70px 95px 1fr 80px 80px 30px', gap: 10, padding: '0 8px 8px', color: '#8892A4', fontSize: 11, fontWeight: 700 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '70px 105px 1fr 80px 85px 85px 30px', gap: 10, padding: '0 8px 8px', color: '#8892A4', fontSize: 11, fontWeight: 700 }}>
             <div>Date</div>
             <div>Time</div>
             <div>Training</div>
             <div>Duration</div>
             <div>Focus</div>
+            <div>Status</div>
             <div />
           </div>
 
-          {tableSessions.length === 0 && <div style={{ padding: '18px 8px', color: '#8892A4', fontSize: 12 }}>No completed training records yet.</div>}
-
-          {tableSessions.slice(0, 7).map(t => (
+          {tableSessions.length === 0 && (
             <div
-              key={t.id}
-              className={styles.listRow}
-              onClick={() => openEditTraining(t)}
-              style={{ cursor: 'pointer', display: 'grid', gridTemplateColumns: '70px 95px 1fr 80px 80px 30px', gap: 10, alignItems: 'center', borderRadius: 8 }}
+              style={{
+                padding: '18px 8px',
+                color: '#8892A4',
+                fontSize: 12,
+              }}
             >
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#0D1B3E' }}>
-                  {new Date(t.date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
-                </div>
-                <div style={{ fontSize: 11, color: '#8892A4' }}>{t.day}</div>
-              </div>
-
-              <div style={{ fontSize: 12, color: '#8892A4', fontWeight: 700 }}>{fmtTimeRange(t.startTime, t.endTime)}</div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{t.activity}</div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: t.duration ? '#8892A4' : '#F59E0B',
-                }}
-              >
-                {t.duration || 'Edit time'}
-              </div>
-              <div style={{ fontSize: 12, color: '#0D1B3E', fontWeight: 600 }}>{t.focus || '-'}</div>
-              {pencilIcon}
+              No scheduled or completed sessions yet.
             </div>
-          ))}
+          )}
+
+          {tableSessions.length > 0 && (
+            <div
+              style={{
+                maxHeight: 430,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                paddingRight: 5,
+                scrollbarGutter: 'stable',
+              }}
+            >
+              {tableSessions.map(t => {
+                const statusText = String(
+                  t.status || 'Scheduled'
+                )
+                const statusLower = statusText.toLowerCase()
+
+                return (
+                  <div
+                    key={t.id}
+                    className={styles.listRow}
+                    onClick={() => {
+                      if (t.sourceType === 'schedule') {
+                        openEditSchedule(t.original)
+                      } else {
+                        openEditTraining(t.original)
+                      }
+                    }}
+                    style={{
+                      cursor: 'pointer',
+                      display: 'grid',
+                      gridTemplateColumns:
+                        '70px 105px 1fr 80px 85px 85px 30px',
+                      gap: 10,
+                      alignItems: 'center',
+                      borderRadius: 10,
+                      padding: '10px 10px',
+                      marginBottom: 6,
+                      border:
+                        statusLower === 'scheduled'
+                          ? '1px solid color-mix(in srgb, #2563EB 30%, var(--line, #E8EEF8))'
+                          : '1px solid transparent',
+                      borderLeft:
+                        statusLower === 'scheduled'
+                          ? '4px solid #2563EB'
+                          : statusLower === 'completed'
+                            ? '4px solid #10B981'
+                            : ['missed', 'absent'].includes(statusLower)
+                              ? '4px solid #EF4444'
+                              : '4px solid transparent',
+                      background:
+                        statusLower === 'scheduled'
+                          ? 'color-mix(in srgb, #2563EB 8%, var(--card, #FFFFFF))'
+                          : 'transparent',
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--text, #0D1B3E)',
+                        }}
+                      >
+                        {new Date(
+                          `${t.date}T00:00:00`
+                        ).toLocaleDateString('en-MY', {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: '#8892A4',
+                        }}
+                      >
+                        {new Date(
+                          `${t.date}T00:00:00`
+                        ).toLocaleDateString('en-MY', {
+                          weekday: 'short',
+                        })}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: '#8892A4',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {safeTimeRange(t.time, t.endTime)}
+                    </div>
+
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>
+                      {t.activity}
+                    </div>
+
+                    <div style={{ fontSize: 12, color: '#8892A4' }}>
+                      {t.duration || '-'}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text, #0D1B3E)',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {t.focus || '-'}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color:
+                          statusLower === 'completed'
+                            ? '#10B981'
+                            : ['missed', 'absent'].includes(statusLower)
+                              ? '#EF4444'
+                              : '#2563EB',
+                      }}
+                    >
+                      {statusLower === 'scheduled'
+                        ? 'Upcoming'
+                        : statusText}
+                    </div>
+
+                    {pencilIcon}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         <div className={styles.card}>
@@ -4266,8 +4734,25 @@ export default function Fitness() {
           form={scheduleForm}
           onChange={setForm(setScheduleForm)}
           onSave={saveSchedule}
-          onClose={() => { setEditingSchedule(null); setScheduleForm(emptySchedule()) }}
+          onClose={() => {
+            setEditingSchedule(null)
+            setScheduleForm(emptySchedule())
+          }}
           onDelete={requestDeleteSchedule}
+          scheduleItem={editingSchedule}
+          canChangeStatus={isScheduleFinished(editingSchedule)}
+          onComplete={async () => {
+            const item = editingSchedule
+            setEditingSchedule(null)
+            setScheduleForm(emptySchedule())
+            await completeScheduledTraining(item)
+          }}
+          onMiss={async () => {
+            const item = editingSchedule
+            setEditingSchedule(null)
+            setScheduleForm(emptySchedule())
+            await markScheduledTrainingMissed(item)
+          }}
           saving={saving}
         />
       )}
@@ -4277,7 +4762,7 @@ export default function Fitness() {
           title={
             completingSchedule
               ? 'Complete Scheduled Training'
-              : 'Log Completed Training'
+              : 'Log Unplanned Training'
           }
           form={trainingForm}
           onChange={setForm(setTrainingForm)}
