@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import { supabase } from './lib/supabase'
@@ -26,9 +26,85 @@ export default function Setup() {
 
   const [saving, setSaving] = useState(false)
   const [skipping, setSkipping] = useState(false)
+  const [loadingSetup, setLoadingSetup] = useState(true)
   const [error, setError] = useState('')
 
-  const busy = saving || skipping
+  const busy = saving || skipping || loadingSetup
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadExistingSetup() {
+      try {
+        const activeUser =
+          user?.id
+            ? user
+            : (await supabase.auth.getUser()).data?.user
+
+        if (!activeUser?.id) {
+          if (mounted) setLoadingSetup(false)
+          return
+        }
+
+        const { data, error: loadError } = await supabase
+          .from('player_setup')
+          .select('*')
+          .eq('user_id', activeUser.id)
+          .maybeSingle()
+
+        if (loadError) {
+          throw loadError
+        }
+
+        if (mounted && data) {
+          setForm({
+            event:
+              data.preferred_event ||
+              'Singles',
+            style:
+              data.play_style ||
+              'Aggressive Attacker',
+            strength:
+              data.biggest_strength ||
+              'Smash Power',
+            weakness:
+              data.biggest_weakness ||
+              data.current_weakness ||
+              data.weakness ||
+              'Defense Under Pressure',
+            stamina:
+              data.stamina_level ||
+              'High',
+            pressure:
+              data.under_pressure ||
+              data.pressure_reaction ||
+              data.player_type ||
+              data.mindset ||
+              'Calm',
+          })
+        }
+      } catch (loadError) {
+        console.error('Load existing setup error:', loadError)
+
+        if (mounted) {
+          setError(
+            loadError.message ||
+              'Unable to load your previous setup.'
+          )
+        }
+      } finally {
+        if (mounted) {
+          setLoadingSetup(false)
+        }
+      }
+    }
+
+    loadExistingSetup()
+
+    return () => {
+      mounted = false
+    }
+  }, [user])
 
   const set = (key) => (e) => {
     setForm((prev) => ({
@@ -140,7 +216,7 @@ export default function Setup() {
     }
   }
 
-  if (loading) {
+  if (loading || loadingSetup) {
     return (
       <div className={styles.screen}>
         <div className={styles.box}>
@@ -171,7 +247,11 @@ export default function Setup() {
           <span className={styles.logoName}>ShuttleTrack</span>
         </div>
 
-        <h1 className={styles.title}>New Player Setup</h1>
+        <h1 className={styles.title}>
+          {location.search.includes('redo=1')
+            ? 'Update Player Setup'
+            : 'New Player Setup'}
+        </h1>
         <p className={styles.sub}>
           Answer a few questions so the system can create your initial player status.
         </p>
@@ -319,7 +399,11 @@ export default function Setup() {
               flex: 1,
             }}
           >
-            {saving ? 'Saving setup...' : 'Finish Setup'}
+            {saving
+              ? 'Saving setup...'
+              : location.search.includes('redo=1')
+                ? 'Save Changes'
+                : 'Finish Setup'}
           </button>
 
           <button

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import MonthlyTrendLineChart from './MonthlyTrendLineChart'
-import styles from './Pages.module.css'
+import { useCallback, useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabase'
+import MonthlyTrendLineChart from '../Layout/MonthlyTrendLineChart'
+import styles from '../Layout/Pages.module.css'
+import Loader from '../Loader/Loader'
+import useLoadingDelay from '../Loader/LoadingDelay'
 
 const categoryInfo = {
   Court: { label: 'Court rental', badge: 'blue', color: '#1A5FFF' },
@@ -38,6 +40,222 @@ const C = {
   soft: 'var(--soft, #EEF1F8)',
   line: 'var(--line, #EEF1F8)',
 }
+
+function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
+  const props = {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    'aria-hidden': true,
+  }
+
+  if (type === 'bell') {
+    return (
+      <svg {...props}>
+        <path
+          d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M10 21h4"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'wallet') {
+    return (
+      <svg {...props}>
+        <rect
+          x="3"
+          y="6"
+          width="18"
+          height="13"
+          rx="3"
+          stroke={color}
+          strokeWidth="1.8"
+        />
+        <path
+          d="M3 10h18"
+          stroke={color}
+          strokeWidth="1.8"
+        />
+        <path
+          d="M16 13h3"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'budget') {
+    return (
+      <svg {...props}>
+        <rect
+          x="4"
+          y="3"
+          width="16"
+          height="18"
+          rx="3"
+          stroke={color}
+          strokeWidth="1.8"
+        />
+        <path
+          d="M8 8h8M8 12h8M8 16h5"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'trend') {
+    return (
+      <svg {...props}>
+        <path
+          d="M4 17l5-5 4 4 7-8"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M15 8h5v5"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'average') {
+    return (
+      <svg {...props}>
+        <circle
+          cx="12"
+          cy="12"
+          r="8"
+          stroke={color}
+          strokeWidth="1.8"
+        />
+        <path
+          d="m8.5 12 2.3 2.3L15.8 9"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'warning') {
+    return (
+      <svg {...props}>
+        <path
+          d="M10.3 4.9 2.8 18a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.9a2 2 0 0 0-3.4 0Z"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M12 9v4M12 17h.01"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'check') {
+    return (
+      <svg {...props}>
+        <circle
+          cx="12"
+          cy="12"
+          r="9"
+          stroke={color}
+          strokeWidth="1.8"
+        />
+        <path
+          d="m8 12.5 2.5 2.5L16 9.5"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'info') {
+    return (
+      <svg {...props}>
+        <circle
+          cx="12"
+          cy="12"
+          r="9"
+          stroke={color}
+          strokeWidth="1.8"
+        />
+        <path
+          d="M12 11v5M12 8h.01"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
+  return null
+}
+
+function getSuggestionMeta(type) {
+  if (type === 'danger') {
+    return {
+      icon: 'warning',
+      background: '#FEE2E2',
+      color: '#EF4444',
+    }
+  }
+
+  if (type === 'warning') {
+    return {
+      icon: 'warning',
+      background: '#FEF3C7',
+      color: '#F59E0B',
+    }
+  }
+
+  if (type === 'success') {
+    return {
+      icon: 'check',
+      background: '#DDF8EF',
+      color: '#00C48C',
+    }
+  }
+
+  return {
+    icon: 'info',
+    background: '#E8EFFE',
+    color: '#1A5FFF',
+  }
+}
+
 
 function formatRM(v) {
   return `RM ${Number(v || 0).toFixed(2)}`
@@ -244,53 +462,83 @@ function RuleSuggestionsCard({ suggestions }) {
       <div className={styles.cardTitle}>Rule-based Suggestions</div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {suggestions.map((s, i) => (
-          <div
-            key={i}
-            style={{
-              padding: 12,
-              borderRadius: 10,
-              background:
-                s.type === 'danger'
-                  ? 'rgba(239, 68, 68, 0.12)'
-                  : s.type === 'warning'
-                  ? 'rgba(245, 158, 11, 0.14)'
-                  : s.type === 'success'
-                  ? 'rgba(0, 196, 140, 0.12)'
-                  : C.soft,
-              border:
-                s.type === 'danger'
-                  ? '1px solid #EF4444'
-                  : s.type === 'warning'
-                  ? '1px solid #F59E0B'
-                  : s.type === 'success'
-                  ? '1px solid #00C48C'
-                  : `1px solid ${C.line}`,
-            }}
-          >
+        {suggestions.map((s, i) => {
+          const meta = getSuggestionMeta(s.type)
+
+          return (
             <div
+              key={i}
               style={{
-                fontSize: 13,
-                fontWeight: 800,
-                color:
+                padding: 12,
+                borderRadius: 10,
+                background:
                   s.type === 'danger'
-                    ? '#EF4444'
+                    ? 'rgba(239, 68, 68, 0.12)'
                     : s.type === 'warning'
-                    ? '#F59E0B'
+                    ? 'rgba(245, 158, 11, 0.14)'
                     : s.type === 'success'
-                    ? '#00C48C'
-                    : C.text,
-                marginBottom: 4,
+                    ? 'rgba(0, 196, 140, 0.12)'
+                    : C.soft,
+                border:
+                  s.type === 'danger'
+                    ? '1px solid #EF4444'
+                    : s.type === 'warning'
+                    ? '1px solid #F59E0B'
+                    : s.type === 'success'
+                    ? '1px solid #00C48C'
+                    : `1px solid ${C.line}`,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                minHeight: 62,
               }}
             >
-              {s.title}
-            </div>
+              <span
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  background: meta.background,
+                  color: meta.color,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <ExpenseIcon
+                  type={meta.icon}
+                  color={meta.color}
+                  size={15}
+                />
+              </span>
 
-            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5, fontWeight: 500 }}>
-              {s.text}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 800,
+                    color: meta.color,
+                    marginBottom: 4,
+                  }}
+                >
+                  {s.title}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: C.text,
+                    lineHeight: 1.5,
+                    fontWeight: 500,
+                  }}
+                >
+                  {s.text}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -300,6 +548,7 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState([])
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
   const [loading, setLoading] = useState(true)
+  const showLoader = useLoadingDelay(loading, 350)
 
   const [showAddExpense, setShowAddExpense] = useState(false)
   const [editingExpense, setEditingExpense] = useState(null)
@@ -308,12 +557,13 @@ export default function Expenses() {
   const [monthlyBudget, setMonthlyBudget] = useState(0)
   const [showBudgetModal, setShowBudgetModal] = useState(false)
 
-  useEffect(() => {
-    fetchExpenses()
-    fetchBudget()
-  }, [])
+  // Expense-page notification bell.
+  // These notifications are calculated from the selected month's budget,
+  // so this page only shows expense-related alerts.
+  const [showExpenseNotifications, setShowExpenseNotifications] = useState(false)
+  const [readExpenseNotificationKeys, setReadExpenseNotificationKeys] = useState([])
 
-  const fetchExpenses = async () => {
+  const fetchExpenses = useCallback(async () => {
     setLoading(true)
 
     const { data: userData } = await supabase.auth.getUser()
@@ -354,12 +604,16 @@ export default function Expenses() {
 
     setExpenses(formatted)
     setLoading(false)
-  }
+  }, [])
 
-  const fetchBudget = async () => {
+  const fetchBudget = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
-    if (!user) return
+
+    if (!user) {
+      setMonthlyBudget(0)
+      return
+    }
 
     const { data, error } = await supabase
       .from('expense_budgets')
@@ -373,14 +627,16 @@ export default function Expenses() {
       return
     }
 
-    if (data?.budget !== undefined) {
-      setMonthlyBudget(Number(data.budget))
-    }
-  }
+    setMonthlyBudget(data?.budget !== undefined ? Number(data.budget) : 0)
+  }, [selectedMonth])
+
+  useEffect(() => {
+    fetchExpenses()
+  }, [fetchExpenses])
 
   useEffect(() => {
     fetchBudget()
-  }, [selectedMonth])
+  }, [fetchBudget])
 
   const saveBudget = async () => {
     const { data: userData } = await supabase.auth.getUser()
@@ -457,8 +713,44 @@ export default function Expenses() {
   const remainingBudget = monthlyBudget - selectedMonthTotal
 
   let budgetStatus = 'Safe'
-  if (budgetUsedPercent >= 100) budgetStatus = 'Exceeded'
-  else if (budgetUsedPercent >= 80) budgetStatus = 'Near Limit'
+  if (monthlyBudget > 0 && budgetUsedPercent >= 100) budgetStatus = 'Exceeded'
+  else if (monthlyBudget > 0 && budgetUsedPercent >= 80) budgetStatus = 'Near Limit'
+
+  const expenseNotifications = []
+
+  if (monthlyBudget > 0 && budgetStatus === 'Exceeded') {
+    expenseNotifications.push({
+      key: `budget-exceeded-${selectedMonth}`,
+      title: 'Monthly budget exceeded',
+      message: `You have spent ${formatRM(selectedMonthTotal)}, which is ${formatRM(
+        Math.abs(remainingBudget)
+      )} over your ${formatRM(monthlyBudget)} budget for ${selectedMonth}.`,
+      type: 'danger',
+    })
+  } else if (monthlyBudget > 0 && budgetStatus === 'Near Limit') {
+    expenseNotifications.push({
+      key: `budget-near-limit-${selectedMonth}`,
+      title: 'Monthly budget almost reached',
+      message: `You have used ${budgetUsedPercent}% of your budget for ${selectedMonth}. Only ${formatRM(
+        Math.max(remainingBudget, 0)
+      )} remains.`,
+      type: 'warning',
+    })
+  }
+
+  const unreadExpenseNotificationCount = expenseNotifications.filter(
+    notification => !readExpenseNotificationKeys.includes(notification.key)
+  ).length
+
+  const markAllExpenseNotificationsRead = () => {
+    setReadExpenseNotificationKeys(prev =>
+      Array.from(new Set([...prev, ...expenseNotifications.map(notification => notification.key)]))
+    )
+  }
+
+  const openExpenseNotifications = () => {
+    setShowExpenseNotifications(current => !current)
+  }
 
   const byCategory = Object.keys(categoryInfo)
     .map(category => {
@@ -482,6 +774,10 @@ export default function Expenses() {
       : null
 
   const budgetAlertMessage = (() => {
+    if (monthlyBudget <= 0) {
+      return `No monthly budget has been set for ${selectedMonth}. Set a budget to receive expense notifications.`
+    }
+
     if (selectedMonthTotal <= 0) {
       return `No expenses recorded for ${selectedMonth}. Add expenses to monitor budget usage.`
     }
@@ -669,6 +965,18 @@ export default function Expenses() {
     </svg>
   )
 
+  if (loading && !showLoader) {
+    return null
+  }
+
+  if (showLoader) {
+    return (
+      <div className={styles.card}>
+        <Loader text="Loading expenses..." />
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className={styles.pageHead}>
@@ -678,31 +986,272 @@ export default function Expenses() {
             <div className={styles.pageSub}>Record and monitor all badminton-related spending</div>
           </div>
 
-          <button className={styles.btnPrimary} onClick={openAddExpense}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            Add Expense
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              className={styles.btnPrimary}
+              onClick={openAddExpense}
+              style={{ minHeight: 38, padding: '0 14px', borderRadius: 9 }}
+            >
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              Add Expense
+            </button>
+            <div style={{ position: 'relative' }}>
+              <button
+                type="button"
+                aria-label="Expense notifications"
+                onClick={openExpenseNotifications}
+                style={{
+                  width: 42,
+                  height: 42,
+                  padding: 0,
+                  borderRadius: 12,
+                  border: `1px solid ${C.line}`,
+                  background: C.card,
+                  color: C.text,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  flexShrink: 0,
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: 'block',
+                    fontSize: 18,
+                    lineHeight: 1,
+                  }}
+                >
+                  🔔
+                </span>
+
+                {unreadExpenseNotificationCount > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: -5,
+                      right: -5,
+                      minWidth: 18,
+                      height: 18,
+                      padding: '0 5px',
+                      borderRadius: 999,
+                      background: '#EF4444',
+                      color: '#FFFFFF',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      lineHeight: '18px',
+                      textAlign: 'center',
+                      border: '2px solid var(--card, #FFFFFF)',
+                    }}
+                  >
+                    {unreadExpenseNotificationCount}
+                  </span>
+                )}
+              </button>
+
+              {showExpenseNotifications && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 46,
+                    right: 0,
+                    width: 360,
+                    maxWidth: 'calc(100vw - 32px)',
+                    background: C.card,
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 14,
+                    boxShadow: '0 18px 45px rgba(13, 27, 62, 0.18)',
+                    zIndex: 50,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '14px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      borderBottom: `1px solid ${C.line}`,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>
+                        Expense notifications
+                      </div>
+                      <div style={{ marginTop: 3, fontSize: 11, color: C.muted }}>
+                        Budget alerts for {selectedMonth}
+                      </div>
+                    </div>
+
+                    {expenseNotifications.length > 0 && unreadExpenseNotificationCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={markAllExpenseNotificationsRead}
+                        style={{
+                          border: 0,
+                          background: 'transparent',
+                          color: '#1A5FFF',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          padding: 4,
+                        }}
+                      >
+                        Mark as read
+                      </button>
+                    )}
+                  </div>
+
+                  {expenseNotifications.length === 0 ? (
+                    <div style={{ padding: 24, textAlign: 'center' }}>
+                      <div
+                        style={{
+                          width: 38,
+                          height: 38,
+                          margin: '0 auto 10px',
+                          borderRadius: 12,
+                          display: 'grid',
+                          placeItems: 'center',
+                          background: '#E0FAF3',
+                          color: '#00A876',
+                        }}
+                      >
+                        <ExpenseIcon type="check" color="#00A876" size={19} />
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                        No expense alerts
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.5, color: C.muted }}>
+                        Your selected month's budget is currently under control.
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                      {expenseNotifications.map(notification => {
+                        const isRead = readExpenseNotificationKeys.includes(notification.key)
+                        const isDanger = notification.type === 'danger'
+
+                        return (
+                          <div
+                            key={notification.key}
+                            onClick={() =>
+                              setReadExpenseNotificationKeys(prev =>
+                                prev.includes(notification.key)
+                                  ? prev
+                                  : [...prev, notification.key]
+                              )
+                            }
+                            style={{
+                              padding: '14px 16px',
+                              display: 'flex',
+                              gap: 11,
+                              cursor: 'pointer',
+                              background: isRead
+                                ? C.card
+                                : isDanger
+                                ? 'rgba(239, 68, 68, 0.06)'
+                                : 'rgba(245, 158, 11, 0.08)',
+                              borderBottom: `1px solid ${C.line}`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 34,
+                                height: 34,
+                                flexShrink: 0,
+                                borderRadius: 10,
+                                display: 'grid',
+                                placeItems: 'center',
+                                background: isDanger ? '#FEE2E2' : '#FEF3C7',
+                                color: isDanger ? '#EF4444' : '#F59E0B',
+                              }}
+                            >
+                              <ExpenseIcon
+                                type="warning"
+                                color={isDanger ? '#EF4444' : '#F59E0B'}
+                                size={17}
+                              />
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 8,
+                                }}
+                              >
+                                <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>
+                                  {notification.title}
+                                </div>
+
+                                {!isRead && (
+                                  <span
+                                    style={{
+                                      width: 7,
+                                      height: 7,
+                                      borderRadius: '50%',
+                                      background: '#1A5FFF',
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                )}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop: 4,
+                                  fontSize: 11,
+                                  lineHeight: 1.5,
+                                  color: C.muted,
+                                }}
+                              >
+                                {notification.message}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+          </div>
         </div>
       </div>
 
-      {loading && (
-        <div className={styles.card} style={{ marginBottom: 16, fontSize: 13, color: C.muted }}>
-          Loading expenses...
-        </div>
-      )}
-
       <div className={styles.g4} style={{ marginBottom: 16 }}>
         <div className={styles.metricHighlight}>
-          <div className={styles.metricIcon} style={{ background: 'rgba(255,255,255,0.12)' }}>
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <rect x="2" y="4" width="14" height="10" rx="2" stroke="white" strokeWidth="1.5" />
-              <path d="M2 8h14" stroke="white" strokeWidth="1.5" />
-            </svg>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#FEF3C7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+              flexShrink: 0,
+            }}
+          >
+            <ExpenseIcon type="wallet" color="#F59E0B" size={18} />
           </div>
 
-          <div className={styles.metricVal} style={{ color: '#fff' }}>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#FFFFFF',
+              WebkitTextFillColor: '#FFFFFF',
+            }}
+          >
             {formatRMNoDecimal(selectedMonthTotal)}
           </div>
 
@@ -712,14 +1261,29 @@ export default function Expenses() {
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#E8EFFE' }}>
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ color: '#1A5FFF' }}>
-              <rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M6 7h6M6 10h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#E8EFFE',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+              flexShrink: 0,
+            }}
+          >
+            <ExpenseIcon type="budget" color="#1A5FFF" size={18} />
           </div>
 
-          <div className={styles.metricVal} style={{ color: '#1A5FFF' }}>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#1A5FFF',
+              WebkitTextFillColor: '#1A5FFF',
+            }}
+          >
             {formatRMNoDecimal(monthlyBudget)}
           </div>
 
@@ -735,20 +1299,29 @@ export default function Expenses() {
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#FEF3C7' }}>
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ color: '#F59E0B' }}>
-              <polyline
-                points="2,14 6,8 9,10 12,5 16,7"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#FEF3C7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+              flexShrink: 0,
+            }}
+          >
+            <ExpenseIcon type="trend" color="#F59E0B" size={18} />
           </div>
 
-          <div className={styles.metricVal} style={{ color: '#F59E0B' }}>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#F59E0B',
+              WebkitTextFillColor: '#F59E0B',
+            }}
+          >
             {formatRMNoDecimal(thisYearTotal)}
           </div>
 
@@ -756,13 +1329,29 @@ export default function Expenses() {
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#E0FAF3' }}>
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ color: '#00C48C' }}>
-              <path d="M3 10L7 14L15 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#DDF8EF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+              flexShrink: 0,
+            }}
+          >
+            <ExpenseIcon type="average" color="#00C48C" size={18} />
           </div>
 
-          <div className={styles.metricVal} style={{ color: '#00C48C' }}>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#00C48C',
+              WebkitTextFillColor: '#00C48C',
+            }}
+          >
             {formatRMNoDecimal(avgMonth)}
           </div>
 
@@ -781,12 +1370,62 @@ export default function Expenses() {
               </div>
             ) : (
               byCategory.map((e, i) => (
-                <div key={i} className={styles.expBarRow}>
-                  <div className={styles.expBarLbl}>{e.label}</div>
-                  <div className={styles.expBarTrack}>
-                    <div className={styles.expBarFill} style={{ width: `${e.pct}%`, background: e.color }} />
+                <div
+                  key={i}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '110px minmax(0, 1fr) 92px',
+                    gap: 12,
+                    alignItems: 'center',
+                    marginBottom: 14,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: C.muted,
+                    }}
+                  >
+                    {e.label}
                   </div>
-                  <div className={styles.expBarVal}>{formatRM(e.val)}</div>
+
+                  <div
+                    style={{
+                      height: 8,
+                      borderRadius: 999,
+                      background:
+                        'color-mix(in srgb, var(--line, #EEF1F8) 88%, var(--card, #FFFFFF))',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${e.pct}%`,
+                        height: '100%',
+                        borderRadius: 999,
+                        background: `linear-gradient(
+                          90deg,
+                          color-mix(in srgb, ${e.color} 38%, var(--card, #FFFFFF)) 0%,
+                          color-mix(in srgb, ${e.color} 68%, var(--card, #FFFFFF)) 55%,
+                          ${e.color} 100%
+                        )`,
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      width: 92,
+                      textAlign: 'center',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: e.color,
+                      WebkitTextFillColor: e.color,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {formatRM(e.val)}
+                  </div>
                 </div>
               ))
             )}

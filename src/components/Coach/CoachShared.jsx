@@ -1,6 +1,15 @@
 import { useNavigate } from 'react-router-dom'
-import styles from '../Pages.module.css'
-import { initials } from './coachData'
+import styles from '../Layout/Pages.module.css'
+
+const initials = name =>
+  String(name || 'Player')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
 
 export function Avatar({
   name,
@@ -55,28 +64,46 @@ export function LevelBadge({ level }) {
 }
 
 export function SkillBar({ label, val, color = '#1A5FFF' }) {
+  const safeValue = Math.max(0, Math.min(100, Number(val) || 0))
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-      <span style={{ fontSize: 11, color: '#8892A4', width: 64, flexShrink: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 6,
+        width: '100%',
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11,
+          color: 'var(--text-muted, #8892A4)',
+          width: 64,
+          flexShrink: 0,
+        }}
+      >
         {label}
       </span>
 
       <div
         style={{
           flex: 1,
+          minWidth: 0,
           height: 5,
-          background: '#EEF1F8',
+          background: 'var(--line, #EEF1F8)',
           borderRadius: 4,
           overflow: 'hidden',
         }}
       >
         <div
           style={{
-            width: `${val}%`,
+            width: `${safeValue}%`,
             height: '100%',
             background: color,
             borderRadius: 4,
-            transition: 'width 0.6s ease',
           }}
         />
       </div>
@@ -85,12 +112,13 @@ export function SkillBar({ label, val, color = '#1A5FFF' }) {
         style={{
           fontSize: 11,
           fontWeight: 700,
-          color: '#0D1B3E',
-          width: 24,
+          color: 'var(--text, #0D1B3E)',
+          width: 28,
+          flexShrink: 0,
           textAlign: 'right',
         }}
       >
-        {val}
+        {safeValue}
       </span>
     </div>
   )
@@ -118,6 +146,7 @@ export function CoachPageHeader({ title, subtitle, showActions = true }) {
         {showActions && (
           <div style={{ display: 'flex', gap: 8 }}>
             <button
+              type="button"
               className={styles.btnOutline}
               onClick={() => navigate('/coach/players?find=1')}
             >
@@ -125,6 +154,7 @@ export function CoachPageHeader({ title, subtitle, showActions = true }) {
             </button>
 
             <button
+              type="button"
               className={styles.btnPrimary}
               onClick={() => navigate('/coach/sessions?add=1')}
             >
@@ -138,10 +168,10 @@ export function CoachPageHeader({ title, subtitle, showActions = true }) {
 }
 
 export function CoachStats({
-  myPlayers,
-  upcomingSessions,
-  pastSessions,
-  notes,
+  myPlayers = [],
+  upcomingSessions = [],
+  pastSessions = [],
+  notes = [],
 }) {
   const stats = [
     {

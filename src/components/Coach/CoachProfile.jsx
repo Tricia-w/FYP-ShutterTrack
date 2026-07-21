@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
-import styles from '../Pages.module.css'
+import styles from '../Layout/Pages.module.css'
+import Loader from '../Loader/Loader'
+import useLoadingDelay from '../Loader/LoadingDelay'
 import { CoachPageHeader } from './CoachShared'
 
 const SPECIALTY_OPTIONS = [
@@ -151,6 +153,7 @@ export default function CoachProfile() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('success')
+  const showLoader = useLoadingDelay(loading, 350)
 
   const loadProfile = useCallback(async () => {
     if (!user?.id) {
@@ -204,7 +207,10 @@ export default function CoachProfile() {
       session_types: Array.isArray(data?.session_types)
         ? data.session_types
         : [],
-      certification: data?.certification || '',
+      certification:
+        data?.certification === 'Not provided'
+          ? ''
+          : data?.certification || '',
       certification_issuer: data?.certification_issuer || '',
       certification_file_url: data?.certification_file_url || '',
       player_capacity:
@@ -529,10 +535,14 @@ export default function CoachProfile() {
     setMessage('Coach profile saved. Players can now see the updated details.')
   }
 
-  if (loading) {
+  if (loading && !showLoader) {
+    return null
+  }
+
+  if (showLoader) {
     return (
-      <div className={styles.card} style={{ color: '#8892A4' }}>
-        Loading coach profile...
+      <div className={styles.card}>
+        <Loader text="Loading coach profile..." />
       </div>
     )
   }
@@ -630,7 +640,27 @@ export default function CoachProfile() {
                       fontSize: 13,
                     }}
                   >
-                    📷
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M8.5 6.5 10 4h4l1.5 2.5H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2h3.5Z"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinejoin="round"
+                      />
+                      <circle
+                        cx="12"
+                        cy="13"
+                        r="3.5"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                      />
+                    </svg>
                   </button>
 
                   <input
@@ -1080,7 +1110,11 @@ export default function CoachProfile() {
             </div>
 
             <div style={{ fontSize: 11, color: '#8892A4', marginBottom: 18 }}>
-              Profile completion: {completion}%
+              {completion === 100
+                ? 'Profile complete'
+                : completion >= 80
+                  ? 'Profile almost complete'
+                  : `Profile completion: ${completion}%`}
             </div>
 
             <div
@@ -1096,8 +1130,8 @@ export default function CoachProfile() {
                   src={form.avatar_url}
                   alt=""
                   style={{
-                    width: 56,
-                    height: 56,
+                    width: 64,
+                    height: 64,
                     borderRadius: '50%',
                     objectFit: 'cover',
                   }}
@@ -1105,8 +1139,8 @@ export default function CoachProfile() {
               ) : (
                 <div
                   style={{
-                    width: 56,
-                    height: 56,
+                    width: 64,
+                    height: 64,
                     borderRadius: '50%',
                     background: '#E8EFFE',
                     color: '#1A5FFF',
@@ -1205,6 +1239,63 @@ export default function CoachProfile() {
                 </div>
               </div>
             </div>
+
+            {(form.certification || form.certification_file_url) && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: '11px 12px',
+                  background: '#F6F8FF',
+                  borderRadius: 10,
+                  border: '1px solid #EEF1F8',
+                }}
+              >
+                <div style={{ fontSize: 10, color: '#8892A4' }}>
+                  Certification
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: '#0D1B3E',
+                    marginTop: 3,
+                  }}
+                >
+                  {form.certification || 'Certificate uploaded'}
+                </div>
+
+                {form.certification_issuer && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: '#8892A4',
+                      marginTop: 3,
+                    }}
+                  >
+                    Issued by {form.certification_issuer}
+                  </div>
+                )}
+
+                {form.certification_file_url && (
+                  <a
+                    href={form.certification_file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      marginTop: 7,
+                      color: '#1A5FFF',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    View certificate
+                  </a>
+                )}
+              </div>
+            )}
 
             <div
               style={{

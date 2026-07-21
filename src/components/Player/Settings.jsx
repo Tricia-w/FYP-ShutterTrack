@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../context/AuthContext'
-import styles from './Pages.module.css'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
+import styles from '../Layout/Pages.module.css'
+import Loader from '../Loader/Loader'
+import useLoadingDelay from '../Loader/LoadingDelay'
 
 const MONTH_NAMES_LONG = [
   'January',
@@ -22,6 +24,21 @@ const MONTH_NAMES_LONG = [
 const readBool = (value, fallback = false) => {
   if (value === null || value === undefined) return fallback
   return Boolean(value)
+}
+
+const getSavedTheme = () => {
+  if (typeof window === 'undefined') return null
+
+  const savedTheme = localStorage.getItem('shuttleTheme')
+
+  if (savedTheme === 'dark') return true
+  if (savedTheme === 'light') return false
+
+  return null
+}
+
+const getInitialDarkMode = () => {
+  return getSavedTheme() ?? false
 }
 
 const getDateKey = value => {
@@ -103,7 +120,7 @@ export default function Settings() {
   })
 
   const [settings, setSettings] = useState({
-    darkMode: false,
+    darkMode: getInitialDarkMode(),
 
     matchReminder: true,
     fitnessReminder: true,
@@ -131,17 +148,30 @@ export default function Settings() {
   const [currentBudget, setCurrentBudget] = useState(0)
   const [lastUpdated, setLastUpdated] = useState('—')
   const [loading, setLoading] = useState(true)
+  const showLoader = useLoadingDelay(loading, 350)
   const [checkingReminders, setCheckingReminders] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [requestingDelete, setRequestingDelete] = useState(false)
+  const [autoSaveStatus, setAutoSaveStatus] = useState('')
+  const [accountSaveStatus, setAccountSaveStatus] = useState('')
+  const accountSaveTimerRef = useRef(null)
+  const accountLoadedRef = useRef(false)
+
+  const fetchSettingsRef = useRef(null)
 
   useEffect(() => {
-    fetchSettings()
+    fetchSettingsRef.current = fetchSettings
+  })
+
+  useEffect(() => {
+    fetchSettingsRef.current?.()
   }, [])
 
   useEffect(() => {
     const theme = settings.darkMode ? 'dark' : 'light'
+
     document.documentElement.setAttribute('data-theme', theme)
+    document.body.setAttribute('data-theme', theme)
     localStorage.setItem('shuttleTheme', theme)
   }, [settings.darkMode])
 
@@ -226,8 +256,12 @@ export default function Settings() {
       phone: userSettings?.phone || '',
     })
 
+    accountLoadedRef.current = true
+
     const loadedSettings = {
-      darkMode: readBool(userSettings?.dark_mode, false),
+      darkMode:
+        getSavedTheme() ??
+        readBool(userSettings?.dark_mode, false),
 
       matchReminder: readBool(userSettings?.match_reminders, true),
       fitnessReminder: readBool(userSettings?.fitness_reminders, true),
@@ -258,7 +292,13 @@ export default function Settings() {
       profilePublic: readBool(userSettings?.profile_public, true),
     }
 
-    setSettings(loadedSettings)
+    setSettings(current => ({
+      ...loadedSettings,
+      darkMode:
+        getSavedTheme() ??
+        current.darkMode ??
+        loadedSettings.darkMode,
+    }))
 
     setLastUpdated(
       userSettings?.updated_at
@@ -609,81 +649,154 @@ export default function Settings() {
     setForm(f => ({ ...f, [key]: e.target.value }))
   }
 
-  const toggle = key => {
-    setSettings(s => ({ ...s, [key]: !s[key] }))
+  const SETTINGS_COLUMN_MAP = {
+    darkMode: 'dark_mode',
+    matchReminder: 'match_reminders',
+    fitnessReminder: 'fitness_reminders',
+    expenseReminder: 'expense_reminders',
+    coachNoteReminder: 'coach_note_reminder',
+    matchBeforeReminder: 'match_before_reminder',
+    matchLogResultReminder: 'match_log_result_reminder',
+    fitnessBeforeReminder: 'fitness_before_reminder',
+    fitnessLogAfterReminder: 'fitness_log_after_reminder',
+    expenseLogAfterReminder: 'expense_log_after_reminder',
+    expenseBudgetAlert: 'expense_budget_alert',
+    profilePublic: 'profile_public',
   }
 
-  const handleSaveAccount = async () => {
+  const toggle = async key => {
+    const nextValue = !settings[key]
+
+    setSettings(current => ({
+      ...current,
+      [key]: nextValue,
+    }))
+
+    if (key === 'darkMode') {
+      const theme = nextValue ? 'dark' : 'light'
+
+      document.documentElement.setAttribute('data-theme', theme)
+      document.body.setAttribute('data-theme', theme)
+      localStorage.setItem('shuttleTheme', theme)
+    }
+
+    const column = SETTINGS_COLUMN_MAP[key]
+
+    if (!column) return
+
+    setAutoSaveStatus('Saving...')
+
+    try {
+      const user = await getAuthUser()
+      const now = new Date().toISOString()
+
+      const { error } = await supabase
+        .from('user_settings')
+        .upsert(
+          {
+            user_id: user.id,
+            [column]: nextValue,
+            updated_at: now,
+          },
+          { onConflict: 'user_id' }
+        )
+
+      if (error) throw error
+
+      setLastUpdated(new Date(now).toLocaleString())
+      setAutoSaveStatus('Saved automatically')
+
+      window.setTimeout(() => {
+        setAutoSaveStatus('')
+      }, 1800)
+    } catch (error) {
+      console.error('Auto-save setting error:', error)
+      setAutoSaveStatus('Could not save')
+
+      setSettings(current => ({
+        ...current,
+        [key]: !nextValue,
+      }))
+
+      if (key === 'darkMode') {
+        const revertedTheme = !nextValue ? 'dark' : 'light'
+
+        document.documentElement.setAttribute('data-theme', revertedTheme)
+        document.body.setAttribute('data-theme', revertedTheme)
+        localStorage.setItem('shuttleTheme', revertedTheme)
+      }
+    }
+  }
+
+  const saveAccountSettings = async currentForm => {
     const { data: userData } = await supabase.auth.getUser()
     const authUser = userData?.user
 
     if (!authUser) {
-      alert('Please login first.')
-      return
+      throw new Error('Please login first.')
     }
 
     const now = new Date().toISOString()
 
-    const { error: userError } = await supabase.from('app_users').upsert(
-      {
-        user_id: authUser.id,
-        full_name: form.name,
-        email: form.email,
-        updated_at: now,
-      },
-      { onConflict: 'user_id' }
-    )
+    const { error: userError } = await supabase
+      .from('app_users')
+      .upsert(
+        {
+          user_id: authUser.id,
+          full_name: currentForm.name,
+          email: currentForm.email,
+          updated_at: now,
+        },
+        { onConflict: 'user_id' }
+      )
 
-    if (userError) {
-      console.log(userError)
-      alert('Failed to update account.')
-      return
-    }
+    if (userError) throw userError
 
-    const { error: settingsError } = await supabase.from('user_settings').upsert(
-      {
-        user_id: authUser.id,
-        phone: form.phone,
+    const { error: phoneError } = await supabase
+      .from('user_settings')
+      .upsert(
+        {
+          user_id: authUser.id,
+          phone: currentForm.phone,
+          updated_at: now,
+        },
+        { onConflict: 'user_id' }
+      )
 
-        match_reminders: settings.matchReminder,
-        fitness_reminders: settings.fitnessReminder,
-        expense_reminders: settings.expenseReminder,
-        coach_note_reminder: settings.coachNoteReminder,
+    if (phoneError) throw phoneError
 
-        match_before_reminder: settings.matchBeforeReminder,
-        match_log_result_reminder: settings.matchLogResultReminder,
-
-        fitness_before_reminder: settings.fitnessBeforeReminder,
-        fitness_log_after_reminder: settings.fitnessLogAfterReminder,
-
-        expense_log_after_reminder: settings.expenseLogAfterReminder,
-        expense_budget_alert: settings.expenseBudgetAlert,
-
-        profile_public: settings.profilePublic,
-        dark_mode: settings.darkMode,
-        updated_at: now,
-      },
-      { onConflict: 'user_id' }
-    )
-
-    if (settingsError) {
-      console.log(settingsError)
-      alert('Failed to update settings.')
-      return
-    }
-
-    await createNotification({
-      title: 'Settings Updated',
-      message: 'Your account and notification settings were saved.',
-      type: 'success',
-      dedupeKey: `settings-updated-${getDateKey(now)}`,
-    })
-
-    await runReminderChecks(settings)
-    await fetchSettings()
-
-    alert('Settings saved successfully.')
+    setLastUpdated(new Date(now).toLocaleString())
   }
+
+  useEffect(() => {
+    if (!accountLoadedRef.current || loading) return
+
+    if (accountSaveTimerRef.current) {
+      window.clearTimeout(accountSaveTimerRef.current)
+    }
+
+    setAccountSaveStatus('Saving...')
+
+    accountSaveTimerRef.current = window.setTimeout(async () => {
+      try {
+        await saveAccountSettings(form)
+        setAccountSaveStatus('Saved automatically')
+
+        window.setTimeout(() => {
+          setAccountSaveStatus('')
+        }, 1800)
+      } catch (error) {
+        console.error('Auto-save account error:', error)
+        setAccountSaveStatus('Could not save')
+      }
+    }, 700)
+
+    return () => {
+      if (accountSaveTimerRef.current) {
+        window.clearTimeout(accountSaveTimerRef.current)
+      }
+    }
+  }, [form, loading])
 
   const handleLogout = async () => {
     if (logout) {
@@ -876,6 +989,18 @@ export default function Settings() {
     </div>
   )
 
+  if (loading && !showLoader) {
+    return null
+  }
+
+  if (showLoader) {
+    return (
+      <div className={styles.card}>
+        <Loader text="Loading settings..." />
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className={styles.pageHead}>
@@ -894,17 +1019,9 @@ export default function Settings() {
             </div>
           </div>
 
-          <button className={styles.btnPrimary} onClick={handleSaveAccount}>
-            Save Changes
-          </button>
+
         </div>
       </div>
-
-      {loading && (
-        <div className={styles.card} style={{ marginBottom: 16 }}>
-          Loading settings...
-        </div>
-      )}
 
       {checkingReminders && (
         <div className={styles.card} style={{ marginBottom: 16 }}>
@@ -915,7 +1032,32 @@ export default function Settings() {
       <div className={styles.g2}>
         <div>
           <div className={styles.card} style={{ marginBottom: 16 }}>
-            <div className={styles.cardTitle}>Account Settings</div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                marginBottom: 8,
+              }}
+            >
+              <div className={styles.cardTitle}>Account Settings</div>
+
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color:
+                    accountSaveStatus === 'Could not save'
+                      ? '#EF4444'
+                      : accountSaveStatus === 'Saving...'
+                        ? 'var(--text-muted)'
+                        : '#00A878',
+                }}
+              >
+                {accountSaveStatus || 'Changes save automatically'}
+              </span>
+            </div>
 
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Full Name</label>
@@ -952,7 +1094,26 @@ export default function Settings() {
           </div>
 
           <div className={styles.card}>
-            <div className={styles.cardTitle}>Appearance</div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                marginBottom: 8,
+              }}
+            >
+              <div className={styles.cardTitle}>Appearance</div>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: 'var(--text-muted)',
+                }}
+              >
+                Auto-saved
+              </span>
+            </div>
 
             <SettingLine
               label="Dark mode"
@@ -971,7 +1132,30 @@ export default function Settings() {
 
         <div>
           <div className={styles.card} style={{ marginBottom: 16 }}>
-            <div className={styles.cardTitle}>Notifications & Privacy</div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                marginBottom: 8,
+              }}
+            >
+              <div className={styles.cardTitle}>Notifications & Privacy</div>
+
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color:
+                    autoSaveStatus === 'Could not save'
+                      ? '#EF4444'
+                      : '#00A878',
+                }}
+              >
+                {autoSaveStatus || 'Changes save automatically'}
+              </span>
+            </div>
 
             <SettingLine
               label="Match reminders"

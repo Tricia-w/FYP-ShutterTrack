@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
-import styles from "./Layout.module.css";
+import { useAuth } from "../../context/AuthContext";
+import styles from "../Layout/Layout.module.css";
 
 const ROLE_META = {
   Admin:   { color: "#7C3AED", bg: "#EDE9FE" },

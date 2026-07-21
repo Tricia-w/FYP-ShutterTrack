@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabaseClient'
-import SkillRadarChart from './SkillRadarChart'
-import ExpensePieChart from './ExpensesPie'
-import styles from './Pages.module.css'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabaseClient'
+import SkillRadarChart from '../Layout/SkillRadarChart'
+import ExpensePieChart from '../Layout/ExpensesPie'
+import styles from '../Layout/Pages.module.css'
+import Loader from '../Loader/Loader'
+import useLoadingDelay from '../Loader/LoadingDelay'
 
 const SKILL_COLUMNS = [
   { name: 'Smash', column: 'smash' },
@@ -161,6 +163,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
+  const showLoader = useLoadingDelay(loading, 350)
   const [profile, setProfile] = useState(null)
   const [setup, setSetup] = useState(null)
   const [matches, setMatches] = useState([])
@@ -575,8 +578,20 @@ export default function Dashboard() {
     return sorted[0]
   }, [skills])
 
+  if (loading && !showLoader) {
+    return null
+  }
+
+  if (showLoader) {
+    return (
+      <div className={styles.card}>
+        <Loader text="Loading dashboard..." />
+      </div>
+    )
+  }
+
   return (
-    <div style={{ opacity: loading ? 0.65 : 1, transition: 'opacity 160ms ease' }}>
+    <div>
       <div className={styles.pageHead}>
         <div
           style={{
@@ -610,7 +625,7 @@ export default function Dashboard() {
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path
                   d="M7 1v12M1 7h12"
-                  stroke="currentColor"
+                  stroke="#00D99A"
                   strokeWidth="2"
                   strokeLinecap="round"
                 />
@@ -628,8 +643,8 @@ export default function Dashboard() {
                 width: 46,
                 height: 46,
                 borderRadius: 14,
-                border: '1px solid #E2E8F0',
-                background: '#FFFFFF',
+                border: '1px solid var(--line, #E2E8F0)',
+                background: 'var(--card, #FFFFFF)',
                 cursor: 'pointer',
                 fontSize: 19,
                 display: 'flex',
@@ -673,14 +688,15 @@ export default function Dashboard() {
                   position: 'absolute',
                   right: 0,
                   top: 56,
-                  width: 360,
-                  maxHeight: 430,
+                  width: 430,
+                  maxWidth: 'calc(100vw - 28px)',
+                  maxHeight: 560,
                   overflowY: 'auto',
-                  background: '#FFFFFF',
-                  border: '1px solid #EEF1F8',
-                  borderRadius: 18,
-                  boxShadow: '0 18px 45px rgba(13, 27, 62, 0.14)',
-                  padding: 12,
+                  background: 'var(--card, #FFFFFF)',
+                  border: '1px solid var(--line, #EEF1F8)',
+                  borderRadius: 22,
+                  boxShadow: '0 22px 55px rgba(13, 27, 62, 0.16)',
+                  padding: 16,
                   zIndex: 999,
                 }}
               >
@@ -695,9 +711,9 @@ export default function Dashboard() {
                 >
                   <div
                     style={{
-                      fontSize: 16,
+                      fontSize: 20,
                       fontWeight: 800,
-                      color: '#0D1B3E',
+                      color: 'var(--text, #0D1B3E)',
                     }}
                   >
                     Notifications
@@ -718,7 +734,7 @@ export default function Dashboard() {
                           background: 'transparent',
                           color: '#1A5FFF',
                           cursor: 'pointer',
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: 800,
                           padding: 0,
                         }}
@@ -733,7 +749,7 @@ export default function Dashboard() {
                           background: 'transparent',
                           color: '#EF4444',
                           cursor: 'pointer',
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: 800,
                           padding: 0,
                         }}
@@ -759,13 +775,20 @@ export default function Dashboard() {
                   notifications.map(n => (
                     <div
                       key={n.id}
-                      onClick={() => markNotificationRead(n.id)}
+                      onClick={async () => {
+                        await markNotificationRead(n.id)
+                        setShowNotifications(false)
+
+                        if (n.action_url) {
+                          navigate(n.action_url)
+                        }
+                      }}
                       style={{
                         position: 'relative',
-                        padding: '12px 40px 12px 12px',
-                        borderRadius: 14,
+                        padding: '14px 44px 14px 14px',
+                        borderRadius: 16,
                         cursor: 'pointer',
-                        marginBottom: 10,
+                        marginBottom: 12,
                         background: getNotificationBg(n.type),
                         border: `1px solid ${getNotificationBorder(n.type)}`,
                         opacity: n.is_read ? 0.68 : 1,
@@ -777,9 +800,9 @@ export default function Dashboard() {
                           position: 'absolute',
                           top: 9,
                           right: 9,
-                          width: 24,
-                          height: 24,
-                          borderRadius: 8,
+                          width: 26,
+                          height: 26,
+                          borderRadius: 9,
                           border: '1px solid rgba(239, 68, 68, 0.18)',
                           background: 'rgba(255, 255, 255, 0.8)',
                           color: '#EF4444',
@@ -804,13 +827,13 @@ export default function Dashboard() {
                           marginBottom: 6,
                         }}
                       >
-                        <span style={{ fontSize: 16 }}>
+                        <span style={{ fontSize: 18, lineHeight: 1 }}>
                           {getNotificationIcon(n.type)}
                         </span>
 
                         <div
                           style={{
-                            fontSize: 14,
+                            fontSize: 15,
                             fontWeight: 800,
                             color: '#0D1B3E',
                             paddingRight: 4,
@@ -836,7 +859,7 @@ export default function Dashboard() {
                         style={{
                           fontSize: 13,
                           color: '#64748B',
-                          lineHeight: 1.5,
+                          lineHeight: 1.6,
                         }}
                       >
                         {n.message}
@@ -846,7 +869,7 @@ export default function Dashboard() {
                         style={{
                           fontSize: 11,
                           color: '#94A3B8',
-                          marginTop: 8,
+                          marginTop: 9,
                         }}
                       >
                         {formatNotificationTime(n.created_at)}
@@ -879,63 +902,230 @@ export default function Dashboard() {
 
       <div className={styles.g4} style={{ marginBottom: 16 }}>
         <div className={styles.metricHighlight}>
-          <div className={styles.metricIcon} style={{ background: 'rgba(255,255,255,0.12)' }}>
-            ⭐
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#FEF3C7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              marginBottom: 10,
+            }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="#FACC15"
+              aria-hidden="true"
+            >
+              <path d="m12 3 2.7 5.47 6.03.88-4.36 4.25 1.03 6-5.4-2.84L6.6 19.6l1.03-6-4.36-4.25 6.03-.88L12 3Z" />
+            </svg>
           </div>
 
-          <div className={styles.metricVal} style={{ color: '#fff' }}>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#2563FF',
+              WebkitTextFillColor: '#2563FF',
+            }}
+          >
             {stats.totalMatches}
           </div>
 
-          <div className={styles.metricLbl} style={{ color: 'rgba(255,255,255,0.6)' }}>
+          <div
+            className={styles.metricLbl}
+            style={{
+              color: '#D8E2F2',
+              WebkitTextFillColor: '#D8E2F2',
+            }}
+          >
             Total matches
           </div>
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#E0FAF3' }}>
-            ✓
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#DDF8EF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              marginBottom: 10,
+            }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="m7 12 3 3 7-7"
+                stroke="#00C48C"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
 
-          <div className={styles.metricVal} style={{ color: '#00C48C' }}>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#00C48C',
+              WebkitTextFillColor: '#00C48C',
+            }}
+          >
             {stats.winRate}%
           </div>
 
           <div className={styles.metricLbl}>Win rate</div>
 
-          <div className={styles.deltaUp}>
+          <div
+            className={styles.deltaUp}
+            style={{
+              color: '#00C48C',
+              WebkitTextFillColor: '#00C48C',
+            }}
+          >
             {stats.wins}W {stats.losses}L
           </div>
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#E8EFFE' }}>
-            ◷
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#E8EFFE',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              marginBottom: 10,
+            }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 16 9 11l3 3 7-7"
+                stroke="#1A5FFF"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M15 7h4v4"
+                stroke="#1A5FFF"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
 
-          <div className={styles.metricVal} style={{ color: '#1A5FFF' }}>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#1A5FFF',
+              WebkitTextFillColor: '#1A5FFF',
+            }}
+          >
             {fitnessScore}
           </div>
 
           <div className={styles.metricLbl}>Fitness score</div>
 
-          <div className={fitnessScore >= 70 ? styles.deltaUp : styles.deltaDown}>
+          <div
+            className={
+              fitnessScore >= 70 ? styles.deltaUp : styles.deltaDown
+            }
+            style={{
+              color: fitnessScore >= 70 ? '#00C48C' : '#EF4444',
+              WebkitTextFillColor:
+                fitnessScore >= 70 ? '#00C48C' : '#EF4444',
+            }}
+          >
             {fitnessScore >= 70 ? 'Good condition' : 'Needs improvement'}
           </div>
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#FEF3C7' }}>
-            ▭
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#FEF3C7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              marginBottom: 10,
+            }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <rect
+                x="4"
+                y="7"
+                width="16"
+                height="10"
+                rx="2"
+                stroke="#F59E0B"
+                strokeWidth="1.8"
+              />
+              <path
+                d="M8 12h5"
+                stroke="#F59E0B"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
           </div>
 
-          <div className={styles.metricVal} style={{ color: '#F59E0B' }}>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#F59E0B',
+              WebkitTextFillColor: '#F59E0B',
+            }}
+          >
             {formatRMNoDecimal(currentMonthSpend)}
           </div>
 
           <div className={styles.metricLbl}>Monthly spend</div>
 
-          <div className={spendDifference <= 0 ? styles.deltaUp : styles.deltaDown}>
+          <div
+            className={
+              spendDifference <= 0 ? styles.deltaUp : styles.deltaDown
+            }
+            style={{
+              color: spendDifference <= 0 ? '#00C48C' : '#EF4444',
+              WebkitTextFillColor:
+                spendDifference <= 0 ? '#00C48C' : '#EF4444',
+            }}
+          >
             {spendDifference === 0
               ? 'Same as last month'
               : `${spendDifference > 0 ? '↑' : '↓'} RM ${Math.abs(
@@ -946,7 +1136,18 @@ export default function Dashboard() {
       </div>
 
       <div className={styles.g2} style={{ marginBottom: 16 }}>
-        <div className={styles.card}>
+        <div
+          className={styles.card}
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/performance')}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              navigate('/performance')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+        >
           <div className={styles.cardTitle}>Recent Matches</div>
 
           {matches.length === 0 ? (
@@ -990,13 +1191,30 @@ export default function Dashboard() {
           )}
 
           <div style={{ marginTop: 14 }}>
-            <button className={styles.btnOutline} onClick={() => navigate('/performance')}>
+            <button
+              className={styles.btnOutline}
+              onClick={event => {
+                event.stopPropagation()
+                navigate('/performance')
+              }}
+            >
               View all matches →
             </button>
           </div>
         </div>
 
-        <div className={styles.card}>
+        <div
+          className={styles.card}
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/performance')}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              navigate('/performance')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+        >
           <div className={styles.cardTitle}>Skill Overview</div>
 
           <div
@@ -1055,7 +1273,13 @@ export default function Dashboard() {
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <button className={styles.btnOutline} onClick={() => navigate('/performance')}>
+            <button
+              className={styles.btnOutline}
+              onClick={event => {
+                event.stopPropagation()
+                navigate('/performance')
+              }}
+            >
               Update skills →
             </button>
           </div>
@@ -1063,7 +1287,18 @@ export default function Dashboard() {
       </div>
 
       <div className={styles.g2}>
-        <div className={styles.card}>
+        <div
+          className={styles.card}
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/expenses')}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              navigate('/expenses')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+        >
           <div className={styles.cardTitle}>
             Expense Breakdown — {getMonthTitle()}
           </div>
@@ -1085,14 +1320,56 @@ export default function Dashboard() {
                 <ExpensePieChart expenses={expenseBreakdown} />
               </div>
 
-              <div style={{ marginTop: 14 }}>
-                {expenseBreakdown.map(expense => (
-                  <div key={expense.label} className={styles.expBarRow}>
+              <div
+                style={{
+                  marginTop: 16,
+                  border: '1px solid var(--line, #EEF1F8)',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) 110px 80px',
+                    gap: 10,
+                    padding: '10px 14px',
+                    background: 'var(--soft, #F6F8FF)',
+                    borderBottom: '1px solid var(--line, #EEF1F8)',
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color: 'var(--text-muted, #8892A4)',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  <div>Category</div>
+                  <div style={{ textAlign: 'right' }}>Amount</div>
+                  <div style={{ textAlign: 'right' }}>Share</div>
+                </div>
+
+                {expenseBreakdown.map((expense, index) => (
+                  <div
+                    key={expense.label}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0, 1fr) 110px 80px',
+                      gap: 10,
+                      alignItems: 'center',
+                      padding: '11px 14px',
+                      borderBottom:
+                        index < expenseBreakdown.length - 1
+                          ? '1px solid var(--line, #EEF1F8)'
+                          : 'none',
+                      fontSize: 13,
+                    }}
+                  >
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
+                        minWidth: 0,
                       }}
                     >
                       <span
@@ -1101,14 +1378,42 @@ export default function Dashboard() {
                           height: 9,
                           borderRadius: '50%',
                           background: expense.color,
+                          flexShrink: 0,
                         }}
                       />
 
-                      <span>{expense.label}</span>
+                      <span
+                        style={{
+                          color: 'var(--text, #0D1B3E)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {expense.label}
+                      </span>
                     </div>
 
-                    <div style={{ fontWeight: 700 }}>
-                      RM {Number(expense.val).toFixed(2)} · {expense.pct}%
+                    <div
+                      style={{
+                        textAlign: 'right',
+                        fontWeight: 700,
+                        color: 'var(--text, #0D1B3E)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      RM {Number(expense.val).toFixed(2)}
+                    </div>
+
+                    <div
+                      style={{
+                        textAlign: 'right',
+                        fontWeight: 700,
+                        color: '#1A5FFF',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {expense.pct}%
                     </div>
                   </div>
                 ))}
@@ -1117,13 +1422,30 @@ export default function Dashboard() {
           )}
 
           <div style={{ marginTop: 14 }}>
-            <button className={styles.btnOutline} onClick={() => navigate('/expenses')}>
+            <button
+              className={styles.btnOutline}
+              onClick={event => {
+                event.stopPropagation()
+                navigate('/expenses')
+              }}
+            >
               View expenses →
             </button>
           </div>
         </div>
 
-        <div className={styles.card}>
+        <div
+          className={styles.card}
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/fitness')}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              navigate('/fitness')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+        >
           <div className={styles.cardTitle}>Upcoming Schedule</div>
 
           {schedule.length === 0 ? (
@@ -1208,7 +1530,13 @@ export default function Dashboard() {
           )}
 
           <div style={{ marginTop: 14 }}>
-            <button className={styles.btnOutline} onClick={() => navigate('/fitness')}>
+            <button
+              className={styles.btnOutline}
+              onClick={event => {
+                event.stopPropagation()
+                navigate('/fitness')
+              }}
+            >
               View schedule →
             </button>
           </div>

@@ -1,4 +1,4 @@
-import { getPasswordChecks } from '../utils/passwordValidation'
+import { getPasswordChecks } from '../../utils/passwordValidation'
 
 export default function PasswordChecklist({ password }) {
   const checks = getPasswordChecks(password)

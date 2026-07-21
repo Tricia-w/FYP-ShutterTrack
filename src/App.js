@@ -4,27 +4,31 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from 'react-router-dom'
+
 import { useAuth } from './context/AuthContext'
 import { supabase } from './lib/supabase'
 
-import Layout from './components/Layout'
-import Dashboard from './components/Dashboard'
-import Login from './components/Login'
-import Register from './components/Register'
-import ResetPassword from './components/ResetPassword'
-import AuthCallback from './components/AuthCallback'
+import Layout from './components/Layout/Layout'
+
+import Dashboard from './components/Player/Dashboard'
+import Profile from './components/Player/Profile'
+import Performance from './components/Player/Performance'
+import Fitness from './components/Player/Fitness'
+import Expenses from './components/Player/Expenses'
+import Players from './components/Player/Players'
+import Settings from './components/Player/Settings'
+
+import Login from './components/Welcome/Login'
+import Register from './components/Welcome/Register'
+import ResetPassword from './components/Welcome/ResetPassword'
+
+import AuthCallback from './components/Admin/AuthCallback'
+import AdminDashboard from './components/Admin/Admin'
+
 import Setup from './Setup'
 
-import Profile from './components/Profile'
-import Performance from './components/Performance'
-import Fitness from './components/Fitness'
-import Expenses from './components/Expenses'
-import Players from './components/Players'
-import Settings from './components/Settings'
-import AdminDashboard from './components/Admin'
-
-import { CoachProvider } from './components/Coach/CoachContext'
 import CoachDashboard from './components/Coach/CoachDashboard'
 import CoachPlayers from './components/Coach/CoachPlayers'
 import CoachSessions from './components/Coach/CoachSessions'
@@ -162,15 +166,18 @@ function CoachRoute({ children }) {
 }
 
 /*
-  Players can enter player pages normally.
+  Players can access player pages normally.
 
-  Coaches can also enter player pages only when their account has a row
-  inside player_profiles.
+  Coaches can access player pages only when their account also has
+  a row in player_profiles.
 */
 function PlayerRoute({ children }) {
   const { user, profile, loading, isAdmin } = useAuth()
-  const [checkingPlayerProfile, setCheckingPlayerProfile] = useState(true)
-  const [hasPlayerProfile, setHasPlayerProfile] = useState(false)
+
+  const [checkingPlayerProfile, setCheckingPlayerProfile] =
+    useState(true)
+  const [hasPlayerProfile, setHasPlayerProfile] =
+    useState(false)
 
   const role = getUserRole(profile, isAdmin)
 
@@ -223,7 +230,10 @@ function PlayerRoute({ children }) {
           setHasPlayerProfile(Boolean(data))
         }
       } catch (error) {
-        console.error('Unable to check player profile:', error)
+        console.error(
+          'Unable to check player profile:',
+          error
+        )
 
         if (active) {
           setHasPlayerProfile(false)
@@ -267,6 +277,7 @@ function PlayerRoute({ children }) {
 
 function PlayerSetupRoute({ children }) {
   const { user, profile, loading, isAdmin } = useAuth()
+  const location = useLocation()
 
   if (loading) {
     return <LoadingScreen />
@@ -277,6 +288,8 @@ function PlayerSetupRoute({ children }) {
   }
 
   const role = getUserRole(profile, isAdmin)
+  const searchParams = new URLSearchParams(location.search)
+  const isRedoSetup = searchParams.get('redo') === '1'
 
   if (role === 'admin') {
     return <Navigate to="/admin" replace />
@@ -286,7 +299,7 @@ function PlayerSetupRoute({ children }) {
     return <Navigate to="/coach" replace />
   }
 
-  if (getSetupCompleted(profile)) {
+  if (getSetupCompleted(profile) && !isRedoSetup) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -358,7 +371,7 @@ function App() {
             </PrivateRoute>
           }
         >
-          {/* Player pages */}
+          {/* Player routes */}
           <Route
             path="/dashboard"
             element={
@@ -422,39 +435,51 @@ function App() {
             }
           />
 
-          {/* Separated coach pages */}
+          {/* Coach routes */}
           <Route
+            path="/coach"
             element={
               <CoachRoute>
-                <CoachProvider />
+                <CoachDashboard />
               </CoachRoute>
             }
-          >
-            <Route
-              path="/coach"
-              element={<CoachDashboard />}
-            />
+          />
 
-            <Route
-              path="/coach/players"
-              element={<CoachPlayers />}
-            />
+          <Route
+            path="/coach/players"
+            element={
+              <CoachRoute>
+                <CoachPlayers />
+              </CoachRoute>
+            }
+          />
 
-            <Route
-              path="/coach/sessions"
-              element={<CoachSessions />}
-            />
+          <Route
+            path="/coach/sessions"
+            element={
+              <CoachRoute>
+                <CoachSessions />
+              </CoachRoute>
+            }
+          />
 
-            <Route
-              path="/coach/progress"
-              element={<CoachProgress />}
-            />
+          <Route
+            path="/coach/progress"
+            element={
+              <CoachRoute>
+                <CoachProgress />
+              </CoachRoute>
+            }
+          />
 
-            <Route
-              path="/coach/profile"
-              element={<CoachProfile />}
-            />
-          </Route>
+          <Route
+            path="/coach/profile"
+            element={
+              <CoachRoute>
+                <CoachProfile />
+              </CoachRoute>
+            }
+          />
         </Route>
 
         {/* Admin route */}

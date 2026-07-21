@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabaseClient'
-import styles from './Pages.module.css'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabaseClient'
+import styles from '../Layout/Pages.module.css'
+import Loader from '../Loader/Loader'
+import useLoadingDelay from '../Loader/LoadingDelay'
 
 const skillColumns = [
   { name: 'Smash', column: 'smash' },
@@ -21,6 +23,29 @@ const defaultSkills = skillColumns.map(skill => ({
   updatedBy: 'Player',
   updatedAt: 'Not updated',
 }))
+
+const PROFILE_SKILL_COLORS = {
+  Smash: '#2563EB',
+  Defense: '#14B8A6',
+  Footwork: '#8B5CF6',
+  'Drop shot': '#F59E0B',
+  'Net play': '#EC4899',
+  Serve: '#06B6D4',
+}
+
+const getSkillColor = label => {
+  const base = PROFILE_SKILL_COLORS[label] || '#2563EB'
+
+  return {
+    bar: `linear-gradient(
+      90deg,
+      color-mix(in srgb, ${base} 38%, var(--card, #FFFFFF)) 0%,
+      color-mix(in srgb, ${base} 68%, var(--card, #FFFFFF)) 55%,
+      ${base} 100%
+    )`,
+    text: base,
+  }
+}
 
 const normaliseDateForSupabase = value => {
   if (!value) return null
@@ -124,6 +149,7 @@ export default function Profile() {
 
   const [profileId, setProfileId] = useState(null)
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+  const showLoader = useLoadingDelay(isLoadingProfile, 350)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [skillsData, setSkillsData] = useState(defaultSkills)
   const [matchSummary, setMatchSummary] = useState({
@@ -317,8 +343,18 @@ export default function Profile() {
   const preferredEvent = setupData?.preferred_event || 'Not set'
   const playStyle = setupData?.play_style || 'Not set'
   const strength = setupData?.biggest_strength || 'Not set'
-  const weakness = setupData?.biggest_weakness || setupData?.weakness || 'Not set'
-  const mindset = setupData?.player_type || setupData?.under_pressure || setupData?.mindset || 'Not set'
+  const weakness =
+    setupData?.biggest_weakness ||
+    setupData?.current_weakness ||
+    setupData?.weakness ||
+    'Not set'
+
+  const mindset =
+    setupData?.player_type ||
+    setupData?.under_pressure ||
+    setupData?.pressure_reaction ||
+    setupData?.mindset ||
+    'Not set'
   const playerMindsetText = String(mindset).toLowerCase().includes('player') ? mindset : `${mindset} Player`
   const cleanInstagram = form.instagram.replace('@', '').trim()
 
@@ -619,10 +655,34 @@ export default function Profile() {
   }
 
   const stats = [
-    { label: 'Total matches', value: matchSummary.total_matches, color: '#1A5FFF', bg: '#E8EFFE', icon: 'matches' },
-    { label: 'Wins', value: matchSummary.wins, color: '#00C48C', bg: '#E0FAF3', icon: 'wins' },
-    { label: 'Losses', value: matchSummary.losses, color: '#EF4444', bg: '#FEE2E2', icon: 'losses' },
-    { label: 'Win rate', value: `${matchSummary.win_rate}%`, color: '#1A5FFF', bg: '#E8EFFE', icon: 'winRate' },
+    {
+      label: 'Total matches',
+      value: matchSummary.total_matches,
+      color: '#1A5FFF',
+      bg: '#E8EFFE',
+      icon: 'matches',
+    },
+    {
+      label: 'Wins',
+      value: matchSummary.wins,
+      color: '#00C48C',
+      bg: '#DDF8EF',
+      icon: 'wins',
+    },
+    {
+      label: 'Losses',
+      value: matchSummary.losses,
+      color: '#EF4444',
+      bg: '#FEE2E2',
+      icon: 'losses',
+    },
+    {
+      label: 'Win rate',
+      value: `${matchSummary.win_rate}%`,
+      color: '#1A5FFF',
+      bg: '#E8EFFE',
+      icon: 'winRate',
+    },
   ]
 
   const equipment = [
@@ -633,28 +693,29 @@ export default function Profile() {
     { label: 'Last stringing', value: form.lastStringing ? formatDate(form.lastStringing) : '-' },
   ]
 
-  const skillSources = [...new Set(skillsData.map(skill => skill.source))]
-  const skillSourceText = skillSources.length === 1 ? skillSources[0] : 'Mixed'
-  const latestSkillUpdate = skillsData[0] || defaultSkills[0]
-
   const modalStyle = {
-    background: '#FFFFFF',
-    color: '#0D1B3E',
-    border: '1px solid #D9E2F0',
+    background: 'var(--card, #FFFFFF)',
+    color: 'var(--text, #0D1B3E)',
+    border: '1px solid var(--line, #D9E2F0)',
     borderRadius: 20,
-    boxShadow: '0 24px 70px rgba(15, 23, 42, 0.18)',
+    boxShadow: '0 24px 70px rgba(15, 23, 42, 0.28)',
     padding: 28,
   }
 
+  if (isLoadingProfile && !showLoader) {
+    return null
+  }
+
+  if (showLoader) {
+    return (
+      <div className={styles.card}>
+        <Loader text="Loading profile..." />
+      </div>
+    )
+  }
+
   return (
-    <div
-      className="profileResponsivePage"
-      style={{
-        opacity: isLoadingProfile ? 0.4 : 1,
-        transition: 'opacity 160ms ease',
-        pointerEvents: isLoadingProfile ? 'none' : 'auto',
-      }}
-    >
+    <div className="profileResponsivePage">
       <style>{`
         .profileResponsivePage {
           width: 100%;
@@ -728,6 +789,52 @@ export default function Profile() {
           box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
           min-width: 0;
           overflow: hidden;
+        }
+
+        .profileStatIconBox {
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 10px;
+          flex-shrink: 0;
+        }
+
+        .profileSkillRow {
+          display: grid;
+          grid-template-columns: 78px minmax(0, 1fr) 44px;
+          gap: 10px;
+          align-items: center;
+          margin-bottom: 14px;
+        }
+
+        .profileSkillLabel {
+          font-size: 11px;
+          color: var(--text-muted, #8892A4);
+          min-width: 0;
+        }
+
+        .profileSkillTrack {
+          position: relative;
+          height: 8px;
+          border-radius: 999px;
+          background: var(--line, #EEF1F8);
+          overflow: hidden;
+        }
+
+        .profileSkillFill {
+          height: 100%;
+          border-radius: 999px;
+        }
+
+        .profileSkillNumber {
+          width: 44px;
+          text-align: center;
+          font-size: 11px;
+          font-weight: 800;
+          line-height: 1;
         }
 
         .profileSectionHeader {
@@ -832,8 +939,8 @@ export default function Profile() {
             grid-template-columns: minmax(0, 1fr) !important;
           }
 
-          .profileResponsivePage .${styles.skillRow} {
-            grid-template-columns: 72px minmax(0, 1fr) 30px;
+          .profileSkillRow {
+            grid-template-columns: 72px minmax(0, 1fr) 40px;
             gap: 8px;
           }
 
@@ -862,8 +969,8 @@ export default function Profile() {
             min-height: 42px;
           }
 
-          .profileResponsivePage .${styles.skillRow} {
-            grid-template-columns: 64px minmax(0, 1fr) 28px;
+          .profileSkillRow {
+            grid-template-columns: 64px minmax(0, 1fr) 36px;
             gap: 6px;
           }
         }
@@ -872,7 +979,7 @@ export default function Profile() {
         <div className="profileHeaderRow">
           <div>
             <div className={styles.pageTitle}>My Profile</div>
-            <div className={styles.pageSub}>Personal, player and lifestyle information{isLoadingProfile ? ' · Loading saved profile...' : ''}</div>
+            <div className={styles.pageSub}>Personal, player and lifestyle information</div>
           </div>
           <button className={`${styles.btnPrimary} profileEditButton`} onClick={() => setShowProfileModal(true)}>Edit Profile</button>
         </div>
@@ -892,7 +999,49 @@ export default function Profile() {
                 <button type="button" onClick={() => avatarInputRef.current?.click()} style={{ width: 76, height: 76, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.12)', overflow: 'hidden', background: '#1A5FFF', color: '#FFFFFF', fontSize: 22, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
                   {avatarUrl ? <img src={avatarUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
                 </button>
-                <button type="button" onClick={() => avatarInputRef.current?.click()} style={{ position: 'absolute', right: -2, bottom: -2, width: 28, height: 28, borderRadius: '50%', border: '2px solid #0B1220', background: '#1A5FFF', color: '#FFFFFF', cursor: 'pointer', fontSize: 12 }}>📷</button>
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  aria-label="Change profile photo"
+                  style={{
+                    position: 'absolute',
+                    right: -2,
+                    bottom: -2,
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    border: '2px solid #0B1220',
+                    background: '#1A5FFF',
+                    color: '#FFFFFF',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
+                  }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M8.5 6.5 10 4h4l1.5 2.5H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2h3.5Z"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinejoin="round"
+                    />
+                    <circle
+                      cx="12"
+                      cy="13"
+                      r="3.5"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    />
+                  </svg>
+                </button>
                 <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} style={{ display: 'none' }} />
               </div>
             </div>
@@ -925,7 +1074,7 @@ export default function Profile() {
             </div>
 
             <div className="profileHeroActions">
-              <button className={styles.btnOutline} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: '#FFFFFF', borderColor: 'rgba(255,255,255,0.12)' }} onClick={() => navigate('/setup', { state: { returnTo: '/profile' } })}>Re-do setup</button>
+              <button className={styles.btnOutline} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: '#FFFFFF', borderColor: 'rgba(255,255,255,0.12)' }} onClick={() => navigate('/setup?redo=1', { state: { returnTo: '/profile' } })}>Re-do setup</button>
               {avatarUrl && <button type="button" onClick={handleRemoveAvatar} style={{ border: 'none', background: 'rgba(239, 68, 68, 0.14)', color: '#FCA5A5', borderRadius: 10, padding: '0 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove photo</button>}
             </div>
           </div>
@@ -954,9 +1103,39 @@ export default function Profile() {
           <div className="profileStatsGrid">
             {stats.map(item => (
               <div key={item.label} className="profileStatCard">
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: item.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}><StatIcon type={item.icon} color={item.color} /></div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: item.color, lineHeight: 1 }}>{item.value}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>{item.label}</div>
+                <div
+                  className="profileStatIconBox"
+                  style={{
+                    background: item.bg,
+                  }}
+                >
+                  <StatIcon
+                    type={item.icon}
+                    color={item.color}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 24,
+                    fontWeight: 800,
+                    color: item.color,
+                    WebkitTextFillColor: item.color,
+                    lineHeight: 1,
+                  }}
+                >
+                  {item.value}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--text-muted, #8892A4)',
+                    marginTop: 5,
+                  }}
+                >
+                  {item.label}
+                </div>
               </div>
             ))}
           </div>
@@ -965,18 +1144,66 @@ export default function Profile() {
             <div className="profileSectionHeader">
               <div className={styles.cardTitle}>Skill ratings</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#1A5FFF', background: '#E8EFFE', padding: '4px 9px', borderRadius: 999 }}>Source: {skillSourceText}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#F3F4F6', padding: '4px 9px', borderRadius: 999 }}>Updated by: {latestSkillUpdate.updatedBy}</span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: '#1A5FFF',
+                    background:
+                      'color-mix(in srgb, #1A5FFF 14%, var(--card, #FFFFFF))',
+                    padding: '4px 9px',
+                    borderRadius: 999,
+                  }}
+                >
+                  Player assessment
+                </span>
+
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: 'var(--text-muted, #6B7280)',
+                    background: 'var(--soft, #F3F4F6)',
+                    padding: '4px 9px',
+                    borderRadius: 999,
+                  }}
+                >
+                  Updated by player
+                </span>
               </div>
             </div>
 
-            {skillsData.map(skill => (
-              <div key={skill.name} className={styles.skillRow}>
-                <div className={styles.skillLbl}>{skill.name}</div>
-                <div className={styles.skillTrack}><div className={styles.skillFill} style={{ width: `${skill.val}%`, background: skill.low ? 'linear-gradient(90deg,#F59E0B,#FBBF24)' : 'linear-gradient(90deg,#1A5FFF,#3B7BFF)' }} /></div>
-                <div className={styles.skillVal} style={{ color: skill.low ? '#F59E0B' : 'var(--text)' }}>{skill.val}</div>
-              </div>
-            ))}
+            {skillsData.map(skill => {
+              const skillColor = getSkillColor(skill.name)
+
+              return (
+                <div key={skill.name} className="profileSkillRow">
+                  <div className="profileSkillLabel">
+                    {skill.name}
+                  </div>
+
+                  <div className="profileSkillTrack">
+                    <div
+                      className="profileSkillFill"
+                      style={{
+                        width: `${skill.val}%`,
+                        background: skillColor.bar,
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    className="profileSkillNumber"
+                    style={{
+                      color: skillColor.text,
+                      WebkitTextFillColor: skillColor.text,
+                    }}
+                  >
+                    {skill.val}
+                  </div>
+                </div>
+              )
+            })}
             <div style={{ marginTop: 14 }}><button className={styles.btnOutline} onClick={() => navigate('/performance')}>Update ratings</button></div>
           </div>
 
@@ -1007,7 +1234,17 @@ export default function Profile() {
               <div className="profileMediaGrid">
                 {mediaItems.map(item => (
                   <div key={item.id} style={{ background: 'var(--soft)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--line)' }}>
-                    <div style={{ height: 110, background: '#E8EFFE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        height: 110,
+                        background:
+                          'color-mix(in srgb, #1A5FFF 10%, var(--soft, #F6F8FF))',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                      }}
+                    >
                       {item.fileType.startsWith('image/') ? <img src={item.url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <video src={item.url} controls style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                     </div>
                     <div style={{ padding: 10 }}>
@@ -1120,9 +1357,11 @@ export default function Profile() {
                   width: '100%',
                   minHeight: 56,
                   borderRadius: 14,
-                  border: '1.5px dashed #C8D0E0',
-                  background: '#F8FAFC',
-                  color: selectedMediaFile ? '#00C48C' : '#64748B',
+                  border: '1.5px dashed var(--line, #C8D0E0)',
+                  background: 'var(--soft, #F8FAFC)',
+                  color: selectedMediaFile
+                    ? '#00C48C'
+                    : 'var(--text-muted, #64748B)',
                   fontSize: 14,
                   fontWeight: 700,
                   cursor: 'pointer',
@@ -1134,7 +1373,34 @@ export default function Profile() {
                   textAlign: 'center',
                 }}
               >
-                <span>{selectedMediaFile ? '✓ Media selected' : '⬆ Choose video or image'}</span>
+                {selectedMediaFile ? (
+                  <span>✓ Media selected</span>
+                ) : (
+                  <>
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M12 16V4M7.5 8.5 12 4l4.5 4.5"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <span>Choose video or image</span>
+                  </>
+                )}
               </button>
 
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
@@ -1146,7 +1412,7 @@ export default function Profile() {
                     fontSize: 12,
                     color: 'var(--text)',
                     marginTop: 8,
-                    background: '#F1F5F9',
+                    background: 'var(--soft, #F1F5F9)',
                     borderRadius: 10,
                     padding: '8px 10px',
                     wordBreak: 'break-word',

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "../lib/supabase";
-import styles from "./Pages.module.css";
+import { supabase } from "../../lib/supabase";
+import styles from "../Layout/Pages.module.css";
+import Loader from "../Loader/Loader";
+import useLoadingDelay from "../Loader/LoadingDelay";
 
 const C = {
   text: "var(--text, #0D1B3E)",
@@ -184,6 +186,9 @@ function PlayerDetail({
               <span className={styles.badgeGray}>{p.style}</span>
               {p.isOpp && <span className={styles.badgeAmber}>Opponent</span>}
               {isPartner && <span className={styles.badgeGreen}>Partner</span>}
+              {p.source === "public" && (
+                <span className={styles.badgeGray}>Public profile</span>
+              )}
             </div>
           </div>
         </div>
@@ -246,8 +251,8 @@ function PlayerDetail({
           <SkillBar name="Footwork" val={p.footwork} />
           <SkillBar name="Defense" val={p.defense} />
           <SkillBar name="Net play" val={p.net} />
+          <SkillBar name="Drop shot" val={p.dropShot} dim />
           <SkillBar name="Serve" val={p.serve} dim />
-          <SkillBar name="Stamina" val={p.stamina} dim />
         </div>
       </div>
 
@@ -330,13 +335,21 @@ function PlayerDetail({
           >
             Remove partner
           </button>
+        ) : p.partnerRequestStatus === "pending" ? (
+          <button
+            className={styles.btnOutline}
+            style={{ width: "100%" }}
+            disabled
+          >
+            Request pending
+          </button>
         ) : (
           <button
             className={styles.btnPrimary}
             style={{ width: "100%" }}
             onClick={() => onAddPartner(p)}
           >
-            + Add partner
+            Request partner
           </button>
         )}
 
@@ -746,6 +759,540 @@ function CoachDetail({ coach, onRequest, onCancel }) {
   );
 }
 
+
+function formatNotificationDate(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("en-MY", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const PLAYER_DIRECTORY_NOTIFICATION_TYPES = [
+  "coach_request_accepted",
+  "coach_request_declined",
+  "coach_request_rejected",
+  "partner_request_received",
+  "partner_request_accepted",
+  "partner_request_rejected",
+];
+
+function normaliseNotificationText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function isPlayerDirectoryNotification(notification) {
+  const type = normaliseNotificationText(notification?.type);
+  const title = normaliseNotificationText(notification?.title);
+  const message = normaliseNotificationText(notification?.message);
+
+  const acceptedTypes = PLAYER_DIRECTORY_NOTIFICATION_TYPES.map((item) =>
+    normaliseNotificationText(item),
+  );
+
+  if (acceptedTypes.includes(type)) {
+    return true;
+  }
+
+  const combined = `${title} ${message}`;
+
+  return [
+    "coach request accepted",
+    "coach request declined",
+    "coach request rejected",
+    "new partner request",
+    "partner request accepted",
+    "partner request declined",
+    "partner request rejected",
+  ].some((phrase) => combined.includes(phrase));
+}
+
+function NotificationCenter({ onPartnerChanged }) {
+  const [open, setOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [partnerRequests, setPartnerRequests] = useState([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  const loadNotifications = useCallback(async () => {
+    setLoadingNotifications(true);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setNotifications([]);
+        setPartnerRequests([]);
+        return;
+      }
+
+      const [notificationResult, requestResult] = await Promise.all([
+        supabase
+          .from("notifications")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("player_partner_requests")
+          .select("*")
+          .eq("recipient_user_id", user.id)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (notificationResult.error) {
+        console.error("Failed to load notifications:", notificationResult.error);
+      } else {
+        setNotifications(
+          (notificationResult.data || []).filter(
+            isPlayerDirectoryNotification,
+          ),
+        );
+      }
+
+      if (requestResult.error) {
+        console.error("Failed to load partner requests:", requestResult.error);
+      } else {
+        setPartnerRequests(requestResult.data || []);
+      }
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let channel = null;
+
+    loadNotifications();
+
+    async function setupRealtime() {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (error) {
+        console.error("Failed to start notification realtime:", error);
+        return;
+      }
+
+      if (!active || !user) return;
+
+      const channelName = [
+        "players-notifications",
+        user.id,
+        Date.now(),
+        Math.random().toString(36).slice(2),
+      ].join("-");
+
+      const nextChannel = supabase.channel(channelName);
+
+      nextChannel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          if (active) loadNotifications();
+        },
+      );
+
+      nextChannel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "player_partner_requests",
+          filter: `recipient_user_id=eq.${user.id}`,
+        },
+        () => {
+          if (!active) return;
+          loadNotifications();
+          onPartnerChanged?.();
+        },
+      );
+
+      channel = nextChannel;
+
+      nextChannel.subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.error("Notification realtime channel failed.");
+        }
+      });
+
+      if (!active) {
+        supabase.removeChannel(nextChannel);
+      }
+    }
+
+    setupRealtime();
+
+    return () => {
+      active = false;
+
+      if (channel) {
+        supabase.removeChannel(channel);
+        channel = null;
+      }
+    };
+  }, [loadNotifications, onPartnerChanged]);
+
+  const unreadCount =
+    notifications.filter((item) => !item.is_read).length + partnerRequests.length;
+
+  async function markAllRead() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const unreadIds = notifications
+      .filter((notification) => !notification.is_read)
+      .map((notification) => notification.id);
+
+    if (unreadIds.length === 0) return;
+
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", user.id)
+      .in("id", unreadIds);
+
+    if (error) {
+      console.error("Failed to mark notifications read:", error);
+      return;
+    }
+
+    await loadNotifications();
+  }
+
+  async function clearNotifications() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const notificationIds = notifications.map(
+      (notification) => notification.id,
+    );
+
+    if (notificationIds.length === 0) return;
+
+    const { error } = await supabase
+      .from("notifications")
+      .delete()
+      .eq("user_id", user.id)
+      .in("id", notificationIds);
+
+    if (error) {
+      console.error("Failed to clear notifications:", error);
+      return;
+    }
+
+    await loadNotifications();
+  }
+
+  async function deleteNotification(id) {
+    const { error } = await supabase
+      .from("notifications")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Failed to delete notification:", error);
+      return;
+    }
+
+    await loadNotifications();
+  }
+
+  async function respondToPartnerRequest(request, nextStatus) {
+    const { error } = await supabase
+      .from("player_partner_requests")
+      .update({
+        status: nextStatus,
+        responded_at: new Date().toISOString(),
+      })
+      .eq("id", request.id);
+
+    if (error) {
+      console.error("Failed to respond to partner request:", error);
+      alert(error.message || "Failed to update partner request.");
+      return;
+    }
+
+    await loadNotifications();
+    await onPartnerChanged?.();
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen((current) => !current);
+          if (!open) loadNotifications();
+        }}
+        aria-label="Notifications"
+        style={{
+          width: 46,
+          height: 42,
+          borderRadius: 12,
+          border: `1.5px solid ${C.line}`,
+          background: C.card,
+          cursor: "pointer",
+          fontSize: 20,
+          position: "relative",
+        }}
+      >
+        🔔
+        {unreadCount > 0 && (
+          <span
+            style={{
+              position: "absolute",
+              right: -5,
+              top: -7,
+              minWidth: 21,
+              height: 21,
+              padding: "0 5px",
+              borderRadius: 999,
+              background: "#EF4444",
+              color: "#FFFFFF",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 11,
+              fontWeight: 800,
+              border: "2px solid #FFFFFF",
+            }}
+          >
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: 50,
+            right: 0,
+            width: "min(430px, calc(100vw - 30px))",
+            maxHeight: 560,
+            overflowY: "auto",
+            background: C.card,
+            border: `1px solid ${C.line}`,
+            borderRadius: 18,
+            boxShadow: "0 18px 45px rgba(13,27,62,0.18)",
+            padding: 14,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>
+              Notifications
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={markAllRead}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "#1A5FFF",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                Mark read
+              </button>
+              <button
+                type="button"
+                onClick={clearNotifications}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "#EF4444",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {partnerRequests.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: C.muted,
+                  letterSpacing: 0.8,
+                  textTransform: "uppercase",
+                  marginBottom: 7,
+                }}
+              >
+                Partner requests
+              </div>
+
+              {partnerRequests.map((request) => (
+                <div
+                  key={request.id}
+                  style={{
+                    padding: 12,
+                    borderRadius: 13,
+                    border: "1px solid #BFDBFE",
+                    background: "#EFF6FF",
+                    marginBottom: 8,
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: C.text, fontSize: 13 }}>
+                    🤝 {request.requester_name || "A player"} wants to be your partner
+                  </div>
+                  {request.message && (
+                    <div
+                      style={{
+                        color: C.muted,
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        marginTop: 5,
+                      }}
+                    >
+                      {request.message}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 7,
+                      marginTop: 10,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      onClick={() => respondToPartnerRequest(request, "rejected")}
+                      style={{ color: "#DC2626", borderColor: "#FECACA" }}
+                    >
+                      Decline
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      onClick={() => respondToPartnerRequest(request, "accepted")}
+                    >
+                      Accept
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {loadingNotifications && notifications.length === 0 ? (
+            <div style={{ padding: 20, textAlign: "center", color: C.muted }}>
+              Loading notifications...
+            </div>
+          ) : notifications.length === 0 && partnerRequests.length === 0 ? (
+            <div style={{ padding: 24, textAlign: "center", color: C.muted }}>
+              No coach or partner notifications yet.
+            </div>
+          ) : (
+            notifications.map((notification) => (
+              <div
+                key={notification.id}
+                style={{
+                  position: "relative",
+                  padding: "12px 38px 12px 12px",
+                  borderRadius: 13,
+                  border: notification.is_read
+                    ? `1px solid ${C.line}`
+                    : "1px solid #93C5FD",
+                  background: notification.is_read ? C.soft : "#EFF6FF",
+                  marginBottom: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => deleteNotification(notification.id)}
+                  style={{
+                    position: "absolute",
+                    right: 9,
+                    top: 9,
+                    width: 25,
+                    height: 25,
+                    borderRadius: 999,
+                    border: "1px solid #FECACA",
+                    background: "#FFFFFF",
+                    color: "#EF4444",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                  }}
+                >
+                  ×
+                </button>
+
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>
+                  {notification.title || "Notification"}
+                  {!notification.is_read && (
+                    <span style={{ color: "#1A5FFF", marginLeft: 7 }}>●</span>
+                  )}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    lineHeight: 1.55,
+                    color: C.muted,
+                    marginTop: 4,
+                  }}
+                >
+                  {notification.message || notification.body || ""}
+                </div>
+                <div style={{ fontSize: 10, color: "#A0A9BA", marginTop: 6 }}>
+                  {formatNotificationDate(notification.created_at)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function normaliseSpecialties(value) {
   if (Array.isArray(value)) {
     return value.filter(Boolean);
@@ -778,6 +1325,7 @@ export default function Players() {
   const [selectedCoach, setSelectedCoach] = useState(null);
 
   const [loading, setLoading] = useState(true);
+  const showLoader = useLoadingDelay(loading, 350);
 
   const [partnerCriteria, setPartnerCriteria] = useState({
     gameType: "Doubles",
@@ -800,30 +1348,72 @@ export default function Players() {
         console.error("Failed to read current user:", userError);
       }
 
-      const [playerResult, coachResult] = await Promise.all([
+      const [
+        publicPlayerResult,
+        profilePlayerResult,
+        skillResult,
+        coachResult,
+      ] = await Promise.all([
         supabase
           .from("public_players")
           .select("*")
           .order("created_at", { ascending: true }),
+        supabase
+          .from("player_profiles")
+          .select("*")
+          .order("display_name", { ascending: true }),
+        supabase
+          .from("player_skill_ratings")
+          .select("*"),
         supabase
           .from("coach_profiles")
           .select("*")
           .order("display_name", { ascending: true }),
       ]);
 
-      if (playerResult.error) {
-        console.error("Failed to load players:", playerResult.error);
+      if (publicPlayerResult.error) {
+        console.error(
+          "Failed to load public players:",
+          publicPlayerResult.error,
+        );
+      }
+
+      if (profilePlayerResult.error) {
+        console.error(
+          "Failed to load registered player profiles:",
+          profilePlayerResult.error,
+        );
+      }
+
+      if (skillResult.error) {
+        console.error("Failed to load player skills:", skillResult.error);
       }
 
       if (coachResult.error) {
         console.error("Failed to load coaches:", coachResult.error);
       }
 
+      const ratingsByPlayerId = new Map();
+
+      (skillResult.data || []).forEach((rating) => {
+        [
+          rating.player_id,
+          rating.user_id,
+          rating.profile_id,
+          rating.id,
+        ]
+          .filter(Boolean)
+          .forEach((key) => {
+            ratingsByPlayerId.set(String(key), rating);
+          });
+      });
+
       let connectionData = [];
       let coachRelationshipData = [];
+      let outgoingPartnerRequests = [];
 
       if (user) {
-        const [connectionResult, relationshipResult] = await Promise.all([
+        const [connectionResult, relationshipResult, partnerRequestResult] = await Promise.all([
           supabase
             .from("player_connections")
             .select("*")
@@ -832,6 +1422,10 @@ export default function Players() {
             .from("coach_player_relationships")
             .select("*")
             .eq("player_user_id", user.id),
+          supabase
+            .from("player_partner_requests")
+            .select("*")
+            .eq("requester_user_id", user.id),
         ]);
 
         if (connectionResult.error) {
@@ -851,11 +1445,130 @@ export default function Players() {
         } else {
           coachRelationshipData = relationshipResult.data || [];
         }
+
+        if (partnerRequestResult.error) {
+          console.error(
+            "Failed to load partner requests:",
+            partnerRequestResult.error,
+          );
+        } else {
+          outgoingPartnerRequests = partnerRequestResult.data || [];
+        }
       }
 
-      const formattedPlayers = (playerResult.data || [])
+      const registeredPlayers = (profilePlayerResult.data || [])
         .filter((player) => !user || player.user_id !== user.id)
         .map((player) => {
+          const rating =
+            ratingsByPlayerId.get(String(player.user_id)) ||
+            ratingsByPlayerId.get(String(player.id)) ||
+            null;
+
+          const partner = connectionData.find(
+            (connection) =>
+              (
+                connection.target_player_id === player.id ||
+                connection.target_player_id === player.user_id
+              ) &&
+              connection.type === "partner",
+          );
+
+          const opponent = connectionData.find(
+            (connection) =>
+              (
+                connection.target_player_id === player.id ||
+                connection.target_player_id === player.user_id
+              ) &&
+              connection.type === "opponent",
+          );
+
+          return {
+            id: player.id,
+            userId: player.user_id || null,
+            source: "registered",
+            init:
+              player.display_name?.charAt(0)?.toUpperCase() || "?",
+            name: player.display_name || "Unknown",
+            club: player.club || "No club",
+            state: player.state || player.location || "-",
+            level:
+              player.level ||
+              player.skill_level ||
+              player.player_category ||
+              player.category ||
+              "Beginner",
+            style:
+              player.playing_style ||
+              player.play_style ||
+              player.style ||
+              "All-round",
+            hand:
+              player.dominant_hand ||
+              player.playing_hand ||
+              player.hand ||
+              "-",
+            since:
+              player.playing_since ||
+              player.since ||
+              "-",
+            court:
+              player.preferred_court ||
+              player.court ||
+              "-",
+            ig: player.instagram || null,
+            smash: Number(rating?.smash ?? 0),
+            defense: Number(rating?.defense ?? 0),
+            footwork: Number(rating?.footwork ?? 0),
+            dropShot: Number(
+              rating?.drop_shot ??
+              rating?.dropShot ??
+              0
+            ),
+            net: Number(
+              rating?.net_play ??
+              rating?.net ??
+              0
+            ),
+            serve: Number(rating?.serve ?? 0),
+            matches: Number(player.matches || 0),
+            winRate: Number(player.win_rate || 0),
+            streak: player.streak || "W0",
+            isPartner: Boolean(partner),
+            partnerRequestStatus:
+              outgoingPartnerRequests.find(
+                (request) =>
+                  request.recipient_user_id === player.user_id,
+              )?.status || null,
+            isOpp: Boolean(opponent),
+            w: Number(opponent?.h2h_wins || 0),
+            l: Number(opponent?.h2h_losses || 0),
+            last: opponent?.last_played || "—",
+          };
+        });
+
+      const registeredNames = new Set(
+        registeredPlayers.map((player) =>
+          player.name.trim().toLowerCase(),
+        ),
+      );
+
+      const publicPlayers = (publicPlayerResult.data || [])
+        .filter((player) => {
+          if (user && player.user_id === user.id) return false;
+
+          const name = String(player.name || "")
+            .trim()
+            .toLowerCase();
+
+          return name && !registeredNames.has(name);
+        })
+        .map((player) => {
+          const rating =
+            ratingsByPlayerId.get(String(player.id)) ||
+            (player.user_id
+              ? ratingsByPlayerId.get(String(player.user_id))
+              : null);
+
           const partner = connectionData.find(
             (connection) =>
               connection.target_player_id === player.id &&
@@ -870,6 +1583,8 @@ export default function Players() {
 
           return {
             id: player.id,
+            userId: player.user_id || null,
+            source: "public",
             init: player.name?.charAt(0)?.toUpperCase() || "?",
             name: player.name || "Unknown",
             club: player.club || "-",
@@ -880,22 +1595,60 @@ export default function Players() {
             since: player.since || "-",
             court: player.court || "-",
             ig: player.instagram || null,
-            smash: Number(player.smash || 50),
-            defense: Number(player.defense || 50),
-            footwork: Number(player.footwork || 50),
-            net: Number(player.net_play || 50),
-            serve: Number(player.serve || 50),
-            stamina: Number(player.stamina || 50),
+            smash: Number(
+              player.smash ??
+              rating?.smash ??
+              0
+            ),
+            defense: Number(
+              player.defense ??
+              rating?.defense ??
+              0
+            ),
+            footwork: Number(
+              player.footwork ??
+              rating?.footwork ??
+              0
+            ),
+            dropShot: Number(
+              player.drop_shot ??
+              player.dropShot ??
+              rating?.drop_shot ??
+              rating?.dropShot ??
+              0
+            ),
+            net: Number(
+              player.net_play ??
+              player.net ??
+              rating?.net_play ??
+              rating?.net ??
+              0
+            ),
+            serve: Number(
+              player.serve ??
+              rating?.serve ??
+              0
+            ),
             matches: Number(player.matches || 0),
             winRate: Number(player.win_rate || 0),
             streak: player.streak || "W0",
             isPartner: Boolean(partner),
+            partnerRequestStatus:
+              outgoingPartnerRequests.find(
+                (request) =>
+                  request.recipient_user_id === player.user_id,
+              )?.status || null,
             isOpp: Boolean(opponent),
             w: Number(opponent?.h2h_wins || 0),
             l: Number(opponent?.h2h_losses || 0),
             last: opponent?.last_played || "—",
           };
         });
+
+      const formattedPlayers = [
+        ...registeredPlayers,
+        ...publicPlayers,
+      ].sort((a, b) => a.name.localeCompare(b.name));
 
       const formattedCoaches = (coachResult.data || [])
         .filter((coach) => !user || coach.user_id !== user.id)
@@ -1082,6 +1835,59 @@ export default function Players() {
     await fetchData();
   }
 
+
+  async function requestPartner(player, message = "") {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("Please log in first.");
+      return;
+    }
+
+    if (!player.userId) {
+      alert(
+        "This public player is not linked to a registered account, so a partner request cannot be sent.",
+      );
+      return;
+    }
+
+    if (player.userId === user.id) {
+      alert("You cannot send a partner request to yourself.");
+      return;
+    }
+
+    const { data: ownProfile } = await supabase
+      .from("player_profiles")
+      .select("display_name")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const { error } = await supabase.from("player_partner_requests").upsert(
+      {
+        requester_user_id: user.id,
+        recipient_user_id: player.userId,
+        requester_name:
+          ownProfile?.display_name || user.user_metadata?.display_name || "A player",
+        recipient_name: player.name,
+        message: message.trim() || null,
+        status: "pending",
+        responded_at: null,
+      },
+      { onConflict: "requester_user_id,recipient_user_id" },
+    );
+
+    if (error) {
+      console.error("Failed to send partner request:", error);
+      alert(error.message || "Failed to send partner request.");
+      return;
+    }
+
+    await fetchData();
+    alert("Partner request sent.");
+  }
+
   async function removeConnection(player, type) {
     const {
       data: { user },
@@ -1178,14 +1984,38 @@ export default function Players() {
     setSelectedCoach(null);
   }
 
+  if (loading && !showLoader) {
+    return null;
+  }
+
+  if (showLoader) {
+    return (
+      <div className={styles.card}>
+        <Loader text="Loading player directory..." />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className={styles.pageHead}>
-        <div className={styles.pageTitle}>Players, Opponents & Coaches</div>
-        <div className={styles.pageSub}>
-          Search players, find partners, review opponents and connect with a
-          coach
+      <div
+        className={styles.pageHead}
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 14,
+        }}
+      >
+        <div>
+          <div className={styles.pageTitle}>Players, Opponents & Coaches</div>
+          <div className={styles.pageSub}>
+            Search players, find partners, review opponents and connect with a
+            coach
+          </div>
         </div>
+
+        <NotificationCenter onPartnerChanged={fetchData} />
       </div>
 
       <div className={styles.tabs} style={{ marginBottom: 16 }}>
@@ -1219,15 +2049,6 @@ export default function Players() {
           Find coach
         </button>
       </div>
-
-      {loading && (
-        <div
-          className={styles.card}
-          style={{ marginBottom: 16, color: C.muted }}
-        >
-          Loading directory...
-        </div>
-      )}
 
       {tab !== "partner" && tab !== "coach" && (
         <div className={styles.g2}>
@@ -1349,6 +2170,11 @@ export default function Players() {
                         {player.isPartner && (
                           <span className={styles.badgeGreen}>Partner</span>
                         )}
+                        {player.source === "public" && (
+                          <span className={styles.badgeGray}>
+                            Public profile
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -1390,7 +2216,7 @@ export default function Players() {
                   removeConnection(player, "opponent");
                   setTab("all");
                 }}
-                onAddPartner={(player) => addConnection(player, "partner")}
+                onAddPartner={(player) => requestPartner(player)}
                 onRemovePartner={(player) =>
                   removeConnection(player, "partner")
                 }
@@ -1476,23 +2302,54 @@ export default function Players() {
               <div
                 style={{
                   marginTop: 14,
-                  padding: 12,
-                  background: "#F0F5FF",
+                  padding: 14,
+                  background: C.soft,
+                  border: `1px solid ${C.line}`,
                   borderRadius: 12,
-                  fontSize: 12,
                   color: C.text,
-                  lineHeight: 1.7,
                 }}
               >
-                <strong>Your profile used for matching</strong>
-                <br />
-                Level: {CURRENT_PLAYER.level}
-                <br />
-                Style: {CURRENT_PLAYER.style}
-                <br />
-                State: {CURRENT_PLAYER.state}
-                <br />
-                Weakness: {CURRENT_PLAYER.weakness}
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: C.text,
+                    marginBottom: 10,
+                  }}
+                >
+                  Your profile used for matching
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "88px minmax(0, 1fr)",
+                    rowGap: 7,
+                    columnGap: 10,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <span style={{ color: C.muted }}>Level</span>
+                  <strong style={{ color: C.text }}>
+                    {CURRENT_PLAYER.level}
+                  </strong>
+
+                  <span style={{ color: C.muted }}>Style</span>
+                  <strong style={{ color: C.text }}>
+                    {CURRENT_PLAYER.style}
+                  </strong>
+
+                  <span style={{ color: C.muted }}>State</span>
+                  <strong style={{ color: C.text }}>
+                    {CURRENT_PLAYER.state}
+                  </strong>
+
+                  <span style={{ color: C.muted }}>Weakness</span>
+                  <strong style={{ color: C.text }}>
+                    {CURRENT_PLAYER.weakness}
+                  </strong>
+                </div>
               </div>
             </div>
 
@@ -1607,12 +2464,16 @@ export default function Players() {
                     >
                       Remove
                     </button>
+                  ) : player.partnerRequestStatus === "pending" ? (
+                    <button className={styles.btnOutline} disabled>
+                      Pending
+                    </button>
                   ) : (
                     <button
                       className={styles.btnPrimary}
-                      onClick={() => addConnection(player, "partner")}
+                      onClick={() => requestPartner(player)}
                     >
-                      Save
+                      Request
                     </button>
                   )}
                 </div>

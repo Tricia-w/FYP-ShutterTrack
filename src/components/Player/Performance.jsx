@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabaseClient'
-import styles from './Pages.module.css'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabaseClient'
+import styles from '../Layout/Pages.module.css'
+import Loader from '../Loader/Loader'
+import useLoadingDelay from '../Loader/LoadingDelay'
 
 const C = {
   text: 'var(--text, #0D1B3E)',
@@ -21,6 +24,30 @@ const SKILL_COLUMNS = [
 ]
 
 const defaultSkills = SKILL_COLUMNS.map(skill => ({ ...skill, val: 50 }))
+
+const SKILL_COLORS = {
+  Smash: '#2563EB',
+  Defense: '#14B8A6',
+  Footwork: '#8B5CF6',
+  'Drop shot': '#F59E0B',
+  'Net play': '#EC4899',
+  Serve: '#06B6D4',
+}
+
+const getMetricColor = label => {
+  const base = SKILL_COLORS[label] || '#2563EB'
+
+  return {
+    bar: `linear-gradient(
+      90deg,
+      color-mix(in srgb, ${base} 38%, var(--card, #FFFFFF)) 0%,
+      color-mix(in srgb, ${base} 68%, var(--card, #FFFFFF)) 55%,
+      ${base} 100%
+    )`,
+    text: base,
+    icon: `color-mix(in srgb, ${base} 18%, var(--card, #FFFFFF))`,
+  }
+}
 const MATCH_TYPES = ['Singles', 'Mixed Doubles', 'Womens Doubles', 'Mens Double']
 const isSingles = type => type === 'Singles'
 
@@ -43,14 +70,26 @@ const emptyForm = {
   videoFileName: '',
 }
 
-const getInitials = name =>
-  (name || '-')
-    .trim()
-    .split(' ')
-    .map(word => word[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
+const getInitials = name => {
+  const value = String(name || '-').trim()
+
+  if (value.includes('&')) {
+    return value
+      .split('&')
+      .map(part => part.trim().split(/\s+/)[0]?.[0] || '')
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
+  const words = value.split(/\s+/).filter(Boolean)
+
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase()
+  }
+
+  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase()
+}
 
 const fmtDate = value => {
   if (!value) return '—'
@@ -90,47 +129,634 @@ const mapDbMatch = row => ({
   video_file_name: row.video_file_name || '',
 })
 
-function MiniIcon({ type, color = 'currentColor' }) {
+function MiniIcon({ type, color = 'currentColor', size = 18 }) {
+  const svgProps = {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    'aria-hidden': true,
+  }
+
   if (type === 'plus') {
     return (
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path d="M7 1v12M1 7h12" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      <svg {...svgProps}>
+        <path
+          d="M12 5v14M5 12h14"
+          stroke={color}
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
       </svg>
     )
   }
 
   if (type === 'matches') {
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-        <rect x="5" y="4" width="14" height="16" rx="3" stroke={color} strokeWidth="2" />
-        <path d="M9 8h6M9 12h6M9 16h4" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      <svg {...svgProps}>
+        <rect
+          x="6"
+          y="4"
+          width="12"
+          height="16"
+          rx="3"
+          stroke={color}
+          strokeWidth="2"
+        />
+        <path
+          d="M9 8h6M9 12h6M9 16h4"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
       </svg>
     )
   }
 
   if (type === 'win') {
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-        <path d="M5 12.5L10 17L19 7" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <svg {...svgProps}>
+        <path
+          d="M6 12.5l4 4L18 8"
+          stroke={color}
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     )
   }
 
   if (type === 'score') {
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-        <path d="M4 17l5-5 4 4 7-9" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M15 7h5v5" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <svg {...svgProps}>
+        <path
+          d="M5 16l4.2-4.2 3.2 3.2L19 8.5"
+          stroke={color}
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M14.5 8.5H19V13"
+          stroke={color}
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     )
   }
 
+  if (type === 'streak') {
+    return (
+      <svg {...svgProps}>
+        <path
+          d="m12 4 2.3 4.7 5.2.8-3.8 3.7.9 5.2-4.6-2.3-4.6 2.3.9-5.2-3.8-3.7 5.2-.8L12 4Z"
+          fill={color}
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'bell') {
+    return (
+      <svg {...svgProps}>
+        <path
+          d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M10 21h4"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'edit') {
+    return (
+      <svg {...svgProps}>
+        <path
+          d="M4 20h4l9.5-9.5a1.8 1.8 0 0 0 0-2.5L16 6.5a1.8 1.8 0 0 0-2.5 0L4 16v4Z"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path
+          d="m12.5 7.5 4 4"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'delete') {
+    return (
+      <svg {...svgProps}>
+        <path
+          d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    )
+  }
+
+  if (type === 'video') {
+    return (
+      <svg {...svgProps}>
+        <rect
+          x="4"
+          y="7"
+          width="10"
+          height="10"
+          rx="2"
+          stroke={color}
+          strokeWidth="1.8"
+        />
+        <path d="m14 10 6-3v10l-6-3v-4Z" fill={color} />
+      </svg>
+    )
+  }
+
+  if (type === 'warning') {
+    return (
+      <svg {...svgProps}>
+        <path
+          d="M12 4 20 18H4L12 4Z"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M12 9v4"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <circle cx="12" cy="16" r="1" fill={color} />
+      </svg>
+    )
+  }
+
+  if (type === 'success') {
+    return (
+      <svg {...svgProps}>
+        <circle
+          cx="12"
+          cy="12"
+          r="9"
+          stroke={color}
+          strokeWidth="1.8"
+        />
+        <path
+          d="m8 12.5 2.5 2.5L16 9.5"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    )
+  }
+
+  return null
+}
+
+function PerformanceComparisonRow({
+  label,
+  playerValue,
+  coachValue,
+}) {
+  const playerScore = Number(playerValue ?? 50)
+  const hasCoachValue =
+    coachValue !== null &&
+    coachValue !== undefined &&
+    Number.isFinite(Number(coachValue))
+  const coachScore = hasCoachValue ? Number(coachValue) : playerScore
+  const hasChange = hasCoachValue && coachScore !== playerScore
+  const playerColor = getMetricColor(label)
+
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 16.9 6.6 19.8l1-6.1-4.4-4.3 6.1-.9L12 3z" fill={color} />
-    </svg>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '78px minmax(0, 1fr) 48px',
+        gap: 10,
+        alignItems: 'center',
+        marginBottom: 14,
+      }}
+    >
+      <div
+        className={styles.skillLbl}
+        style={{
+          width: 'auto',
+          minWidth: 0,
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          position: 'relative',
+          height: 8,
+          borderRadius: 999,
+          background: 'color-mix(in srgb, var(--line, #EEF1F8) 88%, var(--card, #FFFFFF))',
+          overflow: 'visible',
+        }}
+      >
+        <div
+          style={{
+            width: `${playerScore}%`,
+            height: '100%',
+            borderRadius: 999,
+            background: playerColor.bar,
+          }}
+        />
+
+        {hasChange && (
+          <>
+            <div
+              title={`Coach assessment: ${coachScore}`}
+              style={{
+                position: 'absolute',
+                left: `calc(${coachScore}% - 1px)`,
+                top: -5,
+                width: 2,
+                height: 18,
+                borderRadius: 999,
+                background: '#7C3AED',
+                boxShadow:
+                  '0 0 0 2px color-mix(in srgb, #7C3AED 16%, var(--card, #FFFFFF))',
+              }}
+            />
+
+            <div
+              style={{
+                position: 'absolute',
+                left: `clamp(0px, calc(${coachScore}% - 22px), calc(100% - 44px))`,
+                top: -24,
+                minWidth: 44,
+                textAlign: 'center',
+                fontSize: 9,
+                fontWeight: 800,
+                color: '#7C3AED',
+                background:
+                  'color-mix(in srgb, #7C3AED 12%, var(--card, #FFFFFF))',
+                borderRadius: 999,
+                padding: '2px 6px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Coach {coachScore}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div
+        style={{
+          width: 48,
+          textAlign: 'center',
+          fontSize: 11,
+          fontWeight: 800,
+          color: playerColor.text,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {playerScore}
+      </div>
+    </div>
   )
 }
+
+
+const PERFORMANCE_NOTIFICATION_TYPES = [
+  'coach_performance_assessment',
+  'coach_performance_feedback',
+  'coach_progress',
+]
+
+const getPerformanceNotificationMeta = item => {
+  const title = String(item?.title || '').toLowerCase()
+  const type = String(item?.type || '').toLowerCase()
+  const sourceType = String(item?.source_type || '').toLowerCase()
+
+  if (
+    type === 'success' ||
+    title.includes('accepted') ||
+    title.includes('completed')
+  ) {
+    return {
+      icon: 'success',
+      background: '#E7F8F0',
+      color: '#16A34A',
+    }
+  }
+
+  if (
+    type === 'warning' ||
+    title.includes('reminder') ||
+    title.includes('upcoming')
+  ) {
+    return {
+      icon: 'warning',
+      background: '#FFF7E6',
+      color: '#F59E0B',
+    }
+  }
+
+  if (
+    sourceType.includes('coach') ||
+    title.includes('coach') ||
+    title.includes('progress')
+  ) {
+    return {
+      icon: 'score',
+      background: '#E8EFFE',
+      color: '#1A5FFF',
+    }
+  }
+
+  return {
+    icon: 'bell',
+    background: '#EEF2FF',
+    color: '#6366F1',
+  }
+}
+
+
+function PageNotificationBell({ userId }) {
+  const navigate = useNavigate()
+  const [items, setItems] = useState([])
+  const [open, setOpen] = useState(false)
+
+  const loadNotifications = useCallback(async () => {
+    if (!userId) return
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .in('source_type', PERFORMANCE_NOTIFICATION_TYPES)
+      .order('created_at', { ascending: false })
+      .limit(8)
+
+    if (error) {
+      console.error('Page notification load error:', error)
+      return
+    }
+
+    setItems(data || [])
+  }, [userId])
+
+  useEffect(() => {
+    loadNotifications()
+  }, [loadNotifications])
+
+  const unread = items.filter(item => !item.is_read).length
+
+  const openNotification = async item => {
+    setItems(current =>
+      current.map(row =>
+        row.id === item.id ? { ...row, is_read: true } : row
+      )
+    )
+
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', item.id)
+      .eq('user_id', userId)
+
+    setOpen(false)
+
+    if (item.action_url) {
+      navigate(item.action_url)
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={event => {
+          event.stopPropagation()
+          setOpen(current => !current)
+          loadNotifications()
+        }}
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: 12,
+          border: '1px solid var(--line, #E2E8F0)',
+          background: 'var(--card, #FFFFFF)',
+          color: 'var(--text, #0D1B3E)',
+          cursor: 'pointer',
+          display: 'grid',
+          placeItems: 'center',
+          position: 'relative',
+          fontSize: 18,
+        }}
+        title="Page notifications"
+      >
+        🔔
+
+        {unread > 0 && (
+          <span
+            style={{
+              position: 'absolute',
+              top: -5,
+              right: -5,
+              minWidth: 18,
+              height: 18,
+              borderRadius: 999,
+              padding: '0 5px',
+              display: 'grid',
+              placeItems: 'center',
+              background: '#EF4444',
+              color: '#FFFFFF',
+              fontSize: 9,
+              fontWeight: 800,
+            }}
+          >
+            {unread}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 50,
+            right: 0,
+            width: 330,
+            maxHeight: 360,
+            overflowY: 'auto',
+            padding: 10,
+            borderRadius: 16,
+            border: '1px solid var(--line, #EEF1F8)',
+            background: 'var(--card, #FFFFFF)',
+            boxShadow: '0 18px 45px rgba(13, 27, 62, 0.16)',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 800,
+              color: 'var(--text, #0D1B3E)',
+              marginBottom: 9,
+            }}
+          >
+            Performance notifications
+          </div>
+
+          {items.length === 0 ? (
+            <div
+              style={{
+                padding: 20,
+                textAlign: 'center',
+                color: 'var(--text-muted, #8892A4)',
+                fontSize: 12,
+              }}
+            >
+              No notifications for this page.
+            </div>
+          ) : (
+            items.map(item => {
+              const meta = getPerformanceNotificationMeta(item)
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => openNotification(item)}
+                  style={{
+                    width: '100%',
+                    border: 'none',
+                    borderRadius: 12,
+                    padding: '10px 11px',
+                    marginBottom: 7,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    background: item.is_read
+                      ? 'var(--soft, #F6F8FF)'
+                      : 'color-mix(in srgb, #1A5FFF 9%, var(--card, #FFFFFF))',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      marginBottom: 5,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 8,
+                        background: meta.background,
+                        color: meta.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <MiniIcon
+                        type={meta.icon}
+                        color={meta.color}
+                        size={14}
+                      />
+                    </span>
+
+                    <span
+                      style={{
+                        minWidth: 0,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: 'var(--text, #0D1B3E)',
+                      }}
+                    >
+                      {item.title}
+                    </span>
+
+                    {!item.is_read && (
+                      <span
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: 999,
+                          background: '#1A5FFF',
+                          marginLeft: 'auto',
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      paddingLeft: 34,
+                      fontSize: 11,
+                      lineHeight: 1.45,
+                      color: 'var(--text-muted, #8892A4)',
+                    }}
+                  >
+                    {item.message}
+                  </div>
+                </button>
+              )
+            })
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const getSkillAdvice = skillName => {
+  const adviceMap = {
+    Smash:
+      'Work on timing, racket preparation, and transferring power from your legs and core.',
+
+    Defense:
+      'Practise a low defensive stance, quick racket recovery, and returning smashes to different areas.',
+
+    Footwork:
+      'Use shadow footwork drills and focus on returning to the centre after every shot.',
+
+    'Drop shot':
+      'Practise a softer grip, maintain a consistent contact point, and disguise the shot until the final moment.',
+
+    'Net play':
+      'Keep your racket up, use a relaxed grip, and try to take the shuttle earlier at the net.',
+
+    Serve:
+      'Practise consistent placement, controlled movement, and reducing unnecessary wrist action.',
+  }
+
+  return (
+    adviceMap[skillName] ||
+    'Include focused practice for this skill during your next training session.'
+  )
+}
+
 
 export default function Performance() {
   const { user } = useAuth()
@@ -139,10 +765,13 @@ export default function Performance() {
 
   const [profileId, setProfileId] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const showLoader = useLoadingDelay(isLoading, 350)
   const [isSaving, setIsSaving] = useState(false)
   const [matches, setMatches] = useState([])
   const [skills, setSkills] = useState(defaultSkills)
   const [hasSkillRecord, setHasSkillRecord] = useState(false)
+  const [coachProgress, setCoachProgress] = useState([])
+  const [coachAssessments, setCoachAssessments] = useState([])
 
   const [filterType, setFilterType] = useState('All')
   const [sortOrder, setSortOrder] = useState('Latest')
@@ -243,6 +872,36 @@ export default function Performance() {
       } else {
         setHasSkillRecord(false)
         setSkills(defaultSkills)
+      }
+
+      const { data: progressRows, error: progressError } = await supabase
+        .from('coach_player_progress')
+        .select(`
+          id,
+          coach_user_id,
+          progress_status,
+          focus_area,
+          coach_comment,
+          next_review_date,
+          updated_at
+        `)
+        .eq('player_user_id', authUser.id)
+        .order('updated_at', { ascending: false })
+
+      if (progressError) throw progressError
+      setCoachProgress(progressRows || [])
+
+      const { data: assessmentRows, error: assessmentError } = await supabase
+        .from('coach_player_assessments')
+        .select('*')
+        .eq('player_user_id', authUser.id)
+        .order('updated_at', { ascending: false })
+
+      if (assessmentError) {
+        console.error('Coach assessment load error:', assessmentError)
+        setCoachAssessments([])
+      } else {
+        setCoachAssessments(assessmentRows || [])
       }
     } catch (error) {
       console.error('Performance load error:', error)
@@ -391,16 +1050,18 @@ export default function Performance() {
 
   const recommendations = useMemo(() => {
     const lowSkills = skills.filter(skill => skill.val < 70)
+
     const output = lowSkills.slice(0, 2).map(skill => ({
-      icon: '⚠️',
+      icon: 'warning',
       type: 'warning',
-      text: `${skill.name} (${skill.val}): Needs improvement. Add focused drills during training.`,
+      text: `${skill.name} (${skill.val}): ${getSkillAdvice(skill.name)}`,
     }))
 
     const bestSkill = [...skills].sort((a, b) => b.val - a.val)[0]
+
     if (bestSkill) {
       output.push({
-        icon: '✅',
+        icon: 'success',
         type: 'success',
         text: `${bestSkill.name} (${bestSkill.val}): Strong skill. Keep maintaining it.`,
       })
@@ -408,9 +1069,13 @@ export default function Performance() {
 
     if (matches.length > 0) {
       output.push({
-        icon: stats.losses > stats.wins ? '⚠️' : '✅',
+        icon: stats.losses > stats.wins ? 'warning' : 'success',
         type: stats.losses > stats.wins ? 'warning' : 'success',
-        text: `Record: ${stats.wins}W ${stats.losses}L. ${stats.losses > stats.wins ? 'Focus on consistency.' : 'Good match record so far.'}`,
+        text: `Record: ${stats.wins}W ${stats.losses}L. ${
+          stats.losses > stats.wins
+            ? 'Focus on consistency and reducing unforced errors.'
+            : 'Good match record so far.'
+        }`,
       })
     }
 
@@ -630,19 +1295,73 @@ export default function Performance() {
     if (!items.length) return null
 
     return (
-      <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, background: '#fff', marginTop: 6, overflow: 'hidden', boxShadow: '0 10px 25px rgba(15, 23, 42, 0.08)' }}>
+      <div
+        style={{
+          border: `1px solid ${C.line}`,
+          borderRadius: 10,
+          background: '#FFFFFF',
+          marginTop: 6,
+          overflow: 'hidden',
+          boxShadow: '0 10px 25px rgba(15, 23, 42, 0.08)',
+        }}
+      >
         {items.map(item => (
           <button
             key={item.id}
             type="button"
             onClick={() => onSelect(item)}
-            style={{ width: '100%', border: 'none', background: '#fff', padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', textAlign: 'left' }}
+            style={{
+              width: '100%',
+              border: 'none',
+              background: '#FFFFFF',
+              padding: '10px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              cursor: 'pointer',
+              textAlign: 'left',
+              color: '#0D1B3E',
+            }}
           >
-            <span className={styles.av} style={{ width: 26, height: 26, fontSize: 10 }}>
+            <span
+              className={styles.av}
+              style={{
+                width: 28,
+                height: 28,
+                fontSize: 10,
+                background: '#E8EFFE',
+                color: '#1A5FFF',
+                WebkitTextFillColor: '#1A5FFF',
+                border: '1px solid #D8E4FF',
+                flexShrink: 0,
+              }}
+            >
               {getInitials(item.display_name)}
             </span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{item.display_name}</span>
-            <span style={{ fontSize: 11, color: C.muted, marginLeft: 'auto' }}>
+
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: '#0D1B3E',
+                  WebkitTextFillColor: '#0D1B3E',
+                  lineHeight: 1.25,
+                }}
+              >
+                {item.display_name}
+              </div>
+            </div>
+
+            <span
+              style={{
+                fontSize: 11,
+                color: '#8892A4',
+                WebkitTextFillColor: '#8892A4',
+                marginLeft: 'auto',
+                flexShrink: 0,
+              }}
+            >
               {item.source || 'Account'}
             </span>
           </button>
@@ -651,8 +1370,20 @@ export default function Performance() {
     )
   }
 
+  if (isLoading && !showLoader) {
+    return null
+  }
+
+  if (showLoader) {
+    return (
+      <div className={styles.card}>
+        <Loader text="Loading performance..." />
+      </div>
+    )
+  }
+
   return (
-    <div style={{ opacity: isLoading ? 0.55 : 1, transition: 'opacity 160ms ease' }}>
+    <div>
       <div className={styles.pageHead}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
@@ -660,35 +1391,127 @@ export default function Performance() {
             <div className={styles.pageSub}>Match records, results, and skill progress</div>
           </div>
 
-          <button className={styles.btnPrimary} onClick={openAdd}>
-            <MiniIcon type="plus" />
-            Log Match
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button className={styles.btnPrimary} onClick={openAdd}>
+              <MiniIcon type="plus" />
+              Log Match
+            </button>
+
+            <PageNotificationBell userId={user?.id} />
+          </div>
         </div>
       </div>
 
       <div className={styles.g4} style={{ marginBottom: 16 }}>
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#E8EFFE', color: '#1A5FFF' }}><MiniIcon type="matches" /></div>
-          <div className={styles.metricVal} style={{ color: '#1A5FFF' }}>{matches.length}</div>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#E8EFFE',
+              color: '#1A5FFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+            }}
+          >
+            <MiniIcon type="matches" color="#1A5FFF" />
+          </div>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#1A5FFF',
+              WebkitTextFillColor: '#1A5FFF',
+            }}
+          >
+            {matches.length}
+          </div>
           <div className={styles.metricLbl}>Total matches</div>
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#E0FAF3', color: '#00C48C' }}><MiniIcon type="win" /></div>
-          <div className={styles.metricVal} style={{ color: '#00C48C' }}>{stats.winRate}%</div>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#DDF8EF',
+              color: '#00C48C',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+            }}
+          >
+            <MiniIcon type="win" color="#00C48C" />
+          </div>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#00C48C',
+              WebkitTextFillColor: '#00C48C',
+            }}
+          >
+            {stats.winRate}%
+          </div>
           <div className={styles.metricLbl}>Win rate</div>
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#E8EFFE', color: '#1A5FFF' }}><MiniIcon type="score" /></div>
-          <div className={styles.metricVal} style={{ color: '#1A5FFF' }}>{stats.avgScore}</div>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#E8EFFE',
+              color: '#1A5FFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+            }}
+          >
+            <MiniIcon type="score" color="#1A5FFF" />
+          </div>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#1A5FFF',
+              WebkitTextFillColor: '#1A5FFF',
+            }}
+          >
+            {stats.avgScore}
+          </div>
           <div className={styles.metricLbl}>Avg score/set</div>
         </div>
 
         <div className={styles.metric}>
-          <div className={styles.metricIcon} style={{ background: '#FEF3C7', color: '#F59E0B' }}><MiniIcon type="streak" /></div>
-          <div className={styles.metricVal} style={{ color: '#F59E0B' }}>{stats.bestStreak}W</div>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: '#FEF3C7',
+              color: '#F59E0B',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+            }}
+          >
+            <MiniIcon type="streak" color="#F59E0B" />
+          </div>
+          <div
+            className={styles.metricVal}
+            style={{
+              color: '#F59E0B',
+              WebkitTextFillColor: '#F59E0B',
+            }}
+          >
+            {stats.bestStreak}W
+          </div>
           <div className={styles.metricLbl}>Best win streak</div>
         </div>
       </div>
@@ -768,20 +1591,27 @@ export default function Performance() {
         <div className={styles.card}>
           <div className={styles.cardTitle}>Skill self-assessment</div>
 
-          {skills.map((skill, index) => (
-            <div key={skill.name} className={styles.skillRow}>
-              <div className={styles.skillLbl}>{skill.name}</div>
-              <div className={styles.skillTrack}>
-                <div className={styles.skillFill} style={{ width: `${skill.val}%`, background: skill.val < 70 ? 'linear-gradient(90deg,#F59E0B,#FBBF24)' : 'linear-gradient(90deg,#1A5FFF,#3B7BFF)' }} />
-              </div>
-              <div className={styles.skillVal} style={{ color: skill.val < 70 ? '#F59E0B' : C.text }}>{skill.val}</div>
-            </div>
-          ))}
+          {skills.map(skill => {
+            const latestCoachAssessment = coachAssessments[0] || null
+
+            return (
+              <PerformanceComparisonRow
+                key={skill.name}
+                label={skill.name}
+                playerValue={skill.val}
+                coachValue={latestCoachAssessment?.[skill.column]}
+              />
+            )
+          })}
 
           <div style={{ marginTop: 14 }}>
             <button className={styles.btnPrimary} style={{ fontSize: 12, padding: '7px 14px' }} onClick={() => { setSkillVals(skills.map(skill => skill.val)); setShowSkillModal(true) }}>
               Update skills
             </button>
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 11, color: C.muted }}>
+            A purple marker shows the coach assessment only when it is different from your own rating.
           </div>
         </div>
 
@@ -790,15 +1620,172 @@ export default function Performance() {
             <div className={styles.cardTitle}>Recommendations</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {recommendations.map((item, index) => (
-                <div key={index} className={item.type === 'success' ? styles.alertSuccess : styles.alertWarning} style={{ display: 'flex', gap: 10 }}>
-                  <span>{item.icon}</span>
-                  <span>{item.text}</span>
+                <div
+                  key={index}
+                  className={item.type === 'success' ? styles.alertSuccess : styles.alertWarning}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    minHeight: 52,
+                    paddingTop: 10,
+                    paddingBottom: 10,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      background:
+                        item.type === 'success'
+                          ? '#DDF8EF'
+                          : '#FFF3D6',
+                      color:
+                        item.type === 'success'
+                          ? '#059669'
+                          : '#D97706',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <MiniIcon
+                      type={item.icon}
+                      color={
+                        item.type === 'success'
+                          ? '#059669'
+                          : '#D97706'
+                      }
+                      size={16}
+                    />
+                  </span>
+
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: 'block',
+                      lineHeight: 1.45,
+                      padding: 0,
+                    }}
+                  >
+                    {item.text}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
         )}
       </div>
+
+      {(coachAssessments[0]?.performance_comment ||
+        coachProgress.length > 0) && (
+        <div className={styles.card} style={{ marginTop: 16 }}>
+          <div className={styles.cardTitle}>Coach Feedback</div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {coachProgress.map(item => (
+              <div
+                key={item.id}
+                style={{
+                  padding: 14,
+                  background: C.soft,
+                  borderRadius: 12,
+                  borderLeft: '3px solid #1A5FFF',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                    marginBottom: 10,
+                  }}
+                >
+                  <span className={styles.badgeBlue}>
+                    {item.progress_status || 'Not reviewed'}
+                  </span>
+
+                  <span style={{ fontSize: 11, color: C.muted }}>
+                    {item.updated_at
+                      ? new Date(item.updated_at).toLocaleDateString('en-MY', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })
+                      : ''}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: C.text,
+                    lineHeight: 1.65,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {coachAssessments[0]?.performance_comment ||
+                    'No performance feedback provided.'}
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 10,
+                    marginTop: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      background: C.card,
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 10,
+                      padding: '10px 12px',
+                    }}
+                  >
+                    <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>
+                      Focus area
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>
+                      {item.focus_area || 'Not set'}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: C.card,
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 10,
+                      padding: '10px 12px',
+                    }}
+                  >
+                    <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>
+                      Next review
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>
+                      {item.next_review_date
+                        ? new Date(
+                            `${item.next_review_date}T00:00:00`
+                          ).toLocaleDateString('en-MY', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                        : 'Not set'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showMatchModal && (
         <div className={styles.modalOverlay} onClick={event => { if (event.target === event.currentTarget) { setShowMatchModal(false); setRemoveVideo(false); if (videoInputRef.current) videoInputRef.current.value = '' } }}>

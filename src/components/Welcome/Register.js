@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import styles from './Auth.module.css'
+import { supabase } from '../../lib/supabase'
+import styles from '../Admin/Auth.module.css'
 
 function getPasswordChecks(password) {
   return {

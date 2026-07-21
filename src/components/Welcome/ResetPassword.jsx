@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../../lib/supabase'
 
 function getPasswordChecks(password) {
   return {
@@ -256,7 +256,7 @@ export default function ResetPassword() {
                 padding: 0,
               }}
             >
-              {showPassword ? '🙈' : '👁'}
+              {showPassword ? 'ðŸ™ˆ' : 'ðŸ‘'}
             </button>
           </div>
 
@@ -301,7 +301,7 @@ export default function ResetPassword() {
                 padding: 0,
               }}
             >
-              {showConfirm ? '🙈' : '👁'}
+              {showConfirm ? 'ðŸ™ˆ' : 'ðŸ‘'}
             </button>
           </div>
 
