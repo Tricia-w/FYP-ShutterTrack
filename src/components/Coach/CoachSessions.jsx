@@ -279,10 +279,14 @@ export default function CoachSessions() {
 
   useEffect(() => {
     if (searchParams.get('add') === '1') {
+      setSessionForm(current => ({
+        ...current,
+        date: current.date || selectedDate || '',
+      }))
       setShowAddSession(true)
       setSearchParams({}, { replace: true })
     }
-  }, [searchParams, setSearchParams])
+  }, [searchParams, selectedDate, setSearchParams])
 
   const studentMap = useMemo(
     () => new Map(students.map(student => [String(student.id), student])),
@@ -1302,11 +1306,13 @@ export default function CoachSessions() {
                   <button
                     key={cell.value}
                     type="button"
-                    onClick={() =>
-                      setSelectedDate(current =>
-                        current === cell.value ? '' : cell.value
-                      )
-                    }
+                    onClick={() => {
+                      setSelectedDate(cell.value)
+                      setSessionForm(current => ({
+                        ...current,
+                        date: cell.value,
+                      }))
+                    }}
                     style={{
                       minHeight: 58,
                       borderRadius: 14,

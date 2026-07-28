@@ -1,50 +1,119 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+
+function getFriendlyLoginError(error) {
+  const code = String(error?.code || '').toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+
+  if (
+    code === 'email_not_confirmed' ||
+    message.includes('email not confirmed')
+  ) {
+    return 'Verify your email before logging in.'
+  }
+
+  if (
+    code === 'invalid_credentials' ||
+    message.includes('invalid login credentials')
+  ) {
+    return 'The email or password is incorrect.'
+  }
+
+  if (
+    message.includes('rate limit') ||
+    message.includes('too many requests')
+  ) {
+    return 'Too many login attempts. Please wait before trying again.'
+  }
+
+  if (
+    message.includes('failed to fetch') ||
+    message.includes('network')
+  ) {
+    return 'Unable to connect to the server. Check your internet connection.'
+  }
+
+  return 'Unable to log in. Please try again.'
+}
+
+function EyeIcon({ visible }) {
+  if (visible) {
+    return (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+        <line x1="1" y1="1" x2="23" y2="23" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M2 12 C4.5 7.5 7.8 5 12 5 C16.2 5 19.5 7.5 22 12 C19.5 16.5 16.2 19 12 19 C7.8 19 4.5 16.5 2 12 Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
 
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(
+    location.state?.email ||
+      localStorage.getItem('shuttleRememberedEmail') ||
+      '',
+  )
   const [password, setPassword] = useState('')
-  const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
   const [forgotLoading, setForgotLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(
+    localStorage.getItem('shuttleRememberMe') === 'true',
+  )
 
   useEffect(() => {
-    setEmail('')
-    setPassword('')
+    localStorage.removeItem('shuttleAddingRole')
 
-    const timer = setTimeout(() => {
-      setEmail('')
-      setPassword('')
-    }, 300)
+    async function checkBrowserSession() {
+      const sessionOnly =
+        localStorage.getItem('shuttleSessionOnly') === 'true'
 
-    return () => clearTimeout(timer)
+      const browserSessionActive =
+        sessionStorage.getItem('shuttleBrowserSession') === 'true'
+
+      // The user previously logged in without selecting Remember me.
+      // sessionStorage disappears after the browser session is closed.
+      if (sessionOnly && !browserSessionActive) {
+        await supabase.auth.signOut()
+        localStorage.removeItem('activeRole')
+        localStorage.removeItem('shuttleSessionOnly')
+      }
+    }
+
+    checkBrowserSession()
   }, [])
 
-  function getRedirectPath(role, setupCompleted) {
-    if (role === 'coach') {
-      return '/coach'
-    }
-
-    if (role === 'admin') {
-      return '/admin'
-    }
-
-    if (role === 'player' && !setupCompleted) {
-      return '/setup'
-    }
-
-    return '/dashboard'
-  }
-
-  async function handleLogin(e) {
-    e.preventDefault()
+  async function handleLogin(event) {
+    event.preventDefault()
 
     setError('')
     setSuccess('')
@@ -59,45 +128,148 @@ export default function Login() {
           password,
         })
 
-      if (loginError) {
-        setError('Invalid email or password.')
-        return
-      }
+      if (loginError) throw loginError
 
       const user = data?.user
 
       if (!user?.id) {
-        setError('Login failed. Please try again.')
+        throw new Error('Supabase did not return the user.')
+      }
+
+      if (!user.email_confirmed_at) {
+        await supabase.auth.signOut()
+        setError('Verify your email before logging in.')
         return
       }
 
-      const { data: appUser, error: appUserError } = await supabase
-        .from('app_users')
-        .select('role, setup_completed')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (appUserError) {
-        setError(appUserError.message)
-        return
+      // Never save the password.
+      // Remember me keeps the Supabase session after the browser closes.
+      if (rememberMe) {
+        localStorage.setItem('shuttleRememberMe', 'true')
+        localStorage.setItem('shuttleRememberedEmail', cleanEmail)
+        localStorage.removeItem('shuttleSessionOnly')
+        sessionStorage.removeItem('shuttleBrowserSession')
+      } else {
+        localStorage.setItem('shuttleRememberMe', 'false')
+        localStorage.removeItem('shuttleRememberedEmail')
+        localStorage.setItem('shuttleSessionOnly', 'true')
+        sessionStorage.setItem('shuttleBrowserSession', 'true')
       }
+
+      const { data: appUser, error: appUserError } =
+        await supabase
+          .from('app_users')
+          .select(
+            'role, setup_completed, account_status, has_player_access, has_coach_access',
+          )
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+      if (appUserError) throw appUserError
 
       if (!appUser) {
+        await supabase.auth.signOut()
         setError(
-          'Account data not found. Please register again or contact admin.',
+          'Your Auth account exists, but its ShuttleTrack account record is missing.',
         )
         return
       }
 
-      const redirectPath = getRedirectPath(
-        appUser.role,
-        appUser.setup_completed,
-      )
+      if (
+        appUser.account_status &&
+        appUser.account_status !== 'active'
+      ) {
+        await supabase.auth.signOut()
+        setError('This account is not active.')
+        return
+      }
 
-      navigate(redirectPath, { replace: true })
+      if (appUser.role === 'admin') {
+        localStorage.setItem('activeRole', 'admin')
+        navigate('/admin', { replace: true })
+        return
+      }
+
+      const hasPlayer =
+        appUser.has_player_access === true ||
+        appUser.role === 'player'
+
+      const hasCoach =
+        appUser.has_coach_access === true ||
+        appUser.role === 'coach'
+
+      localStorage.removeItem('shuttleAddingRole')
+
+      const savedMode =
+        localStorage.getItem('activeRole')
+
+      if (
+        savedMode === 'coach' &&
+        hasCoach
+      ) {
+        navigate('/coach', { replace: true })
+        return
+      }
+
+      if (
+        savedMode === 'player' &&
+        hasPlayer
+      ) {
+        navigate(
+          appUser.setup_completed
+            ? '/dashboard'
+            : '/setup',
+          { replace: true },
+        )
+        return
+      }
+
+      if (hasPlayer && hasCoach) {
+        const primaryRole =
+          appUser.role === 'coach'
+            ? 'coach'
+            : 'player'
+
+        localStorage.setItem(
+          'activeRole',
+          primaryRole,
+        )
+
+        navigate(
+          primaryRole === 'coach'
+            ? '/coach'
+            : appUser.setup_completed
+              ? '/dashboard'
+              : '/setup',
+          { replace: true },
+        )
+        return
+      }
+
+      if (hasCoach) {
+        localStorage.setItem('activeRole', 'coach')
+        navigate('/coach', { replace: true })
+        return
+      }
+
+      if (hasPlayer) {
+        localStorage.setItem('activeRole', 'player')
+        navigate(
+          appUser.setup_completed
+            ? '/dashboard'
+            : '/setup',
+          { replace: true },
+        )
+        return
+      }
+
+      await supabase.auth.signOut()
+      setError(
+        'This account does not have Player or Coach access.',
+      )
     } catch (err) {
       console.error('Login error:', err)
-      setError(err.message || 'Something went wrong during login.')
+      setError(getFriendlyLoginError(err))
     } finally {
       setLoading(false)
     }
@@ -107,9 +279,11 @@ export default function Login() {
     setError('')
     setSuccess('')
 
-    if (!email.trim()) {
+    const cleanEmail = email.trim().toLowerCase()
+
+    if (!cleanEmail) {
       setError(
-        'Please enter your email first, then click Forgot password.',
+        'Enter your email first, then press Forgot password.',
       )
       return
     }
@@ -119,24 +293,33 @@ export default function Login() {
     try {
       const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(
-          email.trim().toLowerCase(),
+          cleanEmail,
           {
-            redirectTo: `${window.location.origin}/reset-password`,
+            redirectTo:
+              `${window.location.origin}/reset-password`,
           },
         )
 
-      if (resetError) {
-        throw resetError
-      }
+      if (resetError) throw resetError
 
       setSuccess(
-        'Password reset link has been sent to your email.',
+        'If an account exists with this email, a reset link has been sent. Check Inbox, Spam, Junk, Promotions, and Trash.',
       )
     } catch (err) {
-      console.error('Reset password error:', err)
-      setError(
-        err.message || 'Failed to send reset password email.',
-      )
+      console.error('Forgot-password error:', err)
+
+      const message =
+        String(err?.message || '').toLowerCase()
+
+      if (message.includes('rate limit')) {
+        setError(
+          'Too many reset emails were requested. Please wait before trying again.',
+        )
+      } else {
+        setSuccess(
+          'If an account exists with this email, a reset link has been sent.',
+        )
+      }
     } finally {
       setForgotLoading(false)
     }
@@ -152,59 +335,63 @@ export default function Login() {
         await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: `${window.location.origin}/auth/callback`,
+            redirectTo:
+              `${window.location.origin}/auth/callback`,
           },
         })
 
-      if (googleError) {
-        throw googleError
-      }
+      if (googleError) throw googleError
     } catch (err) {
       console.error('Google login error:', err)
-
-      setError(
-        err.message || 'Unable to continue with Google.',
-      )
-
+      setError('Unable to continue with Google.')
       setGoogleLoading(false)
     }
-  }
-
-  const pageStyle = {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#0D1117',
-    padding: '20px',
-    boxSizing: 'border-box',
-  }
-
-  const cardStyle = {
-    background: '#161B27',
-    borderRadius: 20,
-    padding: '40px 40px 36px',
-    width: '100%',
-    maxWidth: 480,
-    boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
-    boxSizing: 'border-box',
   }
 
   const inputStyle = {
     width: '100%',
     padding: '14px 16px',
-    background: '#1E2535',
+    background: 'rgba(30,37,53,0.92)',
     border: '1.5px solid #2A3147',
     borderRadius: 12,
     fontSize: 14,
-    color: '#fff',
+    color: '#FFFFFF',
     outline: 'none',
     boxSizing: 'border-box',
+    transition:
+      'border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease',
   }
 
   return (
-    <div style={pageStyle}>
-      <div style={cardStyle}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        overflow: 'hidden',
+        background:
+          'radial-gradient(circle at 18% 20%, rgba(26,95,255,0.16), transparent 32%), radial-gradient(circle at 82% 80%, rgba(0,196,140,0.10), transparent 30%), #0D1117',
+        padding: 24,
+        boxSizing: 'border-box',
+      }}
+    >
+      <div
+        className="shuttletrack-login-card"
+        style={{
+          width: '100%',
+          maxWidth: 520,
+          padding: '44px 44px 38px',
+          borderRadius: 24,
+          background:
+            'linear-gradient(180deg, rgba(24,30,43,0.98), rgba(20,25,36,0.98))',
+          border: '1px solid rgba(74,85,104,0.55)',
+          boxShadow:
+            '0 26px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.015) inset',
+          boxSizing: 'border-box',
+        }}
+      >
         <div
           style={{
             display: 'flex',
@@ -215,10 +402,12 @@ export default function Login() {
         >
           <div
             style={{
-              width: 38,
-              height: 38,
-              background: '#1A5FFF',
-              borderRadius: 10,
+              width: 42,
+              height: 42,
+              background:
+                'linear-gradient(135deg, #1A5FFF, #4C83FF)',
+              borderRadius: 12,
+              boxShadow: '0 10px 24px rgba(26,95,255,0.30)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -226,15 +415,24 @@ export default function Login() {
             }}
           >
             <svg
+              viewBox="0 0 20 20"
+              fill="none"
               width="20"
               height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="2.2"
             >
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 3v9l5 3" />
+              <circle
+                cx="10"
+                cy="10"
+                r="8"
+                stroke="white"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M6 10 Q10 4 14 10 Q10 16 6 10Z"
+                fill="white"
+                opacity="0.8"
+              />
+              <circle cx="10" cy="10" r="2" fill="white" />
             </svg>
           </div>
 
@@ -242,7 +440,7 @@ export default function Login() {
             style={{
               fontSize: 16,
               fontWeight: 700,
-              color: '#fff',
+              color: '#FFFFFF',
             }}
           >
             ShuttleTrack
@@ -251,11 +449,10 @@ export default function Login() {
 
         <h1
           style={{
-            fontSize: 28,
+            fontSize: 30,
             fontWeight: 800,
-            color: '#fff',
-            marginTop: 0,
-            marginBottom: 6,
+            color: '#FFFFFF',
+            margin: '0 0 6px',
           }}
         >
           Welcome Back
@@ -265,11 +462,10 @@ export default function Login() {
           style={{
             fontSize: 13,
             color: '#8892A4',
-            marginTop: 0,
-            marginBottom: 28,
+            margin: '0 0 28px',
           }}
         >
-          Login to continue to ShuttleTrack
+          Enter your details to continue to ShuttleTrack.
         </p>
 
         {error && (
@@ -277,10 +473,10 @@ export default function Login() {
             style={{
               background: '#2D1B1B',
               color: '#F87171',
-              fontSize: 13,
               padding: '10px 14px',
               borderRadius: 10,
               marginBottom: 16,
+              fontSize: 13,
               lineHeight: 1.5,
             }}
           >
@@ -293,61 +489,46 @@ export default function Login() {
             style={{
               background: '#10251C',
               color: '#34D399',
-              fontSize: 13,
               padding: '10px 14px',
               borderRadius: 10,
               marginBottom: 16,
-              lineHeight: 1.5,
+              fontSize: 13,
+              lineHeight: 1.6,
             }}
           >
             {success}
           </div>
         )}
 
-        <form onSubmit={handleLogin} autoComplete="off">
+        <form onSubmit={handleLogin}>
           <input
             type="email"
-            name="shuttletrack-login-email"
             placeholder="Email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="none"
-            spellCheck="false"
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
             required
             disabled={loading || googleLoading}
             style={{
               ...inputStyle,
               marginBottom: 12,
-              opacity:
-                loading || googleLoading ? 0.7 : 1,
+              opacity: loading || googleLoading ? 0.7 : 1,
             }}
           />
 
-          <div
-            style={{
-              position: 'relative',
-              marginBottom: 14,
-            }}
-          >
+          <div style={{ position: 'relative', marginBottom: 14 }}>
             <input
               type={showPassword ? 'text' : 'password'}
-              name="shuttletrack-login-password"
               placeholder="Password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck="false"
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
               required
               disabled={loading || googleLoading}
               style={{
                 ...inputStyle,
                 paddingRight: 44,
-                opacity:
-                  loading || googleLoading ? 0.7 : 1,
+                opacity: loading || googleLoading ? 0.7 : 1,
               }}
             />
 
@@ -357,10 +538,9 @@ export default function Login() {
                 setShowPassword((previous) => !previous)
               }
               aria-label={
-                showPassword
-                  ? 'Hide password'
-                  : 'Show password'
+                showPassword ? 'Hide password' : 'Show password'
               }
+              disabled={loading || googleLoading}
               style={{
                 position: 'absolute',
                 right: 14,
@@ -368,173 +548,97 @@ export default function Login() {
                 transform: 'translateY(-50%)',
                 background: 'none',
                 border: 'none',
-                cursor: 'pointer',
                 color: '#8892A4',
+                cursor:
+                  loading || googleLoading
+                    ? 'not-allowed'
+                    : 'pointer',
                 padding: 0,
                 display: 'flex',
                 alignItems: 'center',
               }}
             >
-              {showPassword ? (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                  <line
-                    x1="1"
-                    y1="1"
-                    x2="23"
-                    y2="23"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
+              <EyeIcon visible={showPassword} />
             </button>
           </div>
 
           <div
             style={{
               display: 'flex',
-              justifyContent: 'space-between',
               alignItems: 'center',
-              gap: 12,
+              justifyContent: 'space-between',
+              gap: 14,
               marginBottom: 20,
             }}
           >
-            <button
-              type="button"
-              onClick={() =>
-                setRemember((previous) => !previous)
-              }
+            <label
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                cursor: 'pointer',
-                background: 'none',
-                border: 'none',
-                padding: 0,
+                color: '#AAB2C0',
+                fontSize: 13,
+                cursor:
+                  loading || googleLoading
+                    ? 'not-allowed'
+                    : 'pointer',
+                userSelect: 'none',
               }}
             >
-              <div
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(event) =>
+                  setRememberMe(event.target.checked)
+                }
+                disabled={loading || googleLoading}
                 style={{
-                  width: 18,
-                  height: 18,
-                  border: `2px solid ${
-                    remember ? '#1A5FFF' : '#3A4460'
-                  }`,
-                  borderRadius: 5,
-                  background: remember
-                    ? '#1A5FFF'
-                    : 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.15s',
-                  flexShrink: 0,
-                  boxSizing: 'border-box',
+                  width: 16,
+                  height: 16,
+                  accentColor: '#1A5FFF',
+                  cursor:
+                    loading || googleLoading
+                      ? 'not-allowed'
+                      : 'pointer',
                 }}
-              >
-                {remember && (
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                  >
-                    <path
-                      d="M2 6l3 3 5-5"
-                      stroke="#fff"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-              </div>
-
-              <span
-                style={{
-                  fontSize: 13,
-                  color: '#8892A4',
-                  userSelect: 'none',
-                  textAlign: 'left',
-                }}
-              >
-                Remember for 30 days
-              </span>
-            </button>
+              />
+              Remember me
+            </label>
 
             <button
               type="button"
               onClick={handleForgotPassword}
-              disabled={
-                forgotLoading || loading || googleLoading
-              }
+              disabled={forgotLoading || loading || googleLoading}
               style={{
                 fontSize: 13,
                 color: '#1A5FFF',
                 cursor:
-                  forgotLoading ||
-                  loading ||
-                  googleLoading
+                  forgotLoading || loading || googleLoading
                     ? 'not-allowed'
                     : 'pointer',
-                fontWeight: 500,
                 background: 'none',
                 border: 'none',
                 padding: 0,
                 opacity:
-                  forgotLoading ||
-                  loading ||
-                  googleLoading
+                  forgotLoading || loading || googleLoading
                     ? 0.7
                     : 1,
-                whiteSpace: 'nowrap',
               }}
             >
-              {forgotLoading
-                ? 'Sending...'
-                : 'Forgot password?'}
+              {forgotLoading ? 'Sending...' : 'Forgot password?'}
             </button>
           </div>
 
           <button
             type="submit"
+            className="loginPressButton"
             disabled={loading || googleLoading}
             style={{
-              width: '100%',
-              padding: 14,
-              background: '#1A5FFF',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 12,
-              fontSize: 15,
-              fontWeight: 700,
+              opacity: loading || googleLoading ? 0.7 : 1,
               cursor:
                 loading || googleLoading
                   ? 'not-allowed'
                   : 'pointer',
-              marginBottom: 12,
-              opacity:
-                loading || googleLoading ? 0.7 : 1,
             }}
           >
             {loading ? 'Logging in...' : 'Login'}
@@ -546,33 +650,12 @@ export default function Login() {
             display: 'flex',
             alignItems: 'center',
             gap: 10,
-            marginBottom: 12,
+            margin: '14px 0 12px',
           }}
         >
-          <div
-            style={{
-              flex: 1,
-              height: 1,
-              background: '#2A3147',
-            }}
-          />
-
-          <span
-            style={{
-              fontSize: 12,
-              color: '#4A5568',
-            }}
-          >
-            or
-          </span>
-
-          <div
-            style={{
-              flex: 1,
-              height: 1,
-              background: '#2A3147',
-            }}
-          />
+          <div style={{ flex: 1, height: 1, background: '#2A3147' }} />
+          <span style={{ fontSize: 11, color: '#5F6B82' }}>or continue with</span>
+          <div style={{ flex: 1, height: 1, background: '#2A3147' }} />
         </div>
 
         <button
@@ -586,9 +669,9 @@ export default function Login() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 10,
-            background: '#1E2535',
-            color: '#fff',
-            border: '1.5px solid #2A3147',
+            background: '#1D2535',
+            color: '#FFFFFF',
+            border: '1.5px solid #2A3448',
             borderRadius: 12,
             fontSize: 14,
             fontWeight: 600,
@@ -596,62 +679,27 @@ export default function Login() {
               googleLoading || loading
                 ? 'not-allowed'
                 : 'pointer',
-            marginBottom: 20,
-            transition: 'background 0.15s',
-            opacity:
-              googleLoading || loading ? 0.7 : 1,
-          }}
-          onMouseEnter={(e) => {
-            if (!googleLoading && !loading) {
-              e.currentTarget.style.background =
-                '#252D40'
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background =
-              '#1E2535'
+            opacity: googleLoading || loading ? 0.7 : 1,
           }}
         >
-          {googleLoading ? (
-            <div
-              style={{
-                width: 18,
-                height: 18,
-                border: '2px solid #59647A',
-                borderTopColor: '#FFFFFF',
-                borderRadius: '50%',
-                animation:
-                  'googleLoginSpin 0.8s linear infinite',
-                boxSizing: 'border-box',
-              }}
+          <svg width="18" height="18" viewBox="0 0 48 48">
+            <path
+              fill="#FFC107"
+              d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 20-8 20-20 0-1.3-.1-2.7-.4-4z"
             />
-          ) : (
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 48 48"
-            >
-              <path
-                fill="#FFC107"
-                d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 20-8 20-20 0-1.3-.1-2.7-.4-4z"
-              />
-
-              <path
-                fill="#FF3D00"
-                d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"
-              />
-
-              <path
-                fill="#4CAF50"
-                d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.6-2.9-11.3-7.1l-6.5 5C9.7 39.8 16.4 44 24 44z"
-              />
-
-              <path
-                fill="#1976D2"
-                d="M43.6 20H24v8h11.3c-.9 2.4-2.5 4.4-4.6 5.8l6.2 5.2C40.8 35.7 44 30.3 44 24c0-1.3-.1-2.7-.4-4z"
-              />
-            </svg>
-          )}
+            <path
+              fill="#FF3D00"
+              d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"
+            />
+            <path
+              fill="#4CAF50"
+              d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.6-2.9-11.3-7.1l-6.5 5C9.7 39.8 16.4 44 24 44z"
+            />
+            <path
+              fill="#1976D2"
+              d="M43.6 20H24v8h11.3c-.9 2.4-2.5 4.4-4.6 5.8l6.2 5.2C40.8 35.7 44 30.3 44 24c0-1.3-.1-2.7-.4-4z"
+            />
+          </svg>
 
           {googleLoading
             ? 'Connecting to Google...'
@@ -660,10 +708,11 @@ export default function Login() {
 
         <p
           style={{
-            textAlign: 'center',
-            fontSize: 13,
             color: '#8892A4',
-            margin: 0,
+            textAlign: 'center',
+            marginTop: 20,
+            marginBottom: 0,
+            fontSize: 13,
           }}
         >
           New user?{' '}
@@ -671,35 +720,64 @@ export default function Login() {
             type="button"
             onClick={() => navigate('/register')}
             style={{
-              color: '#00C48C',
-              fontWeight: 600,
-              cursor: 'pointer',
               background: 'none',
               border: 'none',
+              color: '#34D399',
+              cursor: 'pointer',
+              fontWeight: 700,
               padding: 0,
-              fontSize: 13,
             }}
           >
             Create account
           </button>
         </p>
-
-        <style>
-          {`
-            @keyframes googleLoginSpin {
-              to {
-                transform: rotate(360deg);
-              }
-            }
-
-            @media (max-width: 560px) {
-              .shuttletrack-login-card {
-                padding: 30px 22px !important;
-              }
-            }
-          `}
-        </style>
       </div>
+
+      <style>
+        {`
+          .loginPressButton {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            background:
+              linear-gradient(90deg, #1A5FFF, #3F7DFF);
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 700;
+            box-shadow:
+              0 12px 26px rgba(26,95,255,0.28);
+            transition:
+              background 0.14s ease,
+              transform 0.14s ease,
+              box-shadow 0.14s ease;
+          }
+
+          .loginPressButton:hover:not(:disabled) {
+            background:
+              linear-gradient(90deg, #2468FF, #4A82FF);
+            box-shadow:
+              0 15px 30px rgba(26,95,255,0.34);
+          }
+
+          .loginPressButton:active:not(:disabled) {
+            transform: translateY(1px);
+            background:
+              linear-gradient(180deg, #101A2B, #0C1524);
+            box-shadow:
+              0 14px 30px rgba(26,95,255,0.42),
+              0 20px 36px rgba(26,95,255,0.28),
+              0 0 0 1px rgba(76,131,255,0.14) inset;
+          }
+
+          @media (max-width: 560px) {
+            .shuttletrack-login-card {
+              padding: 32px 22px !important;
+              border-radius: 20px !important;
+            }
+          }
+        `}
+      </style>
     </div>
   )
 }

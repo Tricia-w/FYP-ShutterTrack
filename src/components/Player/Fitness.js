@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
 import styles from '../Layout/Pages.module.css'
@@ -611,7 +611,7 @@ function ScoreRing({ value }) {
   const ringColor = value >= 70 ? '#00C48C' : value >= 50 ? '#F59E0B' : '#EF4444'
 
   return (
-    <svg width="82" height="82" viewBox="0 0 82 82">
+    <svg className="fitness-mobile-ring" width="82" height="82" viewBox="0 0 82 82">
       <circle cx="41" cy="41" r={r} stroke="rgba(255,255,255,0.22)" strokeWidth="8" fill="none" />
       <circle
         cx="41"
@@ -641,7 +641,7 @@ function ProgressRing({ value }) {
   const offset = c - (value / 100) * c
 
   return (
-    <svg width="92" height="92" viewBox="0 0 92 92">
+    <svg className="fitness-mobile-ring" width="92" height="92" viewBox="0 0 92 92">
       <circle cx="46" cy="46" r={r} stroke="#E8EEF8" strokeWidth="9" fill="none" />
       <circle
         cx="46"
@@ -2519,6 +2519,7 @@ export default function Fitness() {
   const [editingInjury, setEditingInjury] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [hasCoach, setHasCoach] = useState(false)
+  const trainingTableRef = useRef(null)
 
   const [scheduleForm, setScheduleForm] = useState(emptySchedule())
   const [trainingForm, setTrainingForm] = useState(emptyTraining())
@@ -2661,6 +2662,21 @@ export default function Fitness() {
   }, [refreshKey])
 
   useEffect(() => {
+    const resetTrainingScroll = () => {
+      if (trainingTableRef.current) {
+        trainingTableRef.current.scrollLeft = 0
+      }
+    }
+
+    resetTrainingScroll()
+    window.addEventListener('resize', resetTrainingScroll)
+
+    return () => {
+      window.removeEventListener('resize', resetTrainingScroll)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!userId) return undefined
 
     const channel = supabase
@@ -2800,10 +2816,36 @@ export default function Fitness() {
   }, [tests, sessions.length, weeklyMinutes, latestRecovery, activeInjuries])
 
   const fitnessScore = Math.round(indicators.reduce((sum, i) => sum + i.val, 0) / indicators.length)
-  const recoveryScore = indicators.find(i => i.name === 'Recovery')?.val || 50
-  const recoveryStatus = recoveryScore >= 75 ? 'Good' : recoveryScore >= 55 ? 'Moderate' : 'Needs Rest'
-  const tirednessLabel = latestRecovery ? latestRecovery.tiredness <= 3 ? 'Low' : latestRecovery.tiredness <= 6 ? 'Moderate' : 'High' : 'No data'
-  const suggestion = recoverySuggestion(recoveryScore, latestRecovery, activeInjuries, weeklyMinutes)
+  const hasRecoveryData = Boolean(latestRecovery)
+
+  const recoveryScore = hasRecoveryData
+    ? indicators.find(i => i.name === 'Recovery')?.val || 0
+    : 0
+
+  const recoveryStatus = !hasRecoveryData
+    ? 'Not Set'
+    : recoveryScore >= 75
+      ? 'Good'
+      : recoveryScore >= 55
+        ? 'Moderate'
+        : 'Needs Rest'
+
+  const tirednessLabel = !hasRecoveryData
+    ? 'No data'
+    : latestRecovery.tiredness <= 3
+      ? 'Low'
+      : latestRecovery.tiredness <= 6
+        ? 'Moderate'
+        : 'High'
+
+  const suggestion = hasRecoveryData
+    ? recoverySuggestion(
+        recoveryScore,
+        latestRecovery,
+        activeInjuries,
+        weeklyMinutes
+      )
+    : 'Add a recovery check-in to receive a recovery suggestion.'
 
   const trainingLogItems = useMemo(() => {
     const scheduledItems = scheduleList.map(item => ({
@@ -2827,10 +2869,12 @@ export default function Fitness() {
         '-',
       focus: item.focus || item.type || 'Training',
       status:
-        item.attendanceStatus ||
-        item.attendance_status ||
-        item.status ||
-        'Scheduled',
+        item.scheduleStatus === 'missed'
+          ? 'Missed'
+          : item.attendanceStatus ||
+            item.attendance_status ||
+            item.status ||
+            'Scheduled',
       original: item,
     }))
 
@@ -3991,7 +4035,10 @@ export default function Fitness() {
           : 'You can plan your own sessions, mark them completed or missed, and log unplanned training. A coach is not required to use this page.'}
       </div>
 
-      <div className={styles.g4} style={{ marginBottom: 16 }}>
+      <div
+        className={`${styles.g4} fitness-mobile-metrics`}
+        style={{ marginBottom: 16 }}
+      >
         <div className={styles.metricHighlight}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
             <div>
@@ -4193,17 +4240,21 @@ export default function Fitness() {
                 className={styles.metricVal}
                 style={{
                   color:
-                    recoveryScore >= 75
-                      ? '#10B981'
-                      : recoveryScore >= 55
-                        ? '#F59E0B'
-                        : '#EF4444',
+                    !hasRecoveryData
+                      ? '#8892A4'
+                      : recoveryScore >= 75
+                        ? '#10B981'
+                        : recoveryScore >= 55
+                          ? '#F59E0B'
+                          : '#EF4444',
                   WebkitTextFillColor:
-                    recoveryScore >= 75
-                      ? '#10B981'
-                      : recoveryScore >= 55
-                        ? '#F59E0B'
-                        : '#EF4444',
+                    !hasRecoveryData
+                      ? '#8892A4'
+                      : recoveryScore >= 75
+                        ? '#10B981'
+                        : recoveryScore >= 55
+                          ? '#F59E0B'
+                          : '#EF4444',
                 }}
               >
                 {recoveryStatus}
@@ -4227,7 +4278,15 @@ export default function Fitness() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 1.15fr', gap: 16, marginBottom: 16 }}>
+      <div
+        className="fitness-mobile-two-column"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 16,
+          marginBottom: 16,
+        }}
+      >
         <div className={styles.card}>
           <div
             style={{
@@ -4363,7 +4422,15 @@ export default function Fitness() {
       </div>
 
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div
+        className="fitness-mobile-two-column"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 16,
+          marginBottom: 16,
+        }}
+      >
         <div className={styles.card}>
           <div
             style={{
@@ -4441,8 +4508,23 @@ export default function Fitness() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 0.9fr', gap: 16, marginBottom: 16 }}>
-        <div className={styles.card}>
+      <div
+        className="fitness-mobile-three-column"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1.65fr 0.9fr 0.9fr',
+          gap: 16,
+          marginBottom: 16,
+          alignItems: 'stretch',
+        }}
+      >
+        <div
+          className={styles.card}
+          style={{
+            height: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
           <div style={{ marginBottom: 14 }}>
             <div className={styles.cardTitle} style={{ marginBottom: 4 }}>
               Training Log
@@ -4469,7 +4551,25 @@ export default function Fitness() {
             </select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '70px 105px 1fr 80px 85px 85px 30px', gap: 10, padding: '0 8px 8px', color: '#8892A4', fontSize: 11, fontWeight: 700 }}>
+          <div
+            ref={trainingTableRef}
+            className="fitness-training-table-wrap"
+          >
+          <div
+            className="fitness-training-header"
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                '70px 125px minmax(170px, 1fr) 90px 100px 100px 24px',
+              gap: 10,
+              padding: '0 10px 8px',
+              color: '#8892A4',
+              fontSize: 11,
+              fontWeight: 700,
+              alignItems: 'center',
+              boxSizing: 'border-box',
+            }}
+          >
             <div>Date</div>
             <div>Time</div>
             <div>Training</div>
@@ -4493,6 +4593,7 @@ export default function Fitness() {
 
           {tableSessions.length > 0 && (
             <div
+              className="fitness-training-body"
               style={{
                 maxHeight: 430,
                 overflowY: 'auto',
@@ -4510,7 +4611,7 @@ export default function Fitness() {
                 return (
                   <div
                     key={t.id}
-                    className={styles.listRow}
+                    className={`${styles.listRow} fitness-training-row`}
                     onClick={() => {
                       if (t.sourceType === 'schedule') {
                         openEditSchedule(t.original)
@@ -4522,9 +4623,11 @@ export default function Fitness() {
                       cursor: 'pointer',
                       display: 'grid',
                       gridTemplateColumns:
-                        '70px 105px 1fr 80px 85px 85px 30px',
+                        '70px 125px minmax(170px, 1fr) 90px 100px 100px 24px',
                       gap: 10,
                       alignItems: 'center',
+                      minWidth: 0,
+                      boxSizing: 'border-box',
                       borderRadius: 10,
                       padding: '10px 10px',
                       marginBottom: 6,
@@ -4585,19 +4688,37 @@ export default function Fitness() {
                       {safeTimeRange(t.time, t.endTime)}
                     </div>
 
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>
+                    <div
+                      style={{
+                        minWidth: 0,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        lineHeight: 1.2,
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
                       {t.activity}
                     </div>
 
-                    <div style={{ fontSize: 12, color: '#8892A4' }}>
+                    <div
+                      style={{
+                        minWidth: 0,
+                        fontSize: 12,
+                        color: '#8892A4',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
                       {t.duration || '-'}
                     </div>
 
                     <div
                       style={{
+                        minWidth: 0,
                         fontSize: 12,
                         color: 'var(--text, #0D1B3E)',
                         fontWeight: 600,
+                        lineHeight: 1.2,
+                        overflowWrap: 'anywhere',
                       }}
                     >
                       {t.focus || '-'}
@@ -4605,8 +4726,11 @@ export default function Fitness() {
 
                     <div
                       style={{
-                        fontSize: 10,
-                        fontWeight: 800,
+                        minWidth: 0,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        textAlign: 'left',
+                        whiteSpace: 'nowrap',
                         color:
                           statusLower === 'completed'
                             ? '#10B981'
@@ -4617,7 +4741,8 @@ export default function Fitness() {
                     >
                       {statusLower === 'scheduled'
                         ? 'Upcoming'
-                        : statusText}
+                        : statusText.charAt(0).toUpperCase() +
+                          statusText.slice(1).toLowerCase()}
                     </div>
 
                     {pencilIcon}
@@ -4626,9 +4751,16 @@ export default function Fitness() {
               })}
             </div>
           )}
+          </div>
         </div>
 
-        <div className={styles.card}>
+        <div
+          className={styles.card}
+          style={{
+            height: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Fitness Test Records</div>
             <button className={styles.btnOutline} style={{ fontSize: 12, padding: '7px 14px' }} onClick={openAddTest}>Add</button>
@@ -4654,7 +4786,15 @@ export default function Fitness() {
           ))}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+            height: '100%',
+            minWidth: 0,
+          }}
+        >
           <div className={styles.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Recovery Check-in</div>
@@ -4666,7 +4806,18 @@ export default function Fitness() {
               { label: 'Tiredness', val: latestRecovery ? `${latestRecovery.tiredness} /10` : '-', badge: latestRecovery ? (latestRecovery.tiredness <= 3 ? 'Low' : 'Monitor') : 'No data', color: latestRecovery ? (latestRecovery.tiredness <= 3 ? 'green' : 'amber') : 'gray' },
               { label: 'Muscle Ache', val: latestRecovery ? `${latestRecovery.muscleAche} /10` : '-', badge: latestRecovery ? (latestRecovery.muscleAche <= 3 ? 'Low' : 'Monitor') : 'No data', color: latestRecovery ? (latestRecovery.muscleAche <= 3 ? 'green' : 'amber') : 'gray' },
               { label: 'Resting Heart Rate', val: latestRecovery ? `${latestRecovery.hr} bpm` : '-', badge: latestRecovery ? 'Saved' : 'No data', color: latestRecovery ? 'green' : 'gray' },
-              { label: 'Recovery Score', val: `${recoveryScore} /100`, badge: recoveryStatus, color: recoveryScore >= 75 ? 'green' : recoveryScore >= 55 ? 'amber' : 'red' },
+              {
+                label: 'Recovery Score',
+                val: hasRecoveryData ? `${recoveryScore} /100` : '-',
+                badge: recoveryStatus,
+                color: !hasRecoveryData
+                  ? 'gray'
+                  : recoveryScore >= 75
+                    ? 'green'
+                    : recoveryScore >= 55
+                      ? 'amber'
+                      : 'red',
+              },
             ].map((r, i) => (
               <div key={i} className={styles.statRow}>
                 <span className={styles.statLabel}>{r.label}</span>
@@ -4716,6 +4867,104 @@ export default function Fitness() {
           </div>
         </div>
       </div>
+
+
+      <style>
+        {`
+          .fitness-mobile-metrics,
+          .fitness-mobile-metrics > *,
+          .fitness-mobile-two-column,
+          .fitness-mobile-two-column > *,
+          .fitness-mobile-three-column,
+          .fitness-mobile-three-column > * {
+            min-width: 0;
+          }
+
+          .fitness-training-table-wrap {
+            width: 100%;
+            direction: ltr;
+          }
+
+          @media (max-width: 900px) {
+            .fitness-mobile-two-column,
+            .fitness-mobile-three-column {
+              grid-template-columns: 1fr !important;
+            }
+          }
+
+          @media (max-width: 640px) {
+            .fitness-mobile-metrics {
+              display: grid !important;
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+              gap: 10px !important;
+              margin-bottom: 12px !important;
+            }
+
+            .fitness-mobile-metrics > * {
+              min-height: 145px !important;
+              padding: 16px !important;
+              border-radius: 16px !important;
+              box-sizing: border-box;
+            }
+
+            .fitness-mobile-metrics > * > div {
+              display: block !important;
+              height: auto !important;
+            }
+
+            .fitness-mobile-ring {
+              display: none !important;
+            }
+
+            .fitness-mobile-two-column,
+            .fitness-mobile-three-column {
+              gap: 12px !important;
+              margin-bottom: 12px !important;
+            }
+
+            .fitness-training-table-wrap {
+              overflow-x: auto;
+              overflow-y: hidden;
+              -webkit-overflow-scrolling: touch;
+              scrollbar-width: thin;
+              padding-bottom: 7px;
+            }
+
+            .fitness-training-header,
+            .fitness-training-body {
+              width: 760px;
+              min-width: 760px;
+            }
+
+            .fitness-training-body {
+              overflow-x: visible !important;
+              overflow-y: auto !important;
+            }
+
+            .fitness-training-row {
+              width: 100%;
+              min-width: 760px;
+            }
+
+            .fitness-training-header > :nth-child(6),
+            .fitness-training-row > :nth-child(6) {
+              text-align: left !important;
+              justify-self: stretch;
+            }
+          }
+
+          @media (max-width: 390px) {
+            .fitness-mobile-metrics {
+              gap: 8px !important;
+            }
+
+            .fitness-mobile-metrics > * {
+              min-height: 138px !important;
+              padding: 13px !important;
+            }
+          }
+        `}
+      </style>
 
       {showSchedule && (
         <ScheduleModal

@@ -13,6 +13,16 @@ import {
 
 const DEFAULT_SKILL = 50
 
+const REPORT_REASON_OPTIONS = [
+  'Harassment or bullying',
+  'Fake or misleading profile',
+  'Inappropriate content',
+  'Spam or scam',
+  'Unsafe behaviour',
+  'Impersonation',
+  'Other',
+]
+
 function getPlayerId(row) {
   return row?.user_id || row?.player_id || row?.id || null
 }
@@ -132,6 +142,30 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered')
       profile?.photo_url ||
       null,
 
+    matches: Number(
+      profile?.matches ??
+      profile?.total_matches ??
+      profile?.match_count ??
+      0
+    ),
+    winRate: Number(
+      profile?.win_rate ??
+      profile?.winRate ??
+      0
+    ),
+    streak:
+      profile?.streak ||
+      profile?.current_streak ||
+      'W0',
+    playingSince:
+      profile?.playing_since ||
+      profile?.since ||
+      'Not specified',
+    preferredCourt:
+      profile?.preferred_court ||
+      profile?.court ||
+      'Not specified',
+
     smash: Number(skillRow?.smash ?? DEFAULT_SKILL),
     defense: Number(skillRow?.defense ?? DEFAULT_SKILL),
     footwork: Number(skillRow?.footwork ?? DEFAULT_SKILL),
@@ -160,6 +194,250 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered')
   }
 }
 
+
+
+function ReportPlayerModal({
+  player,
+  submitting,
+  onClose,
+  onSubmit,
+}) {
+  const [reason, setReason] = useState(REPORT_REASON_OPTIONS[0])
+  const [details, setDetails] = useState('')
+  const [formError, setFormError] = useState('')
+
+  useEffect(() => {
+    setReason(REPORT_REASON_OPTIONS[0])
+    setDetails('')
+    setFormError('')
+  }, [player?.id])
+
+  if (!player) return null
+
+  const handleSubmit = async event => {
+    event.preventDefault()
+
+    if (!reason) {
+      setFormError('Please select a report reason.')
+      return
+    }
+
+    if (reason === 'Other' && !details.trim()) {
+      setFormError('Please explain the reason for this report.')
+      return
+    }
+
+    setFormError('')
+
+    await onSubmit({
+      reason,
+      details: details.trim(),
+    })
+  }
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={event => {
+        if (
+          event.target === event.currentTarget &&
+          !submitting
+        ) {
+          onClose()
+        }
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10050,
+        background: 'rgba(13, 27, 62, 0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        className={styles.card}
+        style={{
+          width: 'min(520px, 100%)',
+          padding: 22,
+          background: 'var(--card, #FFFFFF)',
+          border: '1px solid var(--line, #EEF1F8)',
+          borderRadius: 18,
+          boxShadow: '0 24px 60px rgba(13,27,62,0.25)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 12,
+            marginBottom: 18,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 800,
+                color: 'var(--text, #0D1B3E)',
+              }}
+            >
+              Report player
+            </div>
+
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: 'var(--text-muted, #8892A4)',
+              }}
+            >
+              Report {player.name} to the ShuttleTrack administrator.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close report form"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 999,
+              border: '1px solid var(--line, #DDE3EF)',
+              background: 'var(--card, #FFFFFF)',
+              color: 'var(--text-muted, #8892A4)',
+              fontSize: 18,
+              cursor: submitting ? 'wait' : 'pointer',
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className={styles.formRow}>
+          <label className={styles.formLabel}>Reason</label>
+
+          <select
+            className={styles.formSelect}
+            value={reason}
+            onChange={event => setReason(event.target.value)}
+            disabled={submitting}
+            style={{ width: '100%' }}
+          >
+            {REPORT_REASON_OPTIONS.map(option => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.formRow}>
+          <label className={styles.formLabel}>
+            Additional details
+          </label>
+
+          <textarea
+            className={styles.formInput}
+            rows={5}
+            maxLength={1000}
+            value={details}
+            onChange={event => setDetails(event.target.value)}
+            disabled={submitting}
+            placeholder="Explain what happened. Do not include passwords or financial information."
+            style={{
+              width: '100%',
+              resize: 'vertical',
+              fontFamily: 'inherit',
+            }}
+          />
+
+          <div
+            style={{
+              marginTop: 5,
+              textAlign: 'right',
+              color: 'var(--text-muted, #8892A4)',
+              fontSize: 10,
+            }}
+          >
+            {details.length}/1000
+          </div>
+        </div>
+
+        {formError && (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: '11px 12px',
+              borderRadius: 10,
+              background: '#FEF2F2',
+              border: '1px solid #FECACA',
+              color: '#B91C1C',
+              fontSize: 12,
+            }}
+          >
+            {formError}
+          </div>
+        )}
+
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 11,
+            background: '#FFF7ED',
+            color: '#9A3412',
+            fontSize: 11,
+            lineHeight: 1.6,
+          }}
+        >
+          Reports are reviewed by an administrator. Submit only genuine
+          safety or behaviour concerns.
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 9,
+          }}
+        >
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            style={{
+              border: 'none',
+              borderRadius: 10,
+              padding: '9px 15px',
+              background: '#DC2626',
+              color: '#FFFFFF',
+              fontSize: 12,
+              fontWeight: 800,
+              cursor: submitting ? 'wait' : 'pointer',
+              opacity: submitting ? 0.65 : 1,
+            }}
+          >
+            {submitting ? 'Submitting...' : 'Submit report'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
 
 function PlayerRadarChart({ player, size = 330 }) {
   const skills = [
@@ -311,6 +589,108 @@ function PlayerRadarChart({ player, size = 330 }) {
 }
 
 
+
+function ProfileAvatar({ player, size = 56 }) {
+  if (player?.avatarUrl) {
+    return (
+      <img
+        src={player.avatarUrl}
+        alt={`${player.name} profile`}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          objectFit: 'cover',
+          flexShrink: 0,
+          border: '2px solid var(--line, #EEF1F8)',
+        }}
+      />
+    )
+  }
+
+  return <Avatar name={player?.name} size={size} />
+}
+
+function ProfileSkillBar({ label, value, dim = false }) {
+  const safeValue = Math.max(0, Math.min(100, Number(value) || 0))
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '76px minmax(0, 1fr) 28px',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 9,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--text-muted, #8892A4)',
+          textAlign: 'right',
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          height: 7,
+          borderRadius: 999,
+          background: 'var(--line, #E8EDF6)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: `${safeValue}%`,
+            height: '100%',
+            borderRadius: 999,
+            background: dim ? '#9CB9F2' : '#2F6BFF',
+          }}
+        />
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: 'var(--text, #0D1B3E)',
+          textAlign: 'right',
+        }}
+      >
+        {safeValue}
+      </div>
+    </div>
+  )
+}
+
+function ProfileInfoItem({ label, value }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--text-muted, #8892A4)',
+          marginBottom: 3,
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: 'var(--text, #0D1B3E)',
+        }}
+      >
+        {value || 'Not specified'}
+      </div>
+    </div>
+  )
+}
 
 function formatRelationshipDate(value) {
   if (!value) return 'No date'
@@ -603,7 +983,7 @@ export default function CoachPlayers() {
   const [profilePlayerId, setProfilePlayerId] = useState(null)
 
   const [playerSearch, setPlayerSearch] = useState('')
-  const [showSearch, setShowSearch] = useState(false)
+  const [showSearch, setShowSearch] = useState(true)
   const [showRequests, setShowRequests] = useState(true)
   const [showRequestHistory, setShowRequestHistory] = useState(false)
 
@@ -611,6 +991,10 @@ export default function CoachPlayers() {
   const [savingId, setSavingId] = useState(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const [reportPlayer, setReportPlayer] = useState(null)
+  const [submittingReport, setSubmittingReport] = useState(false)
+
   const showLoader = useLoadingDelay(loading, 350)
 
   useEffect(() => {
@@ -821,22 +1205,27 @@ export default function CoachPlayers() {
     [players, profilePlayerId]
   )
 
+  const availablePlayers = useMemo(
+    () =>
+      players.filter(
+        player => !player.assigned && !player.pending
+      ),
+    [players]
+  )
+
   const searchResults = useMemo(() => {
     const keyword = playerSearch.trim().toLowerCase()
 
-    if (!keyword) return []
+    if (!keyword) return availablePlayers
 
-    return players.filter(player => {
-      if (player.assigned || player.pending) return false
-
-      return (
-        player.name.toLowerCase().includes(keyword) ||
-        player.club.toLowerCase().includes(keyword) ||
-        player.state.toLowerCase().includes(keyword) ||
-        player.category.toLowerCase().includes(keyword)
-      )
-    })
-  }, [players, playerSearch])
+    return availablePlayers.filter(player =>
+      player.name.toLowerCase().includes(keyword) ||
+      player.club.toLowerCase().includes(keyword) ||
+      player.state.toLowerCase().includes(keyword) ||
+      player.category.toLowerCase().includes(keyword) ||
+      player.level.toLowerCase().includes(keyword)
+    )
+  }, [availablePlayers, playerSearch])
 
   const updatePlayerRelationship = (playerId, changes) => {
     setPlayers(current =>
@@ -894,7 +1283,6 @@ export default function CoachPlayers() {
       })
 
       setPlayerSearch('')
-      setShowSearch(false)
       setSuccess(`${player.name} was added to My Players.`)
     } catch (addError) {
       console.error('Add player error:', addError)
@@ -1009,6 +1397,67 @@ export default function CoachPlayers() {
       setError(removeError.message || 'Unable to remove player.')
     } finally {
       setSavingId(null)
+    }
+  }
+
+
+  const openReportPlayer = player => {
+    if (!player?.isRegistered || !player?.id) {
+      setError(
+        'Only registered player accounts can be reported from this page.'
+      )
+      return
+    }
+
+    clearMessages()
+    setReportPlayer(player)
+  }
+
+  const submitPlayerReport = async ({ reason, details }) => {
+    if (!user?.id || !reportPlayer?.id) return
+
+    if (reportPlayer.id === user.id) {
+      setError('You cannot report your own account.')
+      setReportPlayer(null)
+      return
+    }
+
+    setSubmittingReport(true)
+    setError('')
+
+    try {
+      const { error: reportError } = await supabase
+        .from('user_reports')
+        .insert({
+          reporter_user_id: user.id,
+          reported_user_id: reportPlayer.id,
+          category: 'player',
+          subject: reportPlayer.name,
+          description: [
+            `Reason: ${reason}`,
+            `Details: ${
+              details || 'No additional details provided.'
+            }`,
+          ].join('\n'),
+          status: 'pending',
+        })
+
+      if (reportError) throw reportError
+
+      const reportedName = reportPlayer.name
+
+      setReportPlayer(null)
+      setSuccess(
+        `Your report about ${reportedName} was submitted for admin review.`
+      )
+    } catch (reportError) {
+      console.error('Coach report player error:', reportError)
+      setError(
+        reportError.message ||
+        'Unable to submit the player report.'
+      )
+    } finally {
+      setSubmittingReport(false)
     }
   }
 
@@ -1144,9 +1593,7 @@ export default function CoachPlayers() {
       <PlayerStats
         myPlayers={myPlayers}
         pendingPlayers={pendingPlayers}
-        availablePlayers={players.filter(
-          player => !player.assigned && !player.pending
-        )}
+        availablePlayers={availablePlayers}
         requestHistory={requestHistory}
       />
 
@@ -1445,21 +1892,38 @@ export default function CoachPlayers() {
                 gap: 8,
               }}
             >
-              {showSearch && (
+              <div
+                className={styles.card}
+                style={{ padding: 16 }}
+              >
                 <div
-                  className={styles.card}
-                  style={{ padding: 16 }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    marginBottom: 10,
+                  }}
                 >
                   <div
                     style={{
                       fontSize: 13,
                       fontWeight: 700,
                       color: '#0D1B3E',
-                      marginBottom: 10,
                     }}
                   >
-                    Search all players
+                    Available players ({availablePlayers.length})
                   </div>
+
+                  <button
+                    type="button"
+                    className={styles.btnOutline}
+                    style={{ fontSize: 11 }}
+                    onClick={() => setShowSearch(current => !current)}
+                  >
+                    {showSearch ? 'Hide list' : 'Show list'}
+                  </button>
+                </div>
 
                   <input
                     className={styles.formInput}
@@ -1471,15 +1935,18 @@ export default function CoachPlayers() {
                     autoFocus
                   />
 
-                  {playerSearch.trim() && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 6,
-                      }}
-                    >
+                {showSearch && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      maxHeight: 430,
+                      overflowY: 'auto',
+                      paddingRight: 4,
+                    }}
+                  >
                       {searchResults.length === 0 && (
                         <div
                           style={{
@@ -1529,21 +1996,6 @@ export default function CoachPlayers() {
 
                           <LevelBadge level={player.level} />
 
-                          {!player.isRegistered && (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                background: '#F3F4F6',
-                                color: '#6B7280',
-                                padding: '3px 8px',
-                                borderRadius: 20,
-                                fontWeight: 700,
-                              }}
-                            >
-                              Public profile
-                            </span>
-                          )}
-
                           <button
                             type="button"
                             className={styles.btnOutline}
@@ -1586,6 +2038,7 @@ export default function CoachPlayers() {
                     </div>
                   )}
 
+                {showSearch && playerSearch && (
                   <button
                     type="button"
                     className={styles.btnOutline}
@@ -1594,15 +2047,12 @@ export default function CoachPlayers() {
                       fontSize: 12,
                       width: '100%',
                     }}
-                    onClick={() => {
-                      setShowSearch(false)
-                      setPlayerSearch('')
-                    }}
+                    onClick={() => setPlayerSearch('')}
                   >
-                    Close
+                    Clear search
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
               {myPlayers.length === 0 && (
                 <div
@@ -1613,13 +2063,14 @@ export default function CoachPlayers() {
                     color: '#8892A4',
                   }}
                 >
-                  No players assigned yet. Accept a request or use “Find player”.
+                  No players assigned yet. Accept a request or add one from Available Players.
                 </div>
               )}
 
               {myPlayers.map(player => (
                 <div
                   key={player.id}
+                  className={styles.card}
                   onClick={() =>
                     setSelectedPlayerId(current =>
                       current === player.id ? null : player.id
@@ -1634,12 +2085,12 @@ export default function CoachPlayers() {
                     cursor: 'pointer',
                     background:
                       selectedPlayerId === player.id
-                        ? '#E8EFFE'
-                        : '#fff',
+                        ? 'rgba(26, 95, 255, 0.14)'
+                        : undefined,
                     border:
                       selectedPlayerId === player.id
                         ? '2px solid #1A5FFF'
-                        : '1.5px solid #EEF1F8',
+                        : undefined,
                   }}
                 >
                   <Avatar name={player.name} />
@@ -1649,7 +2100,7 @@ export default function CoachPlayers() {
                       style={{
                         fontSize: 13,
                         fontWeight: 700,
-                        color: '#0D1B3E',
+                        color: 'inherit',
                       }}
                     >
                       {player.name}
@@ -1677,8 +2128,8 @@ export default function CoachPlayers() {
                       <span
                         style={{
                           fontSize: 10,
-                          background: '#F3F4F6',
-                          color: '#6B7280',
+                          background: 'rgba(136, 146, 164, 0.14)',
+                          color: 'inherit',
                           padding: '2px 8px',
                           borderRadius: 20,
                           fontWeight: 600,
@@ -1803,7 +2254,7 @@ export default function CoachPlayers() {
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            background: 'rgba(13, 27, 62, 0.45)',
+            background: 'rgba(13, 27, 62, 0.52)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1814,36 +2265,72 @@ export default function CoachPlayers() {
             className={styles.card}
             onClick={event => event.stopPropagation()}
             style={{
-              width: 'min(680px, 100%)',
-              maxHeight: '88vh',
+              width: 'min(820px, 100%)',
+              maxHeight: '90vh',
               overflowY: 'auto',
-              padding: 22,
+              padding: 0,
+              background: 'var(--card, #FFFFFF)',
             }}
           >
             <div
               style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 2,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
-                marginBottom: 18,
+                gap: 14,
+                padding: '20px 22px 16px',
+                borderBottom: '1px solid var(--line, #EEF1F8)',
+                background: 'var(--card, #FFFFFF)',
               }}
             >
-              <Avatar name={profilePlayer.name} size={52} />
+              <ProfileAvatar player={profilePlayer} size={58} />
 
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
                     fontSize: 19,
                     fontWeight: 800,
-                    color: '#0D1B3E',
+                    color: 'var(--text, #0D1B3E)',
                   }}
                 >
                   {profilePlayer.name}
                 </div>
 
-                <div style={{ fontSize: 12, color: '#8892A4' }}>
-                  {profilePlayer.category} • {profilePlayer.state || 'No state'}
-                  {!profilePlayer.isRegistered ? ' • Public profile' : ''}
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--text-muted, #8892A4)',
+                    marginTop: 3,
+                  }}
+                >
+                  {profilePlayer.club} • {profilePlayer.state || 'No state'}
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 5,
+                    flexWrap: 'wrap',
+                    marginTop: 7,
+                  }}
+                >
+                  <LevelBadge level={profilePlayer.level} />
+
+                  <span
+                    style={{
+                      fontSize: 10,
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      fontWeight: 700,
+                      background: 'var(--soft, #F3F4F6)',
+                      color: 'var(--text-muted, #6B7280)',
+                    }}
+                  >
+                    {profilePlayer.style}
+                  </span>
+
                 </div>
               </div>
 
@@ -1856,31 +2343,248 @@ export default function CoachPlayers() {
               </button>
             </div>
 
-            {renderProfileDetails(profilePlayer)}
-
-            {profilePlayer.bio && (
-              <div style={{ marginTop: 16 }}>
-                <div className={styles.cardTitle}>About player</div>
+            <div
+              style={{
+                padding: 22,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14,
+              }}
+            >
+              <div className={styles.card} style={{ padding: 18 }}>
                 <div
                   style={{
-                    marginTop: 8,
-                    fontSize: 13,
-                    lineHeight: 1.7,
-                    color: '#0D1B3E',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 10,
+                    marginBottom: 18,
                   }}
                 >
-                  {profilePlayer.bio}
+                  {[
+                    {
+                      label: 'Matches',
+                      value: profilePlayer.matches,
+                      color: 'var(--text, #0D1B3E)',
+                    },
+                    {
+                      label: 'Win rate',
+                      value: `${profilePlayer.winRate}%`,
+                      color: '#1A5FFF',
+                    },
+                    {
+                      label: 'Streak',
+                      value: profilePlayer.streak,
+                      color: String(profilePlayer.streak).startsWith('W')
+                        ? '#00A878'
+                        : '#DC2626',
+                    },
+                  ].map(stat => (
+                    <div
+                      key={stat.label}
+                      style={{
+                        padding: '11px 10px',
+                        borderRadius: 11,
+                        textAlign: 'center',
+                        background: 'var(--soft, #F6F8FF)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: 'var(--text-muted, #8892A4)',
+                        }}
+                      >
+                        {stat.label}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontSize: 17,
+                          fontWeight: 800,
+                          color: stat.color,
+                        }}
+                      >
+                        {stat.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  style={{
+                    borderTop: '1px solid var(--line, #EEF1F8)',
+                    paddingTop: 16,
+                  }}
+                >
+                  <div className={styles.cardTitle}>Skill profile</div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <ProfileSkillBar
+                      label="Smash"
+                      value={profilePlayer.smash}
+                    />
+                    <ProfileSkillBar
+                      label="Footwork"
+                      value={profilePlayer.footwork}
+                    />
+                    <ProfileSkillBar
+                      label="Defense"
+                      value={profilePlayer.defense}
+                    />
+                    <ProfileSkillBar
+                      label="Net play"
+                      value={profilePlayer.netPlay}
+                    />
+                    <ProfileSkillBar
+                      label="Drop shot"
+                      value={profilePlayer.dropShot}
+                      dim
+                    />
+                    <ProfileSkillBar
+                      label="Serve"
+                      value={profilePlayer.serve}
+                      dim
+                    />
+                  </div>
                 </div>
               </div>
-            )}
 
-            <div style={{ marginTop: 18 }}>
-              <div className={styles.cardTitle}>Skill profile</div>
-              <PlayerRadarChart player={profilePlayer} />
+              <div className={styles.card} style={{ padding: 18 }}>
+                <div className={styles.cardTitle}>About player</div>
+
+                {profilePlayer.bio && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      marginBottom: 18,
+                      fontSize: 13,
+                      lineHeight: 1.7,
+                      color: 'var(--text, #0D1B3E)',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {profilePlayer.bio}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: '14px 28px',
+                    marginTop: profilePlayer.bio ? 0 : 12,
+                  }}
+                >
+                  <ProfileInfoItem
+                    label="Category"
+                    value={profilePlayer.category}
+                  />
+                  <ProfileInfoItem
+                    label="Level"
+                    value={profilePlayer.level}
+                  />
+                  <ProfileInfoItem
+                    label="Playing style"
+                    value={profilePlayer.style}
+                  />
+                  <ProfileInfoItem
+                    label="Dominant hand"
+                    value={profilePlayer.dominantHand}
+                  />
+                  <ProfileInfoItem
+                    label="Club"
+                    value={profilePlayer.club}
+                  />
+                  <ProfileInfoItem
+                    label="State"
+                    value={profilePlayer.state}
+                  />
+                  <ProfileInfoItem
+                    label="Playing since"
+                    value={profilePlayer.playingSince}
+                  />
+                  <ProfileInfoItem
+                    label="Preferred court"
+                    value={profilePlayer.preferredCourt}
+                  />
+                  <ProfileInfoItem
+                    label="Age"
+                    value={profilePlayer.age}
+                  />
+                  <ProfileInfoItem
+                    label="Height"
+                    value={
+                      profilePlayer.height
+                        ? `${profilePlayer.height} cm`
+                        : 'Not specified'
+                    }
+                  />
+                  <ProfileInfoItem
+                    label="Weight"
+                    value={
+                      profilePlayer.weight
+                        ? `${profilePlayer.weight} kg`
+                        : 'Not specified'
+                    }
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                {profilePlayer.isRegistered && (
+                  <button
+                    type="button"
+                    className={styles.btnOutline}
+                    disabled={submittingReport}
+                    onClick={() => openReportPlayer(profilePlayer)}
+                    style={{
+                      color: '#DC2626',
+                      borderColor: '#FECACA',
+                      background: '#FFF7F7',
+                    }}
+                  >
+                    Report player
+                  </button>
+                )}
+
+                {!profilePlayer.assigned &&
+                  !profilePlayer.pending &&
+                  profilePlayer.isRegistered && (
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      disabled={savingId === profilePlayer.id}
+                      onClick={() => handleAddPlayer(profilePlayer)}
+                    >
+                      {savingId === profilePlayer.id
+                        ? 'Adding...'
+                        : '+ Add to My Players'}
+                    </button>
+                  )}
+              </div>
             </div>
           </div>
         </div>
       )}
+      <ReportPlayerModal
+        player={reportPlayer}
+        submitting={submittingReport}
+        onClose={() => {
+          if (!submittingReport) {
+            setReportPlayer(null)
+          }
+        }}
+        onSubmit={submitPlayerReport}
+      />
+
     </div>
   )
 }

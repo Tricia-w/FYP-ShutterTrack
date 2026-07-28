@@ -168,6 +168,264 @@ function formatDate(value) {
   })
 }
 
+
+const INJURY_META_PREFIX = '__SHUTTLETRACK_INJURY__:'
+
+function decodeInjuryNotes(value) {
+  const raw = String(value || '')
+
+  if (!raw.startsWith(INJURY_META_PREFIX)) {
+    return {
+      notes: raw,
+      bodyX: null,
+      bodyY: null,
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(
+      raw.slice(INJURY_META_PREFIX.length)
+    )
+
+    return {
+      notes: parsed?.notes || '',
+      bodyX:
+        parsed?.bodyX !== null &&
+        parsed?.bodyX !== undefined &&
+        parsed?.bodyX !== '' &&
+        Number.isFinite(Number(parsed.bodyX))
+          ? Number(parsed.bodyX)
+          : null,
+      bodyY:
+        parsed?.bodyY !== null &&
+        parsed?.bodyY !== undefined &&
+        parsed?.bodyY !== '' &&
+        Number.isFinite(Number(parsed.bodyY))
+          ? Number(parsed.bodyY)
+          : null,
+    }
+  } catch {
+    return {
+      notes: raw,
+      bodyX: null,
+      bodyY: null,
+    }
+  }
+}
+
+function normalizeInjury(row) {
+  const meta = decodeInjuryNotes(row?.notes)
+  const status = row?.status || 'Monitoring'
+
+  return {
+    id: row?.id,
+    name: row?.injury_description || 'Unnamed injury',
+    date: row?.injury_date || '',
+    status,
+    notes: meta.notes,
+    bodyX: meta.bodyX,
+    bodyY: meta.bodyY,
+    createdAt: row?.created_at || '',
+    updatedAt: row?.updated_at || '',
+    isActive: String(status).toLowerCase() !== 'recovered',
+  }
+}
+
+function getInjuryStatusColor(status) {
+  const normalized = String(status || '').toLowerCase()
+
+  if (normalized === 'recovered') return '#10B981'
+  if (normalized === 'recovering') return '#F59E0B'
+  return '#EF4444'
+}
+
+function getFallbackInjuryPoint(name = '') {
+  const lower = String(name).toLowerCase()
+
+  if (lower.includes('neck')) return { cx: 60, cy: 31 }
+  if (lower.includes('back')) return { cx: 60, cy: 66 }
+  if (lower.includes('chest')) return { cx: 60, cy: 53 }
+
+  if (lower.includes('right') && lower.includes('shoulder')) {
+    return { cx: 82, cy: 48 }
+  }
+
+  if (lower.includes('left') && lower.includes('shoulder')) {
+    return { cx: 38, cy: 48 }
+  }
+
+  if (lower.includes('right') && lower.includes('elbow')) {
+    return { cx: 88, cy: 76 }
+  }
+
+  if (lower.includes('left') && lower.includes('elbow')) {
+    return { cx: 32, cy: 76 }
+  }
+
+  if (
+    lower.includes('right') &&
+    (lower.includes('wrist') || lower.includes('hand'))
+  ) {
+    return { cx: 95, cy: 99 }
+  }
+
+  if (
+    lower.includes('left') &&
+    (lower.includes('wrist') || lower.includes('hand'))
+  ) {
+    return { cx: 25, cy: 99 }
+  }
+
+  if (lower.includes('right') && lower.includes('hip')) {
+    return { cx: 68, cy: 98 }
+  }
+
+  if (lower.includes('left') && lower.includes('hip')) {
+    return { cx: 52, cy: 98 }
+  }
+
+  if (lower.includes('right') && lower.includes('knee')) {
+    return { cx: 70, cy: 124 }
+  }
+
+  if (lower.includes('left') && lower.includes('knee')) {
+    return { cx: 50, cy: 124 }
+  }
+
+  if (lower.includes('right') && lower.includes('ankle')) {
+    return { cx: 75, cy: 151 }
+  }
+
+  if (lower.includes('left') && lower.includes('ankle')) {
+    return { cx: 45, cy: 151 }
+  }
+
+  if (lower.includes('shoulder')) return { cx: 82, cy: 48 }
+  if (lower.includes('elbow')) return { cx: 88, cy: 76 }
+  if (lower.includes('wrist') || lower.includes('hand')) {
+    return { cx: 95, cy: 99 }
+  }
+  if (lower.includes('waist')) return { cx: 60, cy: 88 }
+  if (lower.includes('hip')) return { cx: 68, cy: 98 }
+  if (lower.includes('thigh') || lower.includes('hamstring')) {
+    return { cx: 68, cy: 106 }
+  }
+  if (lower.includes('knee')) return { cx: 70, cy: 124 }
+  if (lower.includes('calf') || lower.includes('shin')) {
+    return { cx: 72, cy: 138 }
+  }
+  if (lower.includes('ankle')) return { cx: 75, cy: 151 }
+  if (lower.includes('foot')) return { cx: 84, cy: 155 }
+
+  return { cx: 60, cy: 90 }
+}
+
+function InjuryBodyMap({ injuries = [] }) {
+  const visibleInjuries = injuries
+    .filter(Boolean)
+    .slice(0, 8)
+
+  return (
+    <div
+      style={{
+        width: 150,
+        minWidth: 150,
+        minHeight: 210,
+        padding: 12,
+        borderRadius: 14,
+        border: '1px solid var(--line, #EEF1F8)',
+        background: 'var(--soft, #F7F9FF)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <svg
+        viewBox="0 0 120 170"
+        width="118"
+        height="168"
+        role="img"
+        aria-label="Student injury location body map"
+      >
+        <g
+          fill="none"
+          stroke="var(--text-muted, #94A3B8)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="60" cy="15" r="10" />
+          <path d="M54 25 L54 33" />
+          <path d="M66 25 L66 33" />
+          <path d="M45 35 C50 31, 70 31, 75 35" />
+          <path d="M46 36 C43 52, 42 72, 45 91" />
+          <path d="M74 36 C77 52, 78 72, 75 91" />
+          <path d="M45 91 C50 97, 55 100, 60 100" />
+          <path d="M75 91 C70 97, 65 100, 60 100" />
+          <path d="M60 35 L60 100" opacity="0.35" />
+          <path d="M45 38 C34 50, 29 72, 25 96" />
+          <path d="M75 38 C86 50, 91 72, 95 96" />
+          <path d="M54 100 C51 116, 48 132, 45 152" />
+          <path d="M45 152 L36 154" />
+          <path d="M66 100 C69 116, 72 132, 75 152" />
+          <path d="M75 152 L84 154" />
+        </g>
+
+        {visibleInjuries.map((injury, index) => {
+          const hasSavedPoint =
+            Number.isFinite(Number(injury.bodyX)) &&
+            Number.isFinite(Number(injury.bodyY))
+
+          const point = hasSavedPoint
+            ? {
+                cx: Number(injury.bodyX),
+                cy: Number(injury.bodyY),
+              }
+            : getFallbackInjuryPoint(injury.name)
+
+          const markerColor = getInjuryStatusColor(
+            injury.status
+          )
+
+          return (
+            <g key={`${injury.id || injury.name}-${index}`}>
+              <circle
+                cx={point.cx}
+                cy={point.cy}
+                r="8"
+                fill="var(--card, #FFFFFF)"
+                opacity="0.96"
+              />
+              <circle
+                cx={point.cx}
+                cy={point.cy}
+                r="5"
+                fill={markerColor}
+              />
+            </g>
+          )
+        })}
+      </svg>
+
+      <div
+        style={{
+          marginTop: 6,
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          fontSize: 9,
+          color: 'var(--text-muted, #8892A4)',
+        }}
+      >
+        <span>● Active</span>
+        <span style={{ color: '#10B981' }}>● Recovered</span>
+      </div>
+    </div>
+  )
+}
+
 function ComparisonSkillRow({
   label,
   studentValue,
@@ -412,6 +670,15 @@ export default function CoachProgress() {
   const [success, setSuccess] = useState('')
 
   const [editOpen, setEditOpen] = useState(false)
+  const [recommendationOpen, setRecommendationOpen] =
+    useState(false)
+  const [injuryRecommendation, setInjuryRecommendation] =
+    useState('')
+  const [
+    savingRecommendation,
+    setSavingRecommendation,
+  ] = useState(false)
+
   const [form, setForm] = useState({
     progress_status: 'On track',
     focus_area: '',
@@ -588,12 +855,38 @@ export default function CoachProgress() {
           serve: Number(skillRow.serve ?? DEFAULT_SCORE),
         }
 
+        const injuryRows =
+          injuriesByUserId.get(userId) || []
+
         const fitness = calculateFitnessIndicators({
           tests: testsByUserId.get(userId) || [],
           trainingLogs: trainingByUserId.get(userId) || [],
           recoveryLogs: recoveryByUserId.get(userId) || [],
-          injuries: injuriesByUserId.get(userId) || [],
+          injuries: injuryRows,
         })
+
+        const normalizedInjuries = injuryRows
+          .map(normalizeInjury)
+          .sort((a, b) => {
+            if (a.isActive !== b.isActive) {
+              return a.isActive ? -1 : 1
+            }
+
+            const dateCompare = String(
+              b.date || ''
+            ).localeCompare(String(a.date || ''))
+
+            if (dateCompare !== 0) return dateCompare
+
+            return String(
+              b.createdAt || ''
+            ).localeCompare(String(a.createdAt || ''))
+          })
+
+        const activeInjuryCount =
+          normalizedInjuries.filter(
+            injury => injury.isActive
+          ).length
 
         return {
           id: profile.user_id,
@@ -609,6 +902,8 @@ export default function CoachProgress() {
           state: profile.state || profile.location || '',
           performance,
           fitness,
+          injuries: normalizedInjuries,
+          activeInjuryCount,
           performanceAverage: averageValues(Object.values(performance)),
           fitnessAverage: averageValues(Object.values(fitness)),
           progress: progressByUserId.get(userId) || null,
@@ -677,6 +972,86 @@ export default function CoachProgress() {
     setEditOpen(true)
     setError('')
     setSuccess('')
+  }
+
+  const openRecommendationEditor = student => {
+    setSelectedId(student.id)
+    setInjuryRecommendation(
+      student.progress?.injury_recommendation || ''
+    )
+    setRecommendationOpen(true)
+    setError('')
+    setSuccess('')
+  }
+
+  const saveInjuryRecommendation = async () => {
+    if (
+      !user?.id ||
+      !selectedStudent ||
+      savingRecommendation
+    ) {
+      return
+    }
+
+    setSavingRecommendation(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const now = new Date().toISOString()
+
+      const { data, error: saveError } = await supabase
+        .from('coach_player_progress')
+        .upsert(
+          {
+            coach_user_id: user.id,
+            player_user_id: selectedStudent.id,
+            injury_recommendation:
+              injuryRecommendation.trim() || null,
+            updated_at: now,
+          },
+          {
+            onConflict:
+              'coach_user_id,player_user_id',
+          }
+        )
+        .select('*')
+        .single()
+
+      if (saveError) throw saveError
+
+      setStudents(current =>
+        current.map(student =>
+          student.id === selectedStudent.id
+            ? {
+                ...student,
+                progress: {
+                  ...(student.progress || {}),
+                  ...data,
+                },
+              }
+            : student
+        )
+      )
+
+      setRecommendationOpen(false)
+      setSuccess(
+        injuryRecommendation.trim()
+          ? `${selectedStudent.name}'s injury recommendation was saved.`
+          : `${selectedStudent.name}'s injury recommendation was removed.`
+      )
+    } catch (saveError) {
+      console.error(
+        'Save injury recommendation error:',
+        saveError
+      )
+      setError(
+        saveError.message ||
+          'Unable to save the injury recommendation.'
+      )
+    } finally {
+      setSavingRecommendation(false)
+    }
   }
 
   const saveProgress = async () => {
@@ -957,6 +1332,26 @@ export default function CoachProgress() {
                         {student.progress.progress_status}
                       </span>
                     )}
+
+                    {student.activeInjuryCount > 0 && (
+                      <span
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: 999,
+                          background: '#FEF2F2',
+                          color: '#DC2626',
+                          fontSize: 9,
+                          fontWeight: 800,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {student.activeInjuryCount}{' '}
+                        active injur
+                        {student.activeInjuryCount === 1
+                          ? 'y'
+                          : 'ies'}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1022,7 +1417,10 @@ export default function CoachProgress() {
                     className={styles.btnPrimary}
                     onClick={() => openEditor(selectedStudent)}
                   >
-                    Edit progress
+                    {selectedStudent.progress ||
+                    selectedStudent.assessment
+                      ? 'Update progress'
+                      : 'Add progress'}
                   </button>
                 </div>
 
@@ -1148,6 +1546,243 @@ export default function CoachProgress() {
               </div>
 
               <div className={styles.card}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    marginBottom: 14,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div>
+                    <div
+                      className={styles.cardTitle}
+                      style={{ marginBottom: 4 }}
+                    >
+                      Injury & recovery status
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color:
+                          'var(--text-muted, #8892A4)',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Player-owned injury records. Coaches can
+                      view the injury location and keep a
+                      separate training recommendation.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className={styles.btnOutline}
+                    onClick={() =>
+                      openRecommendationEditor(
+                        selectedStudent
+                      )
+                    }
+                    style={{
+                      fontSize: 11,
+                      padding: '7px 11px',
+                    }}
+                  >
+                    {selectedStudent.progress
+                      ?.injury_recommendation
+                      ? 'Edit recommendation'
+                      : 'Add recommendation'}
+                  </button>
+                </div>
+
+                {selectedStudent.injuries.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '20px 14px',
+                      borderRadius: 12,
+                      background:
+                        'var(--soft, #F7F9FF)',
+                      color:
+                        'var(--text-muted, #8892A4)',
+                      fontSize: 12,
+                      textAlign: 'center',
+                    }}
+                  >
+                    No injury records have been added by this
+                    player.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns:
+                        '150px minmax(0, 1fr)',
+                      gap: 16,
+                      alignItems: 'start',
+                    }}
+                  >
+                    <InjuryBodyMap
+                      injuries={selectedStudent.injuries}
+                    />
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 9,
+                        minWidth: 0,
+                      }}
+                    >
+                      {selectedStudent.injuries.map(
+                        injury => {
+                          const statusColor =
+                            getInjuryStatusColor(
+                              injury.status
+                            )
+
+                          return (
+                            <div
+                              key={injury.id}
+                              style={{
+                                padding: '11px 12px',
+                                borderRadius: 11,
+                                border:
+                                  '1px solid var(--line, #EEF1F8)',
+                                background:
+                                  'var(--card, #FFFFFF)',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems:
+                                    'flex-start',
+                                  justifyContent:
+                                    'space-between',
+                                  gap: 10,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    minWidth: 0,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: 800,
+                                      color:
+                                        'var(--text, #0D1B3E)',
+                                      overflowWrap:
+                                        'anywhere',
+                                    }}
+                                  >
+                                    {injury.name}
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      marginTop: 3,
+                                      fontSize: 10,
+                                      color:
+                                        'var(--text-muted, #8892A4)',
+                                    }}
+                                  >
+                                    Logged{' '}
+                                    {formatDate(
+                                      injury.date
+                                    )}
+                                  </div>
+                                </div>
+
+                                <span
+                                  style={{
+                                    flexShrink: 0,
+                                    padding:
+                                      '3px 8px',
+                                    borderRadius: 999,
+                                    background: `color-mix(in srgb, ${statusColor} 12%, var(--card, #FFFFFF))`,
+                                    color: statusColor,
+                                    fontSize: 9,
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  {injury.status}
+                                </span>
+                              </div>
+
+                              {injury.notes && (
+                                <div
+                                  style={{
+                                    marginTop: 8,
+                                    padding:
+                                      '8px 9px',
+                                    borderRadius: 8,
+                                    background:
+                                      'var(--soft, #F7F9FF)',
+                                    fontSize: 11,
+                                    lineHeight: 1.55,
+                                    color:
+                                      'var(--text, #0D1B3E)',
+                                    whiteSpace:
+                                      'pre-wrap',
+                                  }}
+                                >
+                                  {injury.notes}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        }
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: 12,
+                    borderRadius: 11,
+                    background:
+                      'color-mix(in srgb, #7C3AED 8%, var(--soft, #F7F9FF))',
+                    border:
+                      '1px solid color-mix(in srgb, #7C3AED 18%, var(--line, #EEF1F8))',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: '#7C3AED',
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.55,
+                      marginBottom: 5,
+                    }}
+                  >
+                    Coach training recommendation
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      lineHeight: 1.6,
+                      color:
+                        'var(--text, #0D1B3E)',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {selectedStudent.progress
+                      ?.injury_recommendation ||
+                      'No injury recommendation yet. This is separate from performance and fitness feedback.'}
+                  </div>
+                </div>
+              </div>
+
+              <div className={styles.card}>
                 <div className={styles.cardTitle}>
                   Coach progress record
                 </div>
@@ -1248,6 +1883,120 @@ export default function CoachProgress() {
         </div>
       )}
 
+      {recommendationOpen && selectedStudent && (
+        <div
+          className={styles.modalOverlay}
+          onClick={event => {
+            if (
+              event.target === event.currentTarget &&
+              !savingRecommendation
+            ) {
+              setRecommendationOpen(false)
+            }
+          }}
+        >
+          <div
+            className={styles.modal}
+            style={{ maxWidth: 520 }}
+          >
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>
+                Injury training recommendation
+              </div>
+
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() =>
+                  setRecommendationOpen(false)
+                }
+                disabled={savingRecommendation}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginBottom: 14,
+                color:
+                  'var(--text-muted, #8892A4)',
+                fontSize: 12,
+                lineHeight: 1.6,
+              }}
+            >
+              Add training guidance for{' '}
+              <strong>{selectedStudent.name}</strong>.
+              This recommendation is separate from
+              performance feedback and fitness feedback.
+            </div>
+
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>
+                Recommendation
+              </label>
+
+              <textarea
+                className={styles.formTextarea}
+                rows={6}
+                maxLength={1000}
+                placeholder="Example: Avoid overhead drills this week. Use light footwork and mobility exercises."
+                value={injuryRecommendation}
+                onChange={event =>
+                  setInjuryRecommendation(
+                    event.target.value
+                  )
+                }
+                disabled={savingRecommendation}
+              />
+
+              <div
+                style={{
+                  marginTop: 5,
+                  textAlign: 'right',
+                  color:
+                    'var(--text-muted, #8892A4)',
+                  fontSize: 10,
+                }}
+              >
+                {injuryRecommendation.length}/1000
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 10,
+                marginTop: 14,
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() =>
+                  setRecommendationOpen(false)
+                }
+                disabled={savingRecommendation}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={saveInjuryRecommendation}
+                disabled={savingRecommendation}
+              >
+                {savingRecommendation
+                  ? 'Saving...'
+                  : 'Save recommendation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editOpen && selectedStudent && (
         <div
           className={styles.modalOverlay}
@@ -1261,7 +2010,10 @@ export default function CoachProgress() {
           >
             <div className={styles.modalHead}>
               <div className={styles.modalTitle}>
-                Update {selectedStudent.name}
+                {selectedStudent.progress ||
+                selectedStudent.assessment
+                  ? `Update ${selectedStudent.name}'s progress`
+                  : `Add progress for ${selectedStudent.name}`}
               </div>
 
               <button
@@ -1468,7 +2220,12 @@ export default function CoachProgress() {
                 onClick={saveProgress}
                 disabled={saving}
               >
-                {saving ? 'Saving...' : 'Save progress'}
+                {saving
+                  ? 'Saving...'
+                  : selectedStudent.progress ||
+                      selectedStudent.assessment
+                    ? 'Update progress'
+                    : 'Add progress'}
               </button>
             </div>
           </div>

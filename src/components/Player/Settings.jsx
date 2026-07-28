@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -111,7 +111,7 @@ const isTrainingSchedule = row => {
 
 export default function Settings() {
   const navigate = useNavigate()
-  const { logout } = useAuth()
+  const { refreshProfile, logout } = useAuth()
 
   const [form, setForm] = useState({
     name: '',
@@ -152,10 +152,18 @@ export default function Settings() {
   const [checkingReminders, setCheckingReminders] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [requestingDelete, setRequestingDelete] = useState(false)
+  const [deletionReason, setDeletionReason] = useState('')
+  const [loggingOutOtherDevices, setLoggingOutOtherDevices] =
+    useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [accountSaveStatus, setAccountSaveStatus] = useState('')
+  const [accountSaveError, setAccountSaveError] = useState('')
   const accountSaveTimerRef = useRef(null)
   const accountLoadedRef = useRef(false)
+  const lastSavedAccountRef = useRef({
+    name: '',
+    phone: '',
+  })
 
   const fetchSettingsRef = useRef(null)
 
@@ -175,7 +183,7 @@ export default function Settings() {
     localStorage.setItem('shuttleTheme', theme)
   }, [settings.darkMode])
 
-  const getAuthUser = async () => {
+  const getAuthUser = useCallback(async () => {
     const { data, error } = await supabase.auth.getUser()
 
     if (error || !data?.user) {
@@ -183,7 +191,7 @@ export default function Settings() {
     }
 
     return data.user
-  }
+  }, [])
 
   const getPlayerProfileId = async userId => {
     const { data, error } = await supabase
@@ -232,29 +240,64 @@ export default function Settings() {
       return
     }
 
-    const { data: appUser, error: appError } = await supabase
-      .from('app_users')
-      .select('*')
-      .eq('user_id', authUser.id)
-      .maybeSingle()
+    const [
+      appUserResult,
+      playerProfileResult,
+      settingsResult,
+    ] = await Promise.all([
+      supabase
+        .from('app_users')
+        .select('full_name, email, updated_at')
+        .eq('user_id', authUser.id)
+        .maybeSingle(),
 
-    if (appError) console.log(appError)
+      supabase
+        .from('player_profiles')
+        .select('display_name, updated_at')
+        .eq('user_id', authUser.id)
+        .maybeSingle(),
 
-    const { data: userSettings, error: settingsError } = await supabase
-      .from('user_settings')
-      .select('*')
-      .eq('user_id', authUser.id)
-      .maybeSingle()
+      supabase
+        .from('user_settings')
+        .select('*')
+        .eq('user_id', authUser.id)
+        .maybeSingle(),
+    ])
 
-    if (settingsError) console.log(settingsError)
+    if (appUserResult.error) {
+      console.log(appUserResult.error)
+    }
+
+    if (playerProfileResult.error) {
+      console.log(playerProfileResult.error)
+    }
+
+    if (settingsResult.error) {
+      console.log(settingsResult.error)
+    }
+
+    const appUser = appUserResult.data
+    const playerProfile = playerProfileResult.data
+    const userSettings = settingsResult.data
 
     await fetchCurrentBudget(authUser.id)
 
-    setForm({
-      name: appUser?.full_name || authUser.user_metadata?.full_name || '',
+    const loadedForm = {
+      name:
+        playerProfile?.display_name ||
+        appUser?.full_name ||
+        authUser.user_metadata?.full_name ||
+        '',
       email: appUser?.email || authUser.email || '',
       phone: userSettings?.phone || '',
-    })
+    }
+
+    setForm(loadedForm)
+
+    lastSavedAccountRef.current = {
+      name: loadedForm.name.trim(),
+      phone: loadedForm.phone.trim(),
+    }
 
     accountLoadedRef.current = true
 
@@ -300,9 +343,14 @@ export default function Settings() {
         loadedSettings.darkMode,
     }))
 
+    const latestUpdate =
+      userSettings?.updated_at ||
+      playerProfile?.updated_at ||
+      appUser?.updated_at
+
     setLastUpdated(
-      userSettings?.updated_at
-        ? new Date(userSettings.updated_at).toLocaleString()
+      latestUpdate
+        ? new Date(latestUpdate).toLocaleString()
         : '—'
     )
 
@@ -728,133 +776,236 @@ export default function Settings() {
     }
   }
 
-  const saveAccountSettings = async currentForm => {
-    const { data: userData } = await supabase.auth.getUser()
-    const authUser = userData?.user
+  const saveAccountSettings = useCallback(
+    async currentForm => {
+      const authUser = await getAuthUser()
+      const now = new Date().toISOString()
 
-    if (!authUser) {
-      throw new Error('Please login first.')
-    }
+      const cleanName = currentForm.name.trim()
+      const cleanPhone = currentForm.phone.trim()
 
-    const now = new Date().toISOString()
+      if (!cleanName) {
+        throw new Error('Full name is required.')
+      }
 
-    const { error: userError } = await supabase
-      .from('app_users')
-      .upsert(
-        {
-          user_id: authUser.id,
-          full_name: currentForm.name,
-          email: currentForm.email,
-          updated_at: now,
-        },
-        { onConflict: 'user_id' }
+      /*
+       * The login email remains read-only.
+       * Save the player's displayed name to player_profiles so the
+       * profile and sidebar remain consistent.
+       */
+      const { error: playerProfileError } = await supabase
+        .from('player_profiles')
+        .upsert(
+          {
+            user_id: authUser.id,
+            display_name: cleanName,
+            updated_at: now,
+          },
+          { onConflict: 'user_id' }
+        )
+
+      if (playerProfileError) {
+        throw playerProfileError
+      }
+
+      const { error: settingsError } = await supabase
+        .from('user_settings')
+        .upsert(
+          {
+            user_id: authUser.id,
+            phone: cleanPhone || null,
+            updated_at: now,
+          },
+          { onConflict: 'user_id' }
+        )
+
+      if (settingsError) {
+        throw settingsError
+      }
+
+      setLastUpdated(new Date(now).toLocaleString())
+
+      window.dispatchEvent(
+        new CustomEvent('profile-updated', {
+          detail: {
+            display_name: cleanName,
+          },
+        })
       )
 
-    if (userError) throw userError
-
-    const { error: phoneError } = await supabase
-      .from('user_settings')
-      .upsert(
-        {
-          user_id: authUser.id,
-          phone: currentForm.phone,
-          updated_at: now,
-        },
-        { onConflict: 'user_id' }
-      )
-
-    if (phoneError) throw phoneError
-
-    setLastUpdated(new Date(now).toLocaleString())
-  }
+      if (refreshProfile) {
+        await refreshProfile()
+      }
+    },
+    [getAuthUser, refreshProfile]
+  )
 
   useEffect(() => {
-    if (!accountLoadedRef.current || loading) return
+    if (!accountLoadedRef.current || loading) {
+      return undefined
+    }
+
+    const normalizedForm = {
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+    }
+
+    const lastSaved = lastSavedAccountRef.current
+
+    const hasAccountChanges =
+      normalizedForm.name !== lastSaved.name ||
+      normalizedForm.phone !== lastSaved.phone
+
+    /*
+     * Do not save when the page first loads.
+     * Only save after the user changes the name or phone number.
+     */
+    if (!hasAccountChanges) {
+      setAccountSaveStatus('')
+      setAccountSaveError('')
+      return undefined
+    }
 
     if (accountSaveTimerRef.current) {
       window.clearTimeout(accountSaveTimerRef.current)
     }
 
     setAccountSaveStatus('Saving...')
+    setAccountSaveError('')
 
-    accountSaveTimerRef.current = window.setTimeout(async () => {
-      try {
-        await saveAccountSettings(form)
-        setAccountSaveStatus('Saved automatically')
+    accountSaveTimerRef.current = window.setTimeout(
+      async () => {
+        try {
+          await saveAccountSettings(form)
 
-        window.setTimeout(() => {
-          setAccountSaveStatus('')
-        }, 1800)
-      } catch (error) {
-        console.error('Auto-save account error:', error)
-        setAccountSaveStatus('Could not save')
-      }
-    }, 700)
+          lastSavedAccountRef.current = normalizedForm
+
+          setAccountSaveStatus('Saved automatically')
+          setAccountSaveError('')
+
+          window.setTimeout(() => {
+            setAccountSaveStatus('')
+          }, 1800)
+        } catch (error) {
+          console.error(
+            'Auto-save account error:',
+            error
+          )
+
+          setAccountSaveStatus('Could not save')
+          setAccountSaveError(
+            error?.message ||
+              error?.details ||
+              'The account details could not be saved.'
+          )
+        }
+      },
+      700
+    )
 
     return () => {
       if (accountSaveTimerRef.current) {
         window.clearTimeout(accountSaveTimerRef.current)
       }
     }
-  }, [form, loading])
+  }, [form, loading, saveAccountSettings])
 
   const handleLogout = async () => {
     if (logout) {
-      logout()
+      await logout()
     } else {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({
+        scope: 'local',
+      })
     }
 
     navigate('/')
   }
 
+  const handleLogoutOtherDevices = async () => {
+    if (loggingOutOtherDevices) return
+
+    const confirmed = window.confirm(
+      'Log out your account from all other browsers and devices? This browser will stay logged in.'
+    )
+
+    if (!confirmed) return
+
+    setLoggingOutOtherDevices(true)
+
+    try {
+      const { error } = await supabase.auth.signOut({
+        scope: 'others',
+      })
+
+      if (error) throw error
+
+      alert(
+        'Your account has been logged out from all other browsers and devices. This browser is still logged in.'
+      )
+    } catch (error) {
+      console.error(
+        'Logout other devices error:',
+        error
+      )
+
+      alert(
+        error?.message ||
+          'Unable to log out the other devices.'
+      )
+    } finally {
+      setLoggingOutOtherDevices(false)
+    }
+  }
+
   const handleRequestDeleteAccount = async () => {
     if (requestingDelete) return
+
+    const cleanReason = deletionReason.trim()
+
+    if (!cleanReason) {
+      alert('Please enter a reason for requesting account deletion.')
+      return
+    }
 
     setRequestingDelete(true)
 
     try {
-      const user = await getAuthUser()
+      const authUser = await getAuthUser()
 
-      const { error } = await supabase.from('account_deletion_requests').insert({
-        user_id: user.id,
-        email: form.email || user.email || null,
-        full_name: form.name || null,
-        status: 'pending',
-      })
+      const { error } = await supabase
+        .from('account_deletion_requests')
+        .insert({
+          user_id: authUser.id,
+          email: form.email || authUser.email || null,
+          full_name: form.name.trim() || null,
+          role: 'player',
+          reason: cleanReason,
+          status: 'pending',
+        })
 
       if (error) {
         if (error.code === '23505') {
           alert('You already have a pending account deletion request.')
-        } else {
-          console.log(error)
-          alert('Failed to submit account deletion request.')
+          return
         }
 
-        setRequestingDelete(false)
-        return
+        throw error
       }
-
-      await createNotification({
-        title: 'Account Deletion Requested',
-        message:
-          'Your account deletion request has been submitted. Admin will review it.',
-        type: 'info',
-        dedupeKey: `delete-request-${user.id}`,
-      })
 
       setShowDeleteModal(false)
+      setDeletionReason('')
 
-      if (logout) {
-        logout()
-      } else {
-        await supabase.auth.signOut()
-      }
-
-      navigate('/')
+      alert(
+        'Your account deletion request has been submitted. You can continue using your account while the admin reviews it.'
+      )
     } catch (error) {
-      console.log(error)
-      alert(error.message || 'Failed to request account deletion.')
+      console.error('Account deletion request error:', error)
+      alert(
+        error.message ||
+          'Failed to submit account deletion request.'
+      )
+    } finally {
       setRequestingDelete(false)
     }
   }
@@ -1059,6 +1210,23 @@ export default function Settings() {
               </span>
             </div>
 
+            {accountSaveError && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: '9px 11px',
+                  borderRadius: 9,
+                  border: '1px solid #FECACA',
+                  background: '#FEF2F2',
+                  color: '#B91C1C',
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                }}
+              >
+                {accountSaveError}
+              </div>
+            )}
+
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Full Name</label>
               <input
@@ -1073,8 +1241,23 @@ export default function Settings() {
               <input
                 className={styles.formInput}
                 value={form.email}
-                onChange={set('email')}
+                readOnly
+                title="Login email cannot be changed from this page."
+                style={{
+                  opacity: 0.72,
+                  cursor: 'not-allowed',
+                }}
               />
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 11,
+                  color: 'var(--text-muted)',
+                }}
+              >
+                This is your login email. Email changes require a separate
+                verification process.
+              </div>
             </div>
 
             <div className={styles.formRow}>
@@ -1295,15 +1478,67 @@ export default function Settings() {
 
             <div
               style={{
+                marginTop: 12,
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: '1px solid var(--line)',
+                background: 'var(--bg)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: 'var(--text)',
+                }}
+              >
+                Active login sessions
+              </div>
+
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: 'var(--text-muted)',
+                }}
+              >
+                Log out your account from other browsers and devices while
+                keeping this browser logged in.
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                <SmallButton
+                  onClick={handleLogoutOtherDevices}
+                  disabled={loggingOutOtherDevices}
+                >
+                  {loggingOutOtherDevices
+                    ? 'Logging Out Other Devices...'
+                    : 'Log Out Other Devices'}
+                </SmallButton>
+              </div>
+            </div>
+
+            <div
+              style={{
                 display: 'flex',
                 justifyContent: 'flex-end',
                 gap: 8,
-                marginTop: 4,
+                marginTop: 14,
+                flexWrap: 'wrap',
               }}
             >
-              <SmallButton onClick={handleLogout}>Log Out</SmallButton>
+              <SmallButton onClick={handleLogout}>
+                Log Out This Device
+              </SmallButton>
 
-              <SmallButton danger onClick={() => setShowDeleteModal(true)}>
+              <SmallButton
+                danger
+                onClick={() => {
+                  setDeletionReason('')
+                  setShowDeleteModal(true)
+                }}
+              >
                 Request Account Deletion
               </SmallButton>
             </div>
@@ -1314,9 +1549,15 @@ export default function Settings() {
       {showDeleteModal && (
         <div
           className={styles.modalOverlay}
-          onClick={e =>
-            e.target === e.currentTarget && setShowDeleteModal(false)
-          }
+          onClick={event => {
+            if (
+              event.target === event.currentTarget &&
+              !requestingDelete
+            ) {
+              setShowDeleteModal(false)
+              setDeletionReason('')
+            }
+          }}
         >
           <div className={styles.modal} style={{ maxWidth: 480 }}>
             <div className={styles.modalHead}>
@@ -1324,20 +1565,62 @@ export default function Settings() {
 
               <button
                 className={styles.modalClose}
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => {
+                  setShowDeleteModal(false)
+                  setDeletionReason('')
+                }}
               >
                 ✕
               </button>
             </div>
 
             <p style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              This will send a deletion request to the admin. Your account will
-              not be deleted immediately. Admin will review your request and contact you via email for confirmation.
+              This will send an account deletion request to the admin. Your
+              account will not be deleted immediately.
             </p>
 
             <p style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              After submitting the request, you will be logged out.
+              You will remain logged in and can continue using your account
+              while the admin reviews your request.
             </p>
+
+            <div style={{ marginTop: 14 }}>
+              <label
+                className={styles.formLabel}
+                htmlFor="player-deletion-reason"
+              >
+                Reason for deletion
+              </label>
+
+              <textarea
+                id="player-deletion-reason"
+                className={styles.formInput}
+                rows={4}
+                maxLength={500}
+                value={deletionReason}
+                onChange={event => setDeletionReason(event.target.value)}
+                placeholder="Please explain why you want to delete your account."
+                disabled={requestingDelete}
+                style={{
+                  width: '100%',
+                  minHeight: 96,
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                  lineHeight: 1.5,
+                }}
+              />
+
+              <div
+                style={{
+                  marginTop: 5,
+                  textAlign: 'right',
+                  color: 'var(--text-muted)',
+                  fontSize: 11,
+                }}
+              >
+                {deletionReason.length}/500
+              </div>
+            </div>
 
             <div
               style={{
@@ -1348,7 +1631,10 @@ export default function Settings() {
               }}
             >
               <SmallButton
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => {
+                  setShowDeleteModal(false)
+                  setDeletionReason('')
+                }}
                 disabled={requestingDelete}
               >
                 Cancel
@@ -1360,7 +1646,7 @@ export default function Settings() {
                 onClick={handleRequestDeleteAccount}
                 disabled={requestingDelete}
               >
-                {requestingDelete ? 'Submitting...' : 'Submit Request & Log Out'}
+                {requestingDelete ? 'Submitting...' : 'Submit Request'}
               </SmallButton>
             </div>
           </div>

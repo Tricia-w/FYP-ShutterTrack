@@ -19,6 +19,16 @@ const CURRENT_PLAYER = {
   weakness: "Defense",
 };
 
+const REPORT_REASON_OPTIONS = [
+  "Harassment or bullying",
+  "Fake or misleading profile",
+  "Inappropriate content",
+  "Spam or scam",
+  "Unsafe behaviour",
+  "Impersonation",
+  "Other",
+];
+
 function SkillBar({ name, val, dim }) {
   return (
     <div className={styles.skillRow}>
@@ -138,13 +148,315 @@ function SmallInfo({ label, value }) {
   );
 }
 
+function calculateAgeFromDob(dateOfBirth) {
+  if (!dateOfBirth) return null;
+
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+
+  if (Number.isNaN(birthDate.getTime())) return null;
+
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDifference = today.getMonth() - birthDate.getMonth();
+
+  if (
+    monthDifference < 0 ||
+    (monthDifference === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age -= 1;
+  }
+
+  return age >= 0 ? age : null;
+}
+
+function calculateExperienceYears(dateOfBirth, startedPlayingAge, fallback = 0) {
+  const currentAge = calculateAgeFromDob(dateOfBirth);
+  const startAge = Number(startedPlayingAge);
+
+  if (
+    currentAge !== null &&
+    startedPlayingAge !== null &&
+    startedPlayingAge !== undefined &&
+    startedPlayingAge !== "" &&
+    Number.isFinite(startAge) &&
+    startAge >= 0 &&
+    startAge <= currentAge
+  ) {
+    return currentAge - startAge;
+  }
+
+  return Number(fallback || 0);
+}
+
+
+function ReportModal({
+  target,
+  submitting,
+  onClose,
+  onSubmit,
+}) {
+  const [reason, setReason] = useState(REPORT_REASON_OPTIONS[0]);
+  const [details, setDetails] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setReason(REPORT_REASON_OPTIONS[0]);
+    setDetails("");
+    setError("");
+  }, [target?.id, target?.type]);
+
+  if (!target) return null;
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!reason) {
+      setError("Please choose a report reason.");
+      return;
+    }
+
+    if (reason === "Other" && !details.trim()) {
+      setError("Please explain the report.");
+      return;
+    }
+
+    setError("");
+    await onSubmit({
+      reason,
+      details: details.trim(),
+    });
+  };
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !submitting) {
+          onClose();
+        }
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 3000,
+        background: "rgba(13, 27, 62, 0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 18,
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          width: "min(520px, 100%)",
+          background: C.card,
+          border: `1px solid ${C.line}`,
+          borderRadius: 18,
+          padding: 20,
+          boxShadow: "0 24px 60px rgba(13,27,62,0.25)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 800,
+                color: C.text,
+              }}
+            >
+              Report {target.type}
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                color: C.muted,
+              }}
+            >
+              Report {target.name} to the ShuttleTrack administrator.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close report form"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 999,
+              border: `1px solid ${C.line}`,
+              background: C.card,
+              color: C.muted,
+              cursor: submitting ? "wait" : "pointer",
+              fontSize: 18,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 6,
+              fontSize: 11,
+              fontWeight: 800,
+              color: C.muted,
+              textTransform: "uppercase",
+              letterSpacing: 0.7,
+            }}
+          >
+            Reason
+          </label>
+
+          <select
+            className={styles.formSelect}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            disabled={submitting}
+            style={{ width: "100%" }}
+          >
+            {REPORT_REASON_OPTIONS.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 6,
+              fontSize: 11,
+              fontWeight: 800,
+              color: C.muted,
+              textTransform: "uppercase",
+              letterSpacing: 0.7,
+            }}
+          >
+            Details
+          </label>
+
+          <textarea
+            className={styles.formInput}
+            rows={5}
+            maxLength={1000}
+            value={details}
+            onChange={(event) => setDetails(event.target.value)}
+            disabled={submitting}
+            placeholder="Describe what happened. Do not include passwords or private financial information."
+            style={{
+              width: "100%",
+              resize: "vertical",
+              fontFamily: "inherit",
+            }}
+          />
+
+          <div
+            style={{
+              marginTop: 5,
+              textAlign: "right",
+              fontSize: 10,
+              color: C.muted,
+            }}
+          >
+            {details.length}/1000
+          </div>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: 11,
+              borderRadius: 10,
+              background: "#FEF2F2",
+              color: "#B91C1C",
+              fontSize: 12,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 11,
+            background: "#FFF7ED",
+            color: "#9A3412",
+            fontSize: 11,
+            lineHeight: 1.6,
+            marginBottom: 16,
+          }}
+        >
+          Reports are reviewed by an administrator. Submitting a false report
+          may lead to account action.
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 9,
+          }}
+        >
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            style={{
+              border: "none",
+              borderRadius: 10,
+              padding: "9px 15px",
+              background: "#DC2626",
+              color: "#FFFFFF",
+              fontSize: 12,
+              fontWeight: 800,
+              cursor: submitting ? "wait" : "pointer",
+              opacity: submitting ? 0.65 : 1,
+            }}
+          >
+            {submitting ? "Submitting..." : "Submit report"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function PlayerDetail({
   p,
   isPartner,
   onAddOpponent,
   onRemoveOpponent,
   onAddPartner,
+  onCancelPartnerRequest,
   onRemovePartner,
+  onAddFavourite,
+  onRemoveFavourite,
+  onReport,
 }) {
   const streakColor = p.streak?.startsWith("W") ? "#16a34a" : "#DC2626";
 
@@ -186,8 +498,8 @@ function PlayerDetail({
               <span className={styles.badgeGray}>{p.style}</span>
               {p.isOpp && <span className={styles.badgeAmber}>Opponent</span>}
               {isPartner && <span className={styles.badgeGreen}>Partner</span>}
-              {p.source === "public" && (
-                <span className={styles.badgeGray}>Public profile</span>
+              {p.isFavourite && (
+                <span className={styles.badgeBlue}>Favourite</span>
               )}
             </div>
           </div>
@@ -305,13 +617,60 @@ function PlayerDetail({
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
-            gap: 10,
+            gap: 12,
           }}
         >
           <SmallInfo label="Club" value={p.club} />
           <SmallInfo label="Hand" value={p.hand} />
-          <SmallInfo label="Playing since" value={p.since} />
-          <SmallInfo label="Preferred court" value={p.court} />
+          <SmallInfo
+            label="Experience"
+            value={
+              p.experienceYears > 0
+                ? `${p.experienceYears} ${p.experienceYears === 1 ? "year" : "years"}`
+                : "—"
+            }
+          />
+
+          <div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
+              Playing video
+            </div>
+
+            {p.videoUrl ? (
+              <video
+                src={p.videoUrl}
+                controls
+                preload="metadata"
+                title={p.videoTitle || "Playing video"}
+                style={{
+                  width: "100%",
+                  maxHeight: 150,
+                  borderRadius: 10,
+                  background: "#0F172A",
+                  display: "block",
+                  objectFit: "cover",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  minHeight: 72,
+                  borderRadius: 10,
+                  border: `1px dashed ${C.line}`,
+                  background: C.soft,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 10,
+                  color: C.muted,
+                  fontSize: 11,
+                  textAlign: "center",
+                }}
+              >
+                No featured playing video
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -338,10 +697,15 @@ function PlayerDetail({
         ) : p.partnerRequestStatus === "pending" ? (
           <button
             className={styles.btnOutline}
-            style={{ width: "100%" }}
-            disabled
+            style={{
+              width: "100%",
+              color: "#DC2626",
+              borderColor: "#FECACA",
+              background: "#FEF2F2",
+            }}
+            onClick={() => onCancelPartnerRequest(p)}
           >
-            Request pending
+            Cancel request
           </button>
         ) : (
           <button
@@ -376,6 +740,50 @@ function PlayerDetail({
           </button>
         )}
       </div>
+
+      {p.isFavourite ? (
+        <button
+          type="button"
+          className={styles.btnOutline}
+          onClick={() => onRemoveFavourite(p)}
+          style={{
+            width: "100%",
+            color: "#B45309",
+            borderColor: "#FDE68A",
+            background: "#FFFBEB",
+          }}
+        >
+          ★ Remove from favourites
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={styles.btnOutline}
+          onClick={() => onAddFavourite(p)}
+          style={{
+            width: "100%",
+            color: "#1A5FFF",
+            borderColor: "#BFDBFE",
+            background: "#EFF6FF",
+          }}
+        >
+          ☆ Add to favourites
+        </button>
+      )}
+
+      <button
+        type="button"
+        className={styles.btnOutline}
+        onClick={() => onReport(p)}
+        style={{
+          width: "100%",
+          color: "#DC2626",
+          borderColor: "#FECACA",
+          background: "#FFF7F7",
+        }}
+      >
+        Report player
+      </button>
     </div>
   );
 }
@@ -411,7 +819,42 @@ function CoachStatusBadge({ status }) {
   return null;
 }
 
-function CoachDetail({ coach, onRequest, onCancel }) {
+
+function getWhatsAppNumber(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+
+  if (!digits) return "";
+
+  // Convert Malaysian local numbers such as 012-3456789 to 60123456789.
+  if (digits.startsWith("0")) {
+    return `60${digits.slice(1)}`;
+  }
+
+  return digits;
+}
+
+function getCoachVenueMapEmbedUrl(venue, state) {
+  const locationText = [
+    venue?.venueName,
+    venue?.venueAddress,
+    state,
+  ]
+    .filter(
+      value =>
+        value &&
+        value !== "-" &&
+        value !== "—"
+    )
+    .join(", ");
+
+  if (!locationText) return "";
+
+  return `https://www.google.com/maps?q=${encodeURIComponent(
+    locationText,
+  )}&output=embed`;
+}
+
+function CoachDetail({ coach, onRequest, onCancel, onReport, onRequestClub, onCancelClubRequest }) {
   const [message, setMessage] = useState(coach.requestMessage || "");
   const requestStatus = coach.requestStatus;
 
@@ -435,12 +878,26 @@ function CoachDetail({ coach, onRequest, onCancel }) {
             marginBottom: 16,
           }}
         >
-          <div
-            className={styles.av}
-            style={{ width: 52, height: 52, fontSize: 17 }}
-          >
-            {coach.init}
-          </div>
+          {coach.avatarUrl ? (
+            <img
+              src={coach.avatarUrl}
+              alt={`${coach.name} profile`}
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: '50%',
+                objectFit: 'cover',
+                flexShrink: 0,
+              }}
+            />
+          ) : (
+            <div
+              className={styles.av}
+              style={{ width: 52, height: 52, fontSize: 17, flexShrink: 0 }}
+            >
+              {coach.init}
+            </div>
+          )}
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>
@@ -555,64 +1012,24 @@ function CoachDetail({ coach, onRequest, onCancel }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 12,
-            marginTop: 16,
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 14,
+            marginTop: 18,
           }}
         >
           <SmallInfo label="Club" value={coach.club} />
           <SmallInfo label="State" value={coach.state} />
-          <div>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>
-              Certification
-            </div>
-
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-              {coach.certification || "Not provided"}
-            </div>
-
-            {coach.certificationIssuer && (
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                Issued by {coach.certificationIssuer}
-              </div>
-            )}
-
-            {coach.certificationFileUrl && (
-              <a
-                href={coach.certificationFileUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(event) => event.stopPropagation()}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  marginTop: 6,
-                  padding: "5px 10px",
-                  borderRadius: 8,
-                  background: "#E8EFFE",
-                  color: "#1A5FFF",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  textDecoration: "none",
-                }}
-              >
-                View certificate
-              </a>
-            )}
-          </div>
-
           <SmallInfo label="Coaching level" value={coach.coachingLevel} />
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 12,
-            marginTop: 16,
-          }}
-        >
-          <SmallInfo label="Training venue" value={coach.trainingVenue} />
+          <SmallInfo
+            label="Primary training venue"
+            value={
+              coach.trainingVenues.find(
+                venue => venue.isPrimary
+              )?.venueName ||
+              coach.trainingVenues[0]?.venueName ||
+              coach.trainingVenue
+            }
+          />
           <SmallInfo label="Availability" value={coach.availability} />
           <SmallInfo
             label="Player levels"
@@ -623,6 +1040,346 @@ function CoachDetail({ coach, onRequest, onCancel }) {
             value={coach.sessionTypes.join(", ")}
           />
         </div>
+
+        {coach.trainingVenues.length > 0 && (
+          <div
+            style={{
+              marginTop: 20,
+              paddingTop: 18,
+              borderTop: `1px solid ${C.line}`,
+            }}
+          >
+            <div className={styles.cardTitle}>
+              Training venues
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+              }}
+            >
+              {coach.trainingVenues.map((venue) => (
+                <div
+                  key={venue.id}
+                  style={{
+                    overflow: "hidden",
+                    borderRadius: 14,
+                    border: venue.isPrimary
+                      ? "1.5px solid #1A5FFF"
+                      : `1px solid ${C.line}`,
+                    background: C.soft,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "12px 14px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 800,
+                          color: C.text,
+                        }}
+                      >
+                        {venue.venueName}
+                      </div>
+
+                      {venue.venueAddress && (
+                        <div
+                          style={{
+                            marginTop: 3,
+                            fontSize: 11,
+                            color: C.muted,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {venue.venueAddress}
+                        </div>
+                      )}
+                    </div>
+
+                    {venue.isPrimary && (
+                      <span className={styles.badgeBlue}>
+                        Primary
+                      </span>
+                    )}
+                  </div>
+
+                  {getCoachVenueMapEmbedUrl(
+                    venue,
+                    coach.state,
+                  ) && (
+                    <iframe
+                      title={`${coach.name} ${venue.venueName} map`}
+                      src={getCoachVenueMapEmbedUrl(
+                        venue,
+                        coach.state,
+                      )}
+                      width="100%"
+                      height="220"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      style={{
+                        display: "block",
+                        border: 0,
+                      }}
+                    />
+                  )}
+
+                  {venue.locationUrl && (
+                    <div style={{ padding: "9px 14px 12px" }}>
+                      <a
+                        href={venue.locationUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          color: "#1A5FFF",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          textDecoration: "none",
+                        }}
+                      >
+                        Open in Google Maps ↗
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {requestStatus === "accepted" && coach.phone && (
+          <a
+            href={`https://wa.me/${getWhatsAppNumber(
+              coach.phone,
+            )}?text=${encodeURIComponent(
+              `Hi ${coach.name}, I found your coaching profile on ShuttleTrack and would like to ask about badminton coaching.`,
+            )}`}
+            target="_blank"
+            rel="noreferrer"
+            className={styles.btnPrimary}
+            style={{
+              marginTop: 16,
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              textDecoration: "none",
+            }}
+          >
+            WhatsApp coach
+          </a>
+        )}
+
+        {(coach.certification ||
+          coach.certificationFileUrl ||
+          coach.relevantCertificates.length > 0) && (
+          <div
+            style={{
+              marginTop: 22,
+              paddingTop: 18,
+              borderTop: `1px solid ${C.line}`,
+            }}
+          >
+            <div className={styles.cardTitle}>Certificates</div>
+
+            {(coach.certification || coach.certificationFileUrl) && (
+              <div
+                role={coach.certificationFileUrl ? "button" : undefined}
+                tabIndex={coach.certificationFileUrl ? 0 : undefined}
+                onClick={() => {
+                  if (coach.certificationFileUrl) {
+                    window.open(
+                      coach.certificationFileUrl,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    coach.certificationFileUrl &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    window.open(
+                      coach.certificationFileUrl,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
+                  }
+                }}
+                style={{
+                  marginTop: 10,
+                  padding: 14,
+                  borderRadius: 12,
+                  border: "1px solid #93B4F5",
+                  background: C.soft,
+                  cursor: coach.certificationFileUrl ? "pointer" : "default",
+                  transition: "transform 0.15s ease, border-color 0.15s ease",
+                }}
+                title={
+                  coach.certificationFileUrl
+                    ? "Click to view certificate"
+                    : "No certificate file uploaded"
+                }
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 800,
+                          color: C.text,
+                        }}
+                      >
+                        {coach.certification || "Certificate uploaded"}
+                      </div>
+
+                      <span className={styles.badgeBlue}>Primary</span>
+                    </div>
+
+                    {coach.certificationIssuer && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: C.muted,
+                          marginTop: 4,
+                        }}
+                      >
+                        Issued by {coach.certificationIssuer}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {coach.relevantCertificates.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: C.muted,
+                    letterSpacing: 0.7,
+                    textTransform: "uppercase",
+                    marginBottom: 8,
+                  }}
+                >
+                  Other relevant certificates
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                  }}
+                >
+                  {coach.relevantCertificates.map((certificate) => (
+                    <div
+                      key={certificate.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() =>
+                        window.open(
+                          certificate.file_url,
+                          "_blank",
+                          "noopener,noreferrer",
+                        )
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          window.open(
+                            certificate.file_url,
+                            "_blank",
+                            "noopener,noreferrer",
+                          );
+                        }
+                      }}
+                      title="Click to view certificate"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        padding: "11px 12px",
+                        borderRadius: 10,
+                        border: `1px solid ${C.line}`,
+                        background: C.soft,
+                        cursor: "pointer",
+                        transition: "transform 0.15s ease, border-color 0.15s ease",
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: C.text,
+                          }}
+                        >
+                          {certificate.certificate_name}
+                        </div>
+
+                        {certificate.issuer && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: C.muted,
+                              marginTop: 3,
+                            }}
+                          >
+                            Issued by {certificate.issuer}
+                          </div>
+                        )}
+                      </div>
+
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          color: "#1A5FFF",
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Open
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {coach.coachingPhilosophy && (
           <div style={{ marginTop: 16 }}>
@@ -676,6 +1433,116 @@ function CoachDetail({ coach, onRequest, onCancel }) {
           >
             {coach.instagram}
           </a>
+        )}
+
+        {requestStatus === "accepted" && (
+          <div
+            style={{
+              marginTop: 22,
+              paddingTop: 18,
+              borderTop: `1px solid ${C.line}`,
+            }}
+          >
+            {coach.clubMatch && (
+              <div>
+                <div className={styles.cardTitle}>
+                  Join your coach&apos;s club
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: C.text,
+                    lineHeight: 1.6,
+                    marginBottom: 12,
+                  }}
+                >
+                  Your coach is from{" "}
+                  <strong>
+                    {coach.clubMatch.shortName
+                      ? `${coach.clubMatch.shortName} · ${coach.clubMatch.name}`
+                      : coach.clubMatch.name}
+                  </strong>
+                  . Joining the club is optional and separate from your coach
+                  relationship.
+                </div>
+
+                {coach.clubMembershipStatus === "accepted" ? (
+                  <span className={styles.badgeGreen}>Already joined</span>
+                ) : coach.clubMembershipStatus === "pending" ? (
+                  <button
+                    type="button"
+                    className={styles.btnOutline}
+                    onClick={() => onCancelClubRequest(coach)}
+                    style={{
+                      width: "100%",
+                      color: "#DC2626",
+                      borderColor: "#FECACA",
+                      background: "#FEF2F2",
+                    }}
+                  >
+                    Cancel club request
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.btnPrimary}
+                    onClick={() => onRequestClub(coach)}
+                    disabled={!coach.clubMatch.acceptingMembers}
+                    style={{
+                      width: "100%",
+                      opacity: coach.clubMatch.acceptingMembers ? 1 : 0.55,
+                    }}
+                  >
+                    {coach.clubMatch.acceptingMembers
+                      ? "Request to join club"
+                      : "Club is not accepting members"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 10,
+                marginTop: coach.clubMatch ? 16 : 0,
+                paddingTop: coach.clubMatch ? 16 : 0,
+                borderTop: coach.clubMatch
+                  ? `1px solid ${C.line}`
+                  : "none",
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => onCancel(coach, true)}
+                style={{
+                  width: "100%",
+                  color: "#DC2626",
+                  borderColor: "#FECACA",
+                  background: "#FEF2F2",
+                }}
+              >
+                Remove coach
+              </button>
+
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => onReport(coach)}
+                style={{
+                  width: "100%",
+                  color: "#DC2626",
+                  borderColor: "#FECACA",
+                  background: "#FFF7F7",
+                }}
+              >
+                Report coach
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -733,27 +1600,20 @@ function CoachDetail({ coach, onRequest, onCancel }) {
         </div>
       )}
 
-      {requestStatus === "accepted" && (
-        <div className={styles.card}>
-          <div className={styles.cardTitle}>Coach connected</div>
-          <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>
-            This coach can now manage your coaching progress and leave feedback.
-          </div>
-
-          <button
-            className={styles.btnOutline}
-            style={{
-              width: "100%",
-              marginTop: 12,
-              color: "#DC2626",
-              borderColor: "#FECACA",
-              background: "#FEF2F2",
-            }}
-            onClick={() => onCancel(coach, true)}
-          >
-            Remove coach
-          </button>
-        </div>
+      {requestStatus !== "accepted" && (
+        <button
+          type="button"
+          className={styles.btnOutline}
+          onClick={() => onReport(coach)}
+          style={{
+            width: "100%",
+            color: "#DC2626",
+            borderColor: "#FECACA",
+            background: "#FFF7F7",
+          }}
+        >
+          Report coach
+        </button>
       )}
     </div>
   );
@@ -1289,6 +2149,7 @@ function NotificationCenter({ onPartnerChanged }) {
           )}
         </div>
       )}
+
     </div>
   );
 }
@@ -1324,6 +2185,9 @@ export default function Players() {
   const [coaches, setCoaches] = useState([]);
   const [selectedCoach, setSelectedCoach] = useState(null);
 
+  const [reportTarget, setReportTarget] = useState(null);
+  const [submittingReport, setSubmittingReport] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const showLoader = useLoadingDelay(loading, 350);
 
@@ -1352,7 +2216,11 @@ export default function Players() {
         publicPlayerResult,
         profilePlayerResult,
         skillResult,
+        playerMediaResult,
         coachResult,
+        coachCertificatesResult,
+        coachVenuesResult,
+        clubsResult,
       ] = await Promise.all([
         supabase
           .from("public_players")
@@ -1366,9 +2234,27 @@ export default function Players() {
           .from("player_skill_ratings")
           .select("*"),
         supabase
+          .from("player_profile_media")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase
           .from("coach_profiles")
           .select("*")
           .order("display_name", { ascending: true }),
+        supabase
+          .from("coach_certifications")
+          .select("*")
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("coach_training_venues")
+          .select("*")
+          .order("is_primary", { ascending: false })
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("clubs")
+          .select("id, short_name, name, accepting_members"),
       ]);
 
       if (publicPlayerResult.error) {
@@ -1389,9 +2275,59 @@ export default function Players() {
         console.error("Failed to load player skills:", skillResult.error);
       }
 
+      if (playerMediaResult.error) {
+        console.error("Failed to load player profile media:", playerMediaResult.error);
+      }
+
       if (coachResult.error) {
         console.error("Failed to load coaches:", coachResult.error);
       }
+
+      if (coachCertificatesResult.error) {
+        console.error(
+          "Failed to load coach certificates:",
+          coachCertificatesResult.error,
+        );
+      }
+
+      if (coachVenuesResult.error) {
+        console.error(
+          "Failed to load coach training venues:",
+          coachVenuesResult.error,
+        );
+      }
+
+      if (clubsResult.error) {
+        console.error("Failed to load clubs:", clubsResult.error);
+      }
+
+      const certificatesByCoachId = new Map();
+
+      (coachCertificatesResult.data || []).forEach((certificate) => {
+        const coachId = certificate.coach_user_id;
+        if (!coachId) return;
+
+        const current = certificatesByCoachId.get(coachId) || [];
+        current.push(certificate);
+        certificatesByCoachId.set(coachId, current);
+      });
+
+      const venuesByCoachId = new Map();
+
+      (coachVenuesResult.data || []).forEach((venue) => {
+        const coachId = venue.coach_user_id;
+        if (!coachId) return;
+
+        const current = venuesByCoachId.get(coachId) || [];
+        current.push({
+          id: venue.id,
+          venueName: venue.venue_name || "",
+          venueAddress: venue.venue_address || "",
+          locationUrl: venue.location_url || "",
+          isPrimary: venue.is_primary === true,
+        });
+        venuesByCoachId.set(coachId, current);
+      });
 
       const ratingsByPlayerId = new Map();
 
@@ -1408,12 +2344,43 @@ export default function Players() {
           });
       });
 
+      const videoByPlayerId = new Map();
+
+      (playerMediaResult.data || []).forEach((media) => {
+        const playerId = media.player_id;
+        const mediaUrl = media.media_url || media.file_url || "";
+        const fileType = String(media.file_type || media.mime_type || "").toLowerCase();
+        const fileName = String(media.file_name || "").toLowerCase();
+        const isVideo =
+          fileType.startsWith("video/") ||
+          /\.(mp4|mov|webm|m4v|avi)$/i.test(fileName) ||
+          /\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(mediaUrl);
+
+        if (
+          playerId &&
+          mediaUrl &&
+          isVideo &&
+          media.is_featured === true
+        ) {
+          videoByPlayerId.set(String(playerId), {
+            url: mediaUrl,
+            title: media.title || media.file_name || "Playing video",
+          });
+        }
+      });
+
       let connectionData = [];
       let coachRelationshipData = [];
       let outgoingPartnerRequests = [];
+      let ownClubMemberships = [];
 
       if (user) {
-        const [connectionResult, relationshipResult, partnerRequestResult] = await Promise.all([
+        const [
+          connectionResult,
+          relationshipResult,
+          partnerRequestResult,
+          clubMembershipResult,
+        ] = await Promise.all([
           supabase
             .from("player_connections")
             .select("*")
@@ -1426,6 +2393,10 @@ export default function Players() {
             .from("player_partner_requests")
             .select("*")
             .eq("requester_user_id", user.id),
+          supabase
+            .from("club_members")
+            .select("*")
+            .eq("user_id", user.id),
         ]);
 
         if (connectionResult.error) {
@@ -1453,6 +2424,16 @@ export default function Players() {
           );
         } else {
           outgoingPartnerRequests = partnerRequestResult.data || [];
+        }
+
+
+        if (clubMembershipResult.error) {
+          console.error(
+            "Failed to load club memberships:",
+            clubMembershipResult.error,
+          );
+        } else {
+          ownClubMemberships = clubMembershipResult.data || [];
         }
       }
 
@@ -1482,6 +2463,15 @@ export default function Players() {
               connection.type === "opponent",
           );
 
+          const favourite = connectionData.find(
+            (connection) =>
+              (
+                connection.target_player_id === player.id ||
+                connection.target_player_id === player.user_id
+              ) &&
+              connection.type === "favourite",
+          );
+
           return {
             id: player.id,
             userId: player.user_id || null,
@@ -1507,14 +2497,18 @@ export default function Players() {
               player.playing_hand ||
               player.hand ||
               "-",
-            since:
-              player.playing_since ||
-              player.since ||
-              "-",
-            court:
-              player.preferred_court ||
-              player.court ||
-              "-",
+            startedPlayingAge:
+              player.started_playing_age !== null &&
+              player.started_playing_age !== undefined
+                ? Number(player.started_playing_age)
+                : null,
+            experienceYears: calculateExperienceYears(
+              player.date_of_birth,
+              player.started_playing_age,
+              player.experience_years
+            ),
+            videoUrl: videoByPlayerId.get(String(player.id))?.url || null,
+            videoTitle: videoByPlayerId.get(String(player.id))?.title || "Playing video",
             ig: player.instagram || null,
             smash: Number(rating?.smash ?? 0),
             defense: Number(rating?.defense ?? 0),
@@ -1537,9 +2531,11 @@ export default function Players() {
             partnerRequestStatus:
               outgoingPartnerRequests.find(
                 (request) =>
-                  request.recipient_user_id === player.user_id,
+                  request.recipient_user_id === player.user_id &&
+                  request.status === "pending",
               )?.status || null,
             isOpp: Boolean(opponent),
+            isFavourite: Boolean(favourite),
             w: Number(opponent?.h2h_wins || 0),
             l: Number(opponent?.h2h_losses || 0),
             last: opponent?.last_played || "—",
@@ -1581,6 +2577,12 @@ export default function Players() {
               connection.type === "opponent",
           );
 
+          const favourite = connectionData.find(
+            (connection) =>
+              connection.target_player_id === player.id &&
+              connection.type === "favourite",
+          );
+
           return {
             id: player.id,
             userId: player.user_id || null,
@@ -1592,8 +2594,18 @@ export default function Players() {
             level: player.level || "Beginner",
             style: player.style || "All-round",
             hand: player.hand || "-",
-            since: player.since || "-",
-            court: player.court || "-",
+            startedPlayingAge:
+              player.started_playing_age !== null &&
+              player.started_playing_age !== undefined
+                ? Number(player.started_playing_age)
+                : null,
+            experienceYears: calculateExperienceYears(
+              player.date_of_birth,
+              player.started_playing_age,
+              player.experience_years || player.years_experience
+            ),
+            videoUrl: player.video_url || player.playing_video_url || null,
+            videoTitle: player.video_title || "Playing video",
             ig: player.instagram || null,
             smash: Number(
               player.smash ??
@@ -1636,9 +2648,11 @@ export default function Players() {
             partnerRequestStatus:
               outgoingPartnerRequests.find(
                 (request) =>
-                  request.recipient_user_id === player.user_id,
+                  request.recipient_user_id === player.user_id &&
+                  request.status === "pending",
               )?.status || null,
             isOpp: Boolean(opponent),
+            isFavourite: Boolean(favourite),
             w: Number(opponent?.h2h_wins || 0),
             l: Number(opponent?.h2h_losses || 0),
             last: opponent?.last_played || "—",
@@ -1650,6 +2664,20 @@ export default function Players() {
         ...publicPlayers,
       ].sort((a, b) => a.name.localeCompare(b.name));
 
+      const clubsByShortName = new Map(
+        (clubsResult.data || [])
+          .filter((club) => club.short_name)
+          .map((club) => [
+            String(club.short_name).trim().toUpperCase(),
+            {
+              id: club.id,
+              shortName: String(club.short_name).trim().toUpperCase(),
+              name: club.name || "Unnamed club",
+              acceptingMembers: club.accepting_members !== false,
+            },
+          ]),
+      );
+
       const formattedCoaches = (coachResult.data || [])
         .filter((coach) => !user || coach.user_id !== user.id)
         .map((coach) => {
@@ -1657,10 +2685,22 @@ export default function Players() {
             (item) => item.coach_user_id === coach.user_id,
           );
 
+          const coachClubShortName = String(coach.club || "")
+            .trim()
+            .toUpperCase();
+          const clubMatch =
+            clubsByShortName.get(coachClubShortName) || null;
+          const clubMembership = clubMatch
+            ? ownClubMemberships.find(
+                (membership) => membership.club_id === clubMatch.id,
+              )
+            : null;
+
           return {
             id: coach.id,
             userId: coach.user_id,
             init: coach.display_name?.charAt(0)?.toUpperCase() || "?",
+            avatarUrl: coach.avatar_url || null,
             name: coach.display_name || "Unknown coach",
             club: coach.club || "-",
             state: coach.state || "-",
@@ -1668,22 +2708,43 @@ export default function Players() {
             yearsExperience: Number(coach.experience_years || 0),
             specialties: normaliseSpecialties(coach.specialties),
             bio: coach.bio || "",
+            phone: coach.phone || "",
             instagram: coach.instagram || null,
             headline: coach.headline || "",
             playerLevels: Array.isArray(coach.player_levels) ? coach.player_levels : [],
             sessionTypes: Array.isArray(coach.session_types) ? coach.session_types : [],
             trainingVenue: coach.training_venue || "-",
+            trainingVenues:
+              venuesByCoachId.get(coach.user_id) ||
+              (
+                coach.training_venue
+                  ? [
+                      {
+                        id: `legacy-${coach.user_id}`,
+                        venueName: coach.training_venue,
+                        venueAddress: "",
+                        locationUrl:
+                          coach.training_venue_url || "",
+                        isPrimary: true,
+                      },
+                    ]
+                  : []
+              ),
             availability: coach.availability || "-",
             coachingPhilosophy: coach.coaching_philosophy || "",
             achievements: coach.achievements || "",
             certification: coach.certification || "-",
             certificationIssuer: coach.certification_issuer || "",
             certificationFileUrl: coach.certification_file_url || null,
+            relevantCertificates: (certificatesByCoachId.get(coach.user_id) || [])
+              .filter(item => item.certificate_name && item.file_url),
             isAccepting: Boolean(coach.accepting_players),
             maxPlayers: Number(coach.player_capacity || 10),
             requestStatus: relationship?.status || null,
             requestMessage: relationship?.message || "",
             relationshipId: relationship?.id || null,
+            clubMatch,
+            clubMembershipStatus: clubMembership?.status || null,
           };
         });
 
@@ -1712,9 +2773,12 @@ export default function Players() {
     fetchData();
   }, [fetchData]);
 
-  const pool = players.filter((player) =>
-    tab === "opp" ? player.isOpp : true,
-  );
+  const pool = players.filter((player) => {
+    if (tab === "opp") return player.isOpp;
+    if (tab === "fav") return player.isFavourite;
+
+    return true;
+  });
 
   const filtered = pool.filter((player) => {
     const matchesSearch =
@@ -1804,35 +2868,131 @@ export default function Players() {
     coachSpecialtyFilter,
   ]);
 
+
+  function openPlayerReport(player) {
+    setReportTarget({
+      id: player.id,
+      userId: player.userId || null,
+      type: "player",
+      name: player.name,
+      source: player.source || "registered",
+    });
+  }
+
+  function openCoachReport(coach) {
+    setReportTarget({
+      id: coach.id,
+      userId: coach.userId || null,
+      type: "coach",
+      name: coach.name,
+      source: "registered",
+    });
+  }
+
+  async function submitReport({ reason, details }) {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      alert("Please log in again.");
+      return;
+    }
+
+    if (!reportTarget) return;
+
+    if (
+      reportTarget.userId &&
+      reportTarget.userId === user.id
+    ) {
+      alert("You cannot report your own profile.");
+      setReportTarget(null);
+      return;
+    }
+
+    setSubmittingReport(true);
+
+    try {
+      const { error } = await supabase
+        .from("user_reports")
+        .insert({
+          reporter_user_id: user.id,
+          reported_user_id: reportTarget.userId,
+          category: reportTarget.type,
+          subject: reportTarget.name,
+          description: [
+            `Reason: ${reason}`,
+            `Details: ${details || "No additional details provided."}`,
+          ].join("\n"),
+          status: "pending",
+        });
+
+      if (error) throw error;
+
+      setReportTarget(null);
+      alert(
+        `Your ${reportTarget.type} report has been submitted for admin review.`,
+      );
+    } catch (error) {
+      console.error("Failed to submit report:", error);
+      alert(error.message || "Failed to submit report.");
+    } finally {
+      setSubmittingReport(false);
+    }
+  }
+
   async function addConnection(player, type) {
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      alert("Please log in first.");
+    if (authError || !user) {
+      alert("Please log in again.");
       return;
     }
 
-    const { error } = await supabase.from("player_connections").upsert(
-      {
-        user_id: user.id,
-        target_player_id: player.id,
-        type,
-        h2h_wins: type === "opponent" ? player.w || 0 : 0,
-        h2h_losses: type === "opponent" ? player.l || 0 : 0,
-        last_played: type === "opponent" ? player.last || "—" : null,
-      },
-      { onConflict: "user_id,target_player_id,type" },
-    );
-
-    if (error) {
-      console.error(error);
-      alert("Failed to save.");
+    if (!player?.id) {
+      alert("This player could not be identified.");
       return;
     }
 
-    await fetchData();
+    if (!["partner", "opponent", "favourite"].includes(type)) {
+      alert("Invalid connection type.");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("player_connections")
+        .upsert(
+          {
+            user_id: user.id,
+            target_player_id: player.id,
+            type,
+            h2h_wins:
+              type === "opponent" ? Number(player.w || 0) : 0,
+            h2h_losses:
+              type === "opponent" ? Number(player.l || 0) : 0,
+            last_played:
+              type === "opponent" && player.last && player.last !== "—"
+                ? player.last
+                : null,
+          },
+          {
+            onConflict: "user_id,target_player_id,type",
+          },
+        );
+
+      if (error) throw error;
+
+      await fetchData();
+
+    } catch (error) {
+      console.error(`Failed to save ${type}:`, error);
+      alert(error?.message || `Failed to save ${type}.`);
+    }
   }
 
 
@@ -1888,27 +3048,120 @@ export default function Players() {
     alert("Partner request sent.");
   }
 
-  async function removeConnection(player, type) {
+  async function cancelPartnerRequest(player) {
+    const confirmed = window.confirm(
+      `Cancel your partner request to ${player.name}?`,
+    );
+
+    if (!confirmed) return;
+
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
 
-    if (!user) return;
-
-    const { error } = await supabase
-      .from("player_connections")
-      .delete()
-      .eq("user_id", user.id)
-      .eq("target_player_id", player.id)
-      .eq("type", type);
-
-    if (error) {
-      console.error(error);
-      alert("Failed to remove.");
+    if (authError || !user) {
+      alert("Please log in again.");
       return;
     }
 
-    await fetchData();
+    if (!player.userId) {
+      alert("This player is not linked to a registered account.");
+      return;
+    }
+
+    try {
+      const { data: cancelledRequest, error: cancelError } = await supabase
+        .from("player_partner_requests")
+        .update({
+          status: "cancelled",
+          responded_at: new Date().toISOString(),
+        })
+        .eq("requester_user_id", user.id)
+        .eq("recipient_user_id", player.userId)
+        .eq("status", "pending")
+        .select("id")
+        .maybeSingle();
+
+      if (cancelError) throw cancelError;
+
+      if (!cancelledRequest) {
+        throw new Error(
+          "No pending partner request was found. Refresh the page and try again.",
+        );
+      }
+
+      // Remove the related notification when the notification row stores
+      // the partner-request ID in source_id. Cancellation still succeeds
+      // even when notification cleanup is blocked by an RLS policy.
+      const { error: notificationError } = await supabase
+        .from("notifications")
+        .delete()
+        .eq("user_id", player.userId)
+        .eq("type", "partner_request_received")
+        .eq("source_id", cancelledRequest.id);
+
+      if (notificationError) {
+        console.warn(
+          "Partner request cancelled, but notification cleanup was blocked:",
+          notificationError,
+        );
+      }
+
+      setPlayers((current) =>
+        current.map((item) =>
+          item.id === player.id
+            ? { ...item, partnerRequestStatus: null }
+            : item,
+        ),
+      );
+
+      setSelected((current) =>
+        current?.id === player.id
+          ? { ...current, partnerRequestStatus: null }
+          : current,
+      );
+
+      await fetchData();
+      alert("Partner request cancelled.");
+    } catch (error) {
+      console.error("Failed to cancel partner request:", error);
+      alert(error.message || "Failed to cancel partner request.");
+    }
+  }
+
+  async function removeConnection(player, type) {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      alert("Please log in again.");
+      return;
+    }
+
+    if (!player?.id) {
+      alert("This player could not be identified.");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("player_connections")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("target_player_id", player.id)
+        .eq("type", type);
+
+      if (error) throw error;
+
+      await fetchData();
+
+    } catch (error) {
+      console.error(`Failed to remove ${type}:`, error);
+      alert(error?.message || `Failed to remove ${type}.`);
+    }
   }
 
   async function requestCoach(coach, message) {
@@ -1918,6 +3171,43 @@ export default function Players() {
 
     if (!user) {
       alert("Please log in first.");
+      return;
+    }
+
+    if (coach.userId === user.id) {
+      alert("You cannot request yourself as a coach.");
+      return;
+    }
+
+    /*
+     * A player profile is required. A dual-role account can
+     * request another coach because it has both profile rows.
+     */
+    const {
+      data: ownPlayerProfile,
+      error: playerProfileError,
+    } = await supabase
+      .from("player_profiles")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (playerProfileError) {
+      console.error(
+        "Failed to verify player profile:",
+        playerProfileError,
+      );
+      alert(
+        playerProfileError.message ||
+          "Unable to verify your player profile.",
+      );
+      return;
+    }
+
+    if (!ownPlayerProfile) {
+      alert(
+        "A player profile is required before requesting a coach.",
+      );
       return;
     }
 
@@ -1972,6 +3262,85 @@ export default function Players() {
     if (error) {
       console.error("Failed to cancel coach relationship:", error);
       alert(error.message || "Failed to update coach request.");
+      return;
+    }
+
+    await fetchData();
+  }
+
+  async function requestCoachClub(coach) {
+    const club = coach.clubMatch;
+
+    if (!club) {
+      alert("This coach is not linked to a registered club.");
+      return;
+    }
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      alert("Please log in again.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("club_members")
+      .upsert(
+        {
+          club_id: club.id,
+          user_id: user.id,
+          status: "pending",
+          member_role: "player",
+          requested_at: new Date().toISOString(),
+          responded_at: null,
+        },
+        { onConflict: "club_id,user_id" },
+      );
+
+    if (error) {
+      console.error("Failed to request club membership:", error);
+      alert(error.message || "Failed to send club request.");
+      return;
+    }
+
+    await fetchData();
+    alert("Club join request sent.");
+  }
+
+  async function cancelCoachClubRequest(coach) {
+    const club = coach.clubMatch;
+    if (!club) return;
+
+    if (!window.confirm(`Cancel your request to join ${club.name}?`)) {
+      return;
+    }
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      alert("Please log in again.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("club_members")
+      .update({
+        status: "cancelled",
+        responded_at: new Date().toISOString(),
+      })
+      .eq("club_id", club.id)
+      .eq("user_id", user.id)
+      .eq("status", "pending");
+
+    if (error) {
+      console.error("Failed to cancel club request:", error);
+      alert(error.message || "Failed to cancel club request.");
       return;
     }
 
@@ -2040,6 +3409,13 @@ export default function Players() {
           onClick={() => switchTab("opp")}
         >
           My opponents
+        </button>
+
+        <button
+          className={`${styles.tab} ${tab === "fav" ? styles.tabActive : ""}`}
+          onClick={() => switchTab("fav")}
+        >
+          My favourites
         </button>
 
         <button
@@ -2112,7 +3488,9 @@ export default function Players() {
                   className={styles.card}
                   style={{ textAlign: "center", padding: 40, color: C.muted }}
                 >
-                  No players match your search.
+                  {tab === "fav"
+                    ? "You have not added any favourite players yet."
+                    : "No players match your search."}
                 </div>
               )}
 
@@ -2170,10 +3548,8 @@ export default function Players() {
                         {player.isPartner && (
                           <span className={styles.badgeGreen}>Partner</span>
                         )}
-                        {player.source === "public" && (
-                          <span className={styles.badgeGray}>
-                            Public profile
-                          </span>
+                        {player.isFavourite && (
+                          <span className={styles.badgeBlue}>Favourite</span>
                         )}
                       </div>
                     </div>
@@ -2205,7 +3581,7 @@ export default function Players() {
               </div>
             ) : (
               <PlayerDetail
-                key={`${selected.id}-${selected.isOpp}-${selected.isPartner}`}
+                key={`${selected.id}-${selected.isOpp}-${selected.isPartner}-${selected.isFavourite}`}
                 p={selected}
                 isPartner={selected.isPartner}
                 onAddOpponent={(player) => {
@@ -2217,9 +3593,17 @@ export default function Players() {
                   setTab("all");
                 }}
                 onAddPartner={(player) => requestPartner(player)}
+                onCancelPartnerRequest={cancelPartnerRequest}
                 onRemovePartner={(player) =>
                   removeConnection(player, "partner")
                 }
+                onAddFavourite={(player) =>
+                  addConnection(player, "favourite")
+                }
+                onRemoveFavourite={(player) =>
+                  removeConnection(player, "favourite")
+                }
+                onReport={openPlayerReport}
               />
             )}
           </div>
@@ -2465,8 +3849,16 @@ export default function Players() {
                       Remove
                     </button>
                   ) : player.partnerRequestStatus === "pending" ? (
-                    <button className={styles.btnOutline} disabled>
-                      Pending
+                    <button
+                      className={styles.btnOutline}
+                      onClick={() => cancelPartnerRequest(player)}
+                      style={{
+                        color: "#DC2626",
+                        borderColor: "#FECACA",
+                        background: "#FEF2F2",
+                      }}
+                    >
+                      Cancel
                     </button>
                   ) : (
                     <button
@@ -2583,7 +3975,21 @@ export default function Players() {
                         : `1.5px solid ${C.line}`,
                     }}
                   >
-                    <div className={styles.av}>{coach.init}</div>
+                    {coach.avatarUrl ? (
+                      <img
+                        src={coach.avatarUrl}
+                        alt={`${coach.name} profile`}
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: '50%',
+                          objectFit: 'cover',
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : (
+                      <div className={styles.av}>{coach.init}</div>
+                    )}
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
@@ -2620,12 +4026,14 @@ export default function Players() {
                             {specialty}
                           </span>
                         ))}
-
-                        <CoachStatusBadge status={coach.requestStatus} />
                       </div>
                     </div>
 
-                    {coach.isAccepting ? (
+                    {coach.requestStatus === "accepted" ? (
+                      <span className={styles.badgeGreen}>My coach</span>
+                    ) : coach.requestStatus === "pending" ? (
+                      <span className={styles.badgeAmber}>Request pending</span>
+                    ) : coach.isAccepting ? (
                       <span className={styles.badgeGreen}>Available</span>
                     ) : (
                       <span className={styles.badgeGray}>Unavailable</span>
@@ -2656,11 +4064,25 @@ export default function Players() {
                 coach={selectedCoach}
                 onRequest={requestCoach}
                 onCancel={cancelCoachRelationship}
+                onReport={openCoachReport}
+                onRequestClub={requestCoachClub}
+                onCancelClubRequest={cancelCoachClubRequest}
               />
             )}
           </div>
         </div>
       )}
+
+      <ReportModal
+        target={reportTarget}
+        submitting={submittingReport}
+        onClose={() => {
+          if (!submittingReport) {
+            setReportTarget(null);
+          }
+        }}
+        onSubmit={submitReport}
+      />
     </div>
   );
 }

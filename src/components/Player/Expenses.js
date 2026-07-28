@@ -459,7 +459,7 @@ function BudgetModal({
 function RuleSuggestionsCard({ suggestions }) {
   return (
     <div className={styles.card}>
-      <div className={styles.cardTitle}>Rule-based Suggestions</div>
+      <div className={styles.cardTitle}>Suggestions</div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {suggestions.map((s, i) => {

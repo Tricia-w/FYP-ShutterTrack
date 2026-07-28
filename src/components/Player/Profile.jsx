@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
@@ -85,6 +85,26 @@ const calculateAge = dob => {
   return age >= 0 ? age : ''
 }
 
+const calculatePlayingExperience = (dateOfBirth, startedPlayingAge) => {
+  const currentAge = Number(calculateAge(dateOfBirth))
+  const startAge = Number(startedPlayingAge)
+
+  if (
+    !dateOfBirth ||
+    startedPlayingAge === '' ||
+    startedPlayingAge === null ||
+    startedPlayingAge === undefined ||
+    !Number.isFinite(currentAge) ||
+    !Number.isFinite(startAge) ||
+    startAge < 0 ||
+    startAge > currentAge
+  ) {
+    return null
+  }
+
+  return currentAge - startAge
+}
+
 const StatIcon = ({ type, color }) => {
   const commonProps = {
     width: 18,
@@ -140,6 +160,8 @@ export default function Profile() {
   const [mediaTitle, setMediaTitle] = useState('')
   const [selectedMediaFile, setSelectedMediaFile] = useState(null)
   const [setupData, setSetupData] = useState(null)
+  const [joinedClubs, setJoinedClubs] = useState([])
+  const [clubEntryMode, setClubEntryMode] = useState('none')
 
   const avatarInputRef = useRef(null)
   const mediaInputRef = useRef(null)
@@ -167,6 +189,7 @@ export default function Profile() {
     weight: '',
     hand: 'Right',
     club: '',
+    externalClub: '',
     state: '',
     racket: '',
     string: '',
@@ -176,6 +199,7 @@ export default function Profile() {
     instagram: '',
     showInstagram: true,
     bio: '',
+    startedPlayingAge: '',
   })
 
 
@@ -191,7 +215,7 @@ export default function Profile() {
 
         const authUser = authData.user
 
-        const [appUserRes, setupRes, profileRes] = await Promise.all([
+        const [appUserRes, setupRes, profileRes, membershipRes] = await Promise.all([
           supabase
             .from('app_users')
             .select('*')
@@ -207,11 +231,34 @@ export default function Profile() {
             .select('*')
             .eq('user_id', authUser.id)
             .maybeSingle(),
+          supabase
+            .from('club_members')
+            .select('club_id, status, clubs(id, short_name, name)')
+            .eq('user_id', authUser.id)
+            .eq('status', 'accepted'),
         ])
 
         const appUser = appUserRes.data
         const setup = setupRes.data
         const profile = profileRes.data
+
+        if (membershipRes.error) {
+          console.error('Unable to load accepted club memberships:', membershipRes.error)
+        }
+
+        const acceptedClubs = (membershipRes.data || [])
+          .map(item => {
+            const club = Array.isArray(item.clubs) ? item.clubs[0] : item.clubs
+            if (!club) return null
+
+            return {
+              id: club.id,
+              shortName: String(club.short_name || '').trim().toUpperCase(),
+              name: club.name || 'Unnamed club',
+            }
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.name.localeCompare(b.name))
 
         let equipmentData = null
         let rating = null
@@ -252,8 +299,30 @@ export default function Profile() {
         if (!mounted) return
 
         setSetupData(setup || null)
+        setJoinedClubs(acceptedClubs)
 
         if (profile?.profile_photo_url) setAvatarUrl(profile.profile_photo_url)
+
+        const savedClub = String(profile?.club || '').trim().toUpperCase()
+        const stillAccepted = acceptedClubs.some(
+          club => club.shortName === savedClub
+        )
+        const safeClubValue = stillAccepted
+          ? savedClub
+          : acceptedClubs.length === 1
+            ? acceptedClubs[0].shortName
+            : ''
+
+        if (profile?.id && savedClub && !stillAccepted) {
+          const { error: clearStaleClubError } = await supabase
+            .from('player_profiles')
+            .update({ club: null })
+            .eq('id', profile.id)
+
+          if (clearStaleClubError) {
+            console.error('Unable to clear stale club from player profile:', clearStaleClubError)
+          }
+        }
 
         setForm(prev => ({
           ...prev,
@@ -263,9 +332,15 @@ export default function Profile() {
           height: profile?.height_cm ? String(profile.height_cm) : '',
           weight: profile?.weight_kg ? String(profile.weight_kg) : '',
           hand: profile?.playing_hand || 'Right',
-          club: profile?.club || '',
+          club: safeClubValue,
+          externalClub: profile?.external_club || '',
           state: profile?.state || '',
           bio: profile?.bio || '',
+          startedPlayingAge:
+            profile?.started_playing_age !== null &&
+            profile?.started_playing_age !== undefined
+              ? String(profile.started_playing_age)
+              : '',
           instagram: profile?.instagram || '',
           showInstagram: profile?.show_instagram ?? true,
           racket: equipmentData?.racket || '',
@@ -310,6 +385,7 @@ export default function Profile() {
               name: item.file_name,
               url: item.media_url || item.file_url,
               fileType: item.file_type || item.mime_type || '',
+              isFeatured: Boolean(item.is_featured),
               date: formatDate(item.created_at),
             }))
           )
@@ -328,6 +404,127 @@ export default function Profile() {
     }
   }, [user?.id])
 
+  useEffect(() => {
+    let active = true
+
+    const refreshAcceptedClubs = async () => {
+      try {
+        const { data: authData, error: authError } = await supabase.auth.getUser()
+        if (authError || !authData?.user) return
+
+        const authUser = authData.user
+
+        const { data, error } = await supabase
+          .from('club_members')
+          .select('club_id, status, clubs(id, short_name, name)')
+          .eq('user_id', authUser.id)
+          .eq('status', 'accepted')
+
+        if (error) throw error
+        if (!active) return
+
+        const acceptedClubs = (data || [])
+          .map(item => {
+            const club = Array.isArray(item.clubs) ? item.clubs[0] : item.clubs
+            if (!club) return null
+
+            return {
+              id: club.id,
+              shortName: String(club.short_name || '').trim().toUpperCase(),
+              name: club.name || 'Unnamed club',
+            }
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.name.localeCompare(b.name))
+
+        setJoinedClubs(acceptedClubs)
+
+        setForm(previous => {
+          const currentClub = String(previous.club || '').trim().toUpperCase()
+          const stillAccepted = acceptedClubs.some(
+            club => club.shortName === currentClub
+          )
+
+          if (stillAccepted) return previous
+
+          return {
+            ...previous,
+            club: acceptedClubs.length === 1
+              ? acceptedClubs[0].shortName
+              : '',
+          }
+        })
+
+        const { data: profileRow, error: profileError } = await supabase
+          .from('player_profiles')
+          .select('id, club')
+          .eq('user_id', authUser.id)
+          .maybeSingle()
+
+        if (profileError) throw profileError
+
+        const savedClub = String(profileRow?.club || '').trim().toUpperCase()
+        const savedClubStillAccepted = acceptedClubs.some(
+          club => club.shortName === savedClub
+        )
+
+        if (profileRow?.id && savedClub && !savedClubStillAccepted) {
+          const { error: clearError } = await supabase
+            .from('player_profiles')
+            .update({ club: null })
+            .eq('id', profileRow.id)
+
+          if (clearError) throw clearError
+        }
+      } catch (error) {
+        console.error('Unable to refresh accepted clubs:', error)
+      }
+    }
+
+    const handleMembershipUpdated = () => {
+      refreshAcceptedClubs()
+    }
+
+    window.addEventListener(
+      'club-membership-updated',
+      handleMembershipUpdated,
+    )
+
+    const channel = supabase
+      .channel(`profile-club-membership-${user?.id || 'current'}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'club_members',
+        },
+        () => refreshAcceptedClubs(),
+      )
+      .subscribe()
+
+    return () => {
+      active = false
+      window.removeEventListener(
+        'club-membership-updated',
+        handleMembershipUpdated,
+      )
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!showProfileModal) return
+
+    if (form.club) {
+      setClubEntryMode(form.club)
+    } else if (form.externalClub?.trim()) {
+      setClubEntryMode('__external__')
+    } else {
+      setClubEntryMode('none')
+    }
+  }, [showProfileModal, form.club, form.externalClub])
+
   const set = key => e => {
     setForm(prev => ({ ...prev, [key]: e.target.value }))
   }
@@ -339,6 +536,11 @@ export default function Profile() {
     .join('')
     .toUpperCase()
     .slice(0, 2)
+
+  const displayedClub =
+    form.club ||
+    form.externalClub?.trim() ||
+    'No club'
 
   const preferredEvent = setupData?.preferred_event || 'Not set'
   const playStyle = setupData?.play_style || 'Not set'
@@ -357,11 +559,27 @@ export default function Profile() {
     'Not set'
   const playerMindsetText = String(mindset).toLowerCase().includes('player') ? mindset : `${mindset} Player`
   const cleanInstagram = form.instagram.replace('@', '').trim()
+  const playingExperience = calculatePlayingExperience(
+    form.dateOfBirth,
+    form.startedPlayingAge
+  )
 
   const getSupabaseUser = async () => {
     const { data: authData, error: authError } = await supabase.auth.getUser()
     if (authError || !authData?.user) throw new Error('User not logged in')
     return authData.user
+  }
+
+  const getValidatedClubValue = () => {
+    const selectedClub = String(form.club || '').trim().toUpperCase()
+
+    if (!selectedClub) return null
+
+    const isAccepted = joinedClubs.some(
+      club => club.shortName === selectedClub
+    )
+
+    return isAccepted ? selectedClub : null
   }
 
   const saveMainProfileToSupabase = async authUser => {
@@ -379,13 +597,19 @@ export default function Profile() {
           display_name: form.name || appUser?.full_name || authUser.email?.split('@')[0] || 'Player',
           player_category: preferredEvent,
           state: form.state || null,
-          club: form.club || null,
+          club: getValidatedClubValue(),
+          external_club: form.externalClub?.trim() || null,
           date_of_birth: form.dateOfBirth || null,
           age: form.dateOfBirth ? calculateAge(form.dateOfBirth) : null,
           gender: form.gender || null,
           height_cm: form.height ? Number(form.height) : null,
           weight_kg: form.weight ? Number(form.weight) : null,
           playing_hand: form.hand || null,
+          started_playing_age:
+            form.startedPlayingAge !== ''
+              ? Number(form.startedPlayingAge)
+              : null,
+          experience_years: playingExperience,
           bio: form.bio || null,
           instagram: form.instagram || null,
           show_instagram: form.showInstagram,
@@ -559,6 +783,7 @@ export default function Profile() {
           media_url: uploaded.url,
           file_url: uploaded.url,
           file_type: selectedMediaFile.type,
+          is_featured: false,
         })
         .select('*')
         .single()
@@ -572,6 +797,7 @@ export default function Profile() {
         name: savedMedia.file_name,
         url: savedMedia.media_url || savedMedia.file_url,
         fileType: savedMedia.file_type || selectedMediaFile.type,
+        isFeatured: Boolean(savedMedia.is_featured),
         date: formatDate(savedMedia.created_at),
       }
 
@@ -581,6 +807,76 @@ export default function Profile() {
     } catch (error) {
       console.error('Media upload error:', error)
       alert(error.message || 'Failed to upload profile media')
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  const handleSetFeaturedVideo = async item => {
+    if (!profileId || !item?.id || isSavingProfile) return
+
+    if (!String(item.fileType || '').startsWith('video/')) {
+      alert('Only videos can be selected as the featured playing video.')
+      return
+    }
+
+    setIsSavingProfile(true)
+
+    try {
+      const { error: clearError } = await supabase
+        .from('player_profile_media')
+        .update({ is_featured: false })
+        .eq('player_id', profileId)
+        .eq('is_featured', true)
+
+      if (clearError) throw clearError
+
+      const { error: featureError } = await supabase
+        .from('player_profile_media')
+        .update({ is_featured: true })
+        .eq('id', item.id)
+        .eq('player_id', profileId)
+
+      if (featureError) throw featureError
+
+      setMediaItems(current =>
+        current.map(media => ({
+          ...media,
+          isFeatured: media.id === item.id,
+        }))
+      )
+    } catch (error) {
+      console.error('Set featured video error:', error)
+      alert(error.message || 'Failed to set the featured playing video')
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  const handleRemoveFeaturedVideo = async item => {
+    if (!profileId || !item?.id || isSavingProfile) return
+
+    setIsSavingProfile(true)
+
+    try {
+      const { error } = await supabase
+        .from('player_profile_media')
+        .update({ is_featured: false })
+        .eq('id', item.id)
+        .eq('player_id', profileId)
+
+      if (error) throw error
+
+      setMediaItems(current =>
+        current.map(media =>
+          media.id === item.id
+            ? { ...media, isFeatured: false }
+            : media
+        )
+      )
+    } catch (error) {
+      console.error('Remove featured video error:', error)
+      alert(error.message || 'Failed to remove the featured playing video')
     } finally {
       setIsSavingProfile(false)
     }
@@ -607,12 +903,53 @@ export default function Profile() {
   }
 
   const handleSaveProfile = async () => {
+    if (clubEntryMode === '__external__' && !form.externalClub.trim()) {
+      alert('Please enter your club name, or select No club.')
+      return
+    }
+
+    if (clubEntryMode !== '__external__' && form.externalClub) {
+      setForm(previous => ({
+        ...previous,
+        externalClub: '',
+      }))
+    }
+
+    const currentAge = Number(calculateAge(form.dateOfBirth))
+    const startAge = Number(form.startedPlayingAge)
+
+    if (
+      form.startedPlayingAge !== '' &&
+      (!form.dateOfBirth ||
+        !Number.isFinite(startAge) ||
+        startAge < 0 ||
+        !Number.isFinite(currentAge) ||
+        startAge > currentAge)
+    ) {
+      alert('Starting age cannot be greater than your current age.')
+      return
+    }
+
     setIsSavingProfile(true)
     try {
       const authUser = await getSupabaseUser()
       await saveMainProfileToSupabase(authUser)
+
+      const validatedClub = getValidatedClubValue()
+      setForm(previous => ({
+        ...previous,
+        club: validatedClub || '',
+      }))
+
       await supabase.from('app_users').update({ setup_completed: true }).eq('user_id', authUser.id)
-      saveProfile?.({ ...user, ...form, name: form.name, avatarUrl })
+      saveProfile?.({
+        ...user,
+        ...form,
+        club: validatedClub || '',
+        externalClub: form.externalClub?.trim() || '',
+        name: form.name,
+        avatarUrl,
+      })
       setShowProfileModal(false)
       alert('Profile saved successfully')
     } catch (error) {
@@ -1087,7 +1424,15 @@ export default function Profile() {
               { label: 'Height', value: form.height ? `${form.height} cm` : '-' },
               { label: 'Weight', value: form.weight ? `${form.weight} kg` : '-' },
               { label: 'Playing hand', value: form.hand || '-' },
-              { label: 'Club', value: form.club || 'No club' },
+
+              {
+                label: 'Experience',
+                value:
+                  playingExperience !== null
+                    ? `${playingExperience} ${playingExperience === 1 ? 'year' : 'years'}`
+                    : '-',
+              },
+              { label: 'Club', value: displayedClub },
               { label: 'State', value: form.state || '-' },
               { label: 'Personal info source', value: 'Self-reported' },
             ].map(item => (
@@ -1228,6 +1573,17 @@ export default function Profile() {
               </div>
             </div>
 
+            <div
+              style={{
+                marginBottom: 12,
+                fontSize: 11,
+                lineHeight: 1.5,
+                color: 'var(--text-muted, #8892A4)',
+              }}
+            >
+              Upload multiple media items, then star one video to show it as your public Playing Video.
+            </div>
+
             {mediaItems.length === 0 ? (
               <div style={{ padding: 22, background: 'var(--soft)', borderRadius: 14, color: 'var(--text-muted)', fontSize: 13, textAlign: 'center' }}>No media uploaded yet. Add images or videos.</div>
             ) : (
@@ -1250,7 +1606,72 @@ export default function Profile() {
                     <div style={{ padding: 10 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || item.name}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>{item.name} · {item.date}</div>
-                      <button onClick={() => handleRemoveMedia(item.id)} style={{ marginTop: 8, border: 'none', background: 'transparent', color: '#EF4444', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: 0 }}>Remove</button>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          marginTop: 9,
+                        }}
+                      >
+                        {item.fileType.startsWith('video/') ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              item.isFeatured
+                                ? handleRemoveFeaturedVideo(item)
+                                : handleSetFeaturedVideo(item)
+                            }
+                            disabled={isSavingProfile}
+                            title={
+                              item.isFeatured
+                                ? 'Remove as featured playing video'
+                                : 'Show this video on your public player profile'
+                            }
+                            style={{
+                              border: item.isFeatured
+                                ? '1px solid #F59E0B'
+                                : '1px solid var(--line, #D8E1EF)',
+                              background: item.isFeatured
+                                ? '#FFF7E6'
+                                : 'var(--card, #FFFFFF)',
+                              color: item.isFeatured
+                                ? '#B45309'
+                                : 'var(--text-muted, #64748B)',
+                              borderRadius: 9,
+                              padding: '6px 9px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: isSavingProfile ? 'wait' : 'pointer',
+                            }}
+                          >
+                            {item.isFeatured ? '★ Featured' : '☆ Feature'}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            Images cannot be featured
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMedia(item.id)}
+                          disabled={isSavingProfile}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: '#EF4444',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: isSavingProfile ? 'wait' : 'pointer',
+                            padding: 0,
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1282,8 +1703,110 @@ export default function Profile() {
             </div>
             <div className={styles.g2} style={{ marginBottom: 0 }}>
               <div className={styles.formRow}><label className={styles.formLabel}>State</label><input className={styles.formInput} value={form.state} onChange={set('state')} /></div>
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  At what age did you start playing badminton?
+                </label>
+                <input
+                  className={styles.formInput}
+                  type="number"
+                  min="0"
+                  max={calculateAge(form.dateOfBirth) || 100}
+                  placeholder="e.g. 12"
+                  value={form.startedPlayingAge}
+                  onChange={set('startedPlayingAge')}
+                />
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color:
+                      playingExperience !== null
+                        ? '#10B981'
+                        : 'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  {playingExperience !== null
+                    ? `Estimated experience: ${playingExperience} ${
+                        playingExperience === 1 ? 'year' : 'years'
+                      }`
+                    : 'Enter your date of birth and starting age to calculate experience.'}
+                </div>
+              </div>
             </div>
-            <div className={styles.formRow}><label className={styles.formLabel}>Club optional</label><input className={styles.formInput} placeholder="Optional" value={form.club} onChange={set('club')} /></div>
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>Club optional</label>
+
+              <select
+                className={styles.formSelect}
+                value={clubEntryMode}
+                onChange={event => {
+                  const value = event.target.value
+                  setClubEntryMode(value)
+
+                  if (value === '__external__') {
+                    setForm(previous => ({
+                      ...previous,
+                      club: '',
+                    }))
+                    return
+                  }
+
+                  if (value === 'none') {
+                    setForm(previous => ({
+                      ...previous,
+                      club: '',
+                      externalClub: '',
+                    }))
+                    return
+                  }
+
+                  setForm(previous => ({
+                    ...previous,
+                    club: value,
+                    externalClub: '',
+                  }))
+                }}
+              >
+                <option value="none">No club</option>
+
+                {joinedClubs.map(club => (
+                  <option key={club.id} value={club.shortName}>
+                    {club.shortName
+                      ? `${club.shortName} · ${club.name}`
+                      : club.name}
+                  </option>
+                ))}
+
+                <option value="__external__">
+                  Other club outside ShuttleTrack
+                </option>
+              </select>
+
+              {clubEntryMode === '__external__' && (
+                <input
+                  className={styles.formInput}
+                  value={form.externalClub}
+                  onChange={set('externalClub')}
+                  placeholder="Type your club name"
+                  maxLength={120}
+                  style={{ marginTop: 8 }}
+                />
+              )}
+
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 11,
+                  color: 'var(--text-muted, #8892A4)',
+                  lineHeight: 1.5,
+                }}
+              >
+                Accepted ShuttleTrack clubs appear in the list. Choose
+                “Other club outside ShuttleTrack” to enter a club manually.
+              </div>
+            </div>
             <div className={styles.g2} style={{ marginBottom: 0 }}>
               <div className={styles.formRow}><label className={styles.formLabel}>Instagram optional</label><input className={styles.formInput} placeholder="@yourusername" value={form.instagram} onChange={set('instagram')} /></div>
               <div className={styles.formRow}><label className={styles.formLabel}>Show Instagram publicly</label><select className={styles.formSelect} value={form.showInstagram ? 'Yes' : 'No'} onChange={e => setForm(prev => ({ ...prev, showInstagram: e.target.value === 'Yes' }))}><option>Yes</option><option>No</option></select></div>

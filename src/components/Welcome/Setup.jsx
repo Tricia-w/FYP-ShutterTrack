@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useAuth } from './context/AuthContext'
-import { supabase } from './lib/supabase'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
 import styles from './Setup.module.css'
 
 const PRESSURE_OPTIONS = ['Calm', 'Aggressive', 'Careful']
@@ -203,13 +203,38 @@ export default function Setup() {
       const activeUser = await getActiveUser()
 
       if (!activeUser?.id) {
-        throw new Error('Account is not ready yet. Please refresh or login again.')
+        throw new Error(
+          'Account is not ready yet. Please refresh or login again.'
+        )
       }
 
-      // Do not update setup_completed here.
-      // User skipped setup, so setup_completed should remain false.
-      navigate(returnTo, { replace: true })
+      /*
+        Mark onboarding as finished even when the player skips.
+        No player_setup row is created, so the player can complete
+        the setup later from the Profile page.
+      */
+      const { error: completeSetupError } = await supabase.rpc(
+        'complete_player_setup'
+      )
+
+      if (completeSetupError) {
+        console.error(
+          'Skip setup completion RPC error:',
+          completeSetupError
+        )
+        throw new Error(
+          'Unable to skip setup right now. Please try again.'
+        )
+      }
+
+      saveProfile?.({
+        ...user,
+        setup_completed: true,
+      })
+
+      navigate('/dashboard', { replace: true })
     } catch (err) {
+      console.error('Skip player setup error:', err)
       setError(err.message || 'Failed to skip setup. Please try again.')
     } finally {
       setSkipping(false)

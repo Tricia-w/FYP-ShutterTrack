@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import {
   BrowserRouter,
   Routes,
@@ -8,8 +8,6 @@ import {
 } from 'react-router-dom'
 
 import { useAuth } from './context/AuthContext'
-import { supabase } from './lib/supabase'
-
 import Layout from './components/Layout/Layout'
 
 import Dashboard from './components/Player/Dashboard'
@@ -18,22 +16,25 @@ import Performance from './components/Player/Performance'
 import Fitness from './components/Player/Fitness'
 import Expenses from './components/Player/Expenses'
 import Players from './components/Player/Players'
+import Clubs from './components/Player/Clubs'
 import Settings from './components/Player/Settings'
 
 import Login from './components/Welcome/Login'
 import Register from './components/Welcome/Register'
 import ResetPassword from './components/Welcome/ResetPassword'
+import EmailVerified from './components/Welcome/EmailVerified'
 
-import AuthCallback from './components/Admin/AuthCallback'
+import AuthCallback from './components/Welcome/AuthCallback'
 import AdminDashboard from './components/Admin/Admin'
 
-import Setup from './Setup'
+import Setup from './components/Welcome/Setup'
 
 import CoachDashboard from './components/Coach/CoachDashboard'
 import CoachPlayers from './components/Coach/CoachPlayers'
 import CoachSessions from './components/Coach/CoachSessions'
 import CoachProgress from './components/Coach/CoachProgress'
 import CoachProfile from './components/Coach/CoachProfile'
+import CoachSettings from './components/Coach/CoachSettings'
 
 function LoadingScreen() {
   return (
@@ -53,11 +54,28 @@ function LoadingScreen() {
 }
 
 function getUserRole(profile, isAdmin) {
-  if (isAdmin) {
-    return 'admin'
+  if (isAdmin) return 'admin'
+  return profile?.role || 'player'
+}
+
+function hasPlayerAccess(profile, isAdmin) {
+  if (isAdmin) return false
+
+  if (typeof profile?.has_player_access === 'boolean') {
+    return profile.has_player_access
   }
 
-  return profile?.role || 'player'
+  return profile?.role === 'player'
+}
+
+function hasCoachAccess(profile, isAdmin) {
+  if (isAdmin) return false
+
+  if (typeof profile?.has_coach_access === 'boolean') {
+    return profile.has_coach_access
+  }
+
+  return profile?.role === 'coach'
 }
 
 function getSetupCompleted(profile) {
@@ -67,27 +85,37 @@ function getSetupCompleted(profile) {
 function getUserRedirectPath(profile, isAdmin) {
   const role = getUserRole(profile, isAdmin)
 
-  if (role === 'admin') {
-    return '/admin'
-  }
+  if (role === 'admin') return '/admin'
 
-  if (role === 'coach') {
+  if (
+    role === 'coach' &&
+    hasCoachAccess(profile, isAdmin)
+  ) {
     return '/coach'
   }
 
-  if (role === 'player' && !getSetupCompleted(profile)) {
+  if (
+    hasPlayerAccess(profile, isAdmin) &&
+    !getSetupCompleted(profile)
+  ) {
     return '/setup'
   }
 
-  return '/dashboard'
+  if (hasPlayerAccess(profile, isAdmin)) {
+    return '/dashboard'
+  }
+
+  if (hasCoachAccess(profile, isAdmin)) {
+    return '/coach'
+  }
+
+  return '/login'
 }
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
 
-  if (loading) {
-    return <LoadingScreen />
-  }
+  if (loading) return <LoadingScreen />
 
   if (!user) {
     return <Navigate to="/login" replace />
@@ -97,13 +125,29 @@ function PrivateRoute({ children }) {
 }
 
 function PublicRoute({ children }) {
-  const { user, profile, loading, isAdmin } = useAuth()
+  const {
+    user,
+    profile,
+    loading,
+    isAdmin,
+  } = useAuth()
 
-  if (loading) {
-    return <LoadingScreen />
-  }
+  const location = useLocation()
 
-  if (user) {
+  if (loading) return <LoadingScreen />
+
+  const addingRole =
+    sessionStorage.getItem(
+      'shuttleAddingRole',
+    ) === '1'
+
+  if (
+    user &&
+    !(
+      location.pathname === '/register' &&
+      addingRole
+    )
+  ) {
     return (
       <Navigate
         to={getUserRedirectPath(profile, isAdmin)}
@@ -116,19 +160,20 @@ function PublicRoute({ children }) {
 }
 
 function AdminRoute({ children }) {
-  const { user, profile, isAdmin, loading } = useAuth()
+  const {
+    user,
+    profile,
+    isAdmin,
+    loading,
+  } = useAuth()
 
-  if (loading) {
-    return <LoadingScreen />
-  }
+  if (loading) return <LoadingScreen />
 
   if (!user) {
     return <Navigate to="/login" replace />
   }
 
-  const role = getUserRole(profile, isAdmin)
-
-  if (role !== 'admin') {
+  if (getUserRole(profile, isAdmin) !== 'admin') {
     return (
       <Navigate
         to={getUserRedirectPath(profile, isAdmin)}
@@ -141,19 +186,24 @@ function AdminRoute({ children }) {
 }
 
 function CoachRoute({ children }) {
-  const { user, profile, loading, isAdmin } = useAuth()
+  const {
+    user,
+    profile,
+    loading,
+    isAdmin,
+  } = useAuth()
 
-  if (loading) {
-    return <LoadingScreen />
-  }
+  if (loading) return <LoadingScreen />
 
   if (!user) {
     return <Navigate to="/login" replace />
   }
 
-  const role = getUserRole(profile, isAdmin)
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />
+  }
 
-  if (role !== 'coach') {
+  if (!hasCoachAccess(profile, isAdmin)) {
     return (
       <Navigate
         to={getUserRedirectPath(profile, isAdmin)}
@@ -165,110 +215,34 @@ function CoachRoute({ children }) {
   return children
 }
 
-/*
-  Players can access player pages normally.
-
-  Coaches can access player pages only when their account also has
-  a row in player_profiles.
-*/
 function PlayerRoute({ children }) {
-  const { user, profile, loading, isAdmin } = useAuth()
+  const {
+    user,
+    profile,
+    loading,
+    isAdmin,
+  } = useAuth()
 
-  const [checkingPlayerProfile, setCheckingPlayerProfile] =
-    useState(true)
-  const [hasPlayerProfile, setHasPlayerProfile] =
-    useState(false)
-
-  const role = getUserRole(profile, isAdmin)
-
-  useEffect(() => {
-    let active = true
-
-    async function checkPlayerAccess() {
-      if (loading) {
-        return
-      }
-
-      if (!user) {
-        if (active) {
-          setHasPlayerProfile(false)
-          setCheckingPlayerProfile(false)
-        }
-        return
-      }
-
-      if (role === 'admin') {
-        if (active) {
-          setHasPlayerProfile(false)
-          setCheckingPlayerProfile(false)
-        }
-        return
-      }
-
-      if (role === 'player') {
-        if (active) {
-          setHasPlayerProfile(true)
-          setCheckingPlayerProfile(false)
-        }
-        return
-      }
-
-      try {
-        setCheckingPlayerProfile(true)
-
-        const { data, error } = await supabase
-          .from('player_profiles')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle()
-
-        if (error) {
-          throw error
-        }
-
-        if (active) {
-          setHasPlayerProfile(Boolean(data))
-        }
-      } catch (error) {
-        console.error(
-          'Unable to check player profile:',
-          error
-        )
-
-        if (active) {
-          setHasPlayerProfile(false)
-        }
-      } finally {
-        if (active) {
-          setCheckingPlayerProfile(false)
-        }
-      }
-    }
-
-    checkPlayerAccess()
-
-    return () => {
-      active = false
-    }
-  }, [loading, role, user])
-
-  if (loading || checkingPlayerProfile) {
-    return <LoadingScreen />
-  }
+  if (loading) return <LoadingScreen />
 
   if (!user) {
     return <Navigate to="/login" replace />
   }
 
-  if (role === 'admin') {
+  if (isAdmin) {
     return <Navigate to="/admin" replace />
   }
 
-  if (role === 'coach' && !hasPlayerProfile) {
-    return <Navigate to="/coach" replace />
+  if (!hasPlayerAccess(profile, isAdmin)) {
+    return (
+      <Navigate
+        to={getUserRedirectPath(profile, isAdmin)}
+        replace
+      />
+    )
   }
 
-  if (role === 'player' && !getSetupCompleted(profile)) {
+  if (!getSetupCompleted(profile)) {
     return <Navigate to="/setup" replace />
   }
 
@@ -276,30 +250,48 @@ function PlayerRoute({ children }) {
 }
 
 function PlayerSetupRoute({ children }) {
-  const { user, profile, loading, isAdmin } = useAuth()
+  const {
+    user,
+    profile,
+    loading,
+    isAdmin,
+  } = useAuth()
+
   const location = useLocation()
 
-  if (loading) {
-    return <LoadingScreen />
-  }
+  if (loading) return <LoadingScreen />
 
   if (!user) {
     return <Navigate to="/login" replace />
   }
 
-  const role = getUserRole(profile, isAdmin)
-  const searchParams = new URLSearchParams(location.search)
-  const isRedoSetup = searchParams.get('redo') === '1'
-
-  if (role === 'admin') {
+  if (isAdmin) {
     return <Navigate to="/admin" replace />
   }
 
-  if (role === 'coach') {
-    return <Navigate to="/coach" replace />
+  if (!hasPlayerAccess(profile, isAdmin)) {
+    return (
+      <Navigate
+        to={getUserRedirectPath(profile, isAdmin)}
+        replace
+      />
+    )
   }
 
-  if (getSetupCompleted(profile) && !isRedoSetup) {
+  const searchParams =
+    new URLSearchParams(location.search)
+
+  const isRedoSetup =
+    searchParams.get('redo') === '1'
+
+  const isAddingRole =
+    searchParams.get('addRole') === '1'
+
+  if (
+    getSetupCompleted(profile) &&
+    !isRedoSetup &&
+    !isAddingRole
+  ) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -346,6 +338,11 @@ function App() {
         <Route
           path="/auth/callback"
           element={<AuthCallback />}
+        />
+
+        <Route
+          path="/email-verified"
+          element={<EmailVerified />}
         />
 
         {/* Player setup */}
@@ -427,6 +424,15 @@ function App() {
           />
 
           <Route
+            path="/clubs"
+            element={
+              <PlayerRoute>
+                <Clubs />
+              </PlayerRoute>
+            }
+          />
+
+          <Route
             path="/settings"
             element={
               <PlayerRoute>
@@ -473,10 +479,28 @@ function App() {
           />
 
           <Route
+            path="/coach/clubs"
+            element={
+              <CoachRoute>
+                <Clubs />
+              </CoachRoute>
+            }
+          />
+
+          <Route
             path="/coach/profile"
             element={
               <CoachRoute>
                 <CoachProfile />
+              </CoachRoute>
+            }
+          />
+
+          <Route
+            path="/coach/settings"
+            element={
+              <CoachRoute>
+                <CoachSettings />
               </CoachRoute>
             }
           />

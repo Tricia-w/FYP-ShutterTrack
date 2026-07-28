@@ -170,7 +170,8 @@ export default function Dashboard() {
   const [skills, setSkills] = useState(DEFAULT_SKILLS)
   const [expenses, setExpenses] = useState([])
   const [lastMonthExpenses, setLastMonthExpenses] = useState([])
-  const [fitnessScore, setFitnessScore] = useState(50)
+  const [fitnessScore, setFitnessScore] = useState(0)
+  const [hasFitnessData, setHasFitnessData] = useState(false)
   const [schedule, setSchedule] = useState([])
   const [notifications, setNotifications] = useState([])
   const [showNotifications, setShowNotifications] = useState(false)
@@ -289,6 +290,55 @@ export default function Dashboard() {
   useEffect(() => {
     fetchNotifications()
   }, [fetchNotifications])
+
+  useEffect(() => {
+    let cancelled = false
+    let channel = null
+
+    const subscribeToNotifications = async () => {
+      const authUser = await getCurrentAuthUser()
+
+      if (!authUser?.id || cancelled) return
+
+      const channelName = `player-notifications-${authUser.id}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`
+
+      const nextChannel = supabase
+        .channel(channelName)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${authUser.id}`,
+          },
+          () => {
+            fetchNotifications()
+          }
+        )
+
+      channel = nextChannel
+
+      nextChannel.subscribe(status => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Player notification realtime channel failed.')
+        }
+      })
+    }
+
+    subscribeToNotifications()
+
+    return () => {
+      cancelled = true
+
+      if (channel) {
+        supabase.removeChannel(channel)
+        channel = null
+      }
+    }
+  }, [getCurrentAuthUser, fetchNotifications])
 
   useEffect(() => {
     const closeNotifications = e => {
@@ -460,7 +510,10 @@ export default function Dashboard() {
         setMatches(matchRows)
         setExpenses(expenseRes.data || [])
         setLastMonthExpenses(lastExpenseRes.data || [])
-        setFitnessScore(Number(fitnessRes.data?.[0]?.score ?? 50))
+        const latestFitness = fitnessRes.data?.[0] || null
+
+        setHasFitnessData(Boolean(latestFitness))
+        setFitnessScore(Number(latestFitness?.score ?? 0))
 
         const scheduleRows = (scheduleRes.data || []).map(item => ({
           id: `schedule-${item.id}`,
@@ -1053,15 +1106,30 @@ export default function Dashboard() {
 
           <div
             className={
-              fitnessScore >= 70 ? styles.deltaUp : styles.deltaDown
+              !hasFitnessData
+                ? styles.metricLbl
+                : fitnessScore >= 70
+                  ? styles.deltaUp
+                  : styles.deltaDown
             }
             style={{
-              color: fitnessScore >= 70 ? '#00C48C' : '#EF4444',
-              WebkitTextFillColor:
-                fitnessScore >= 70 ? '#00C48C' : '#EF4444',
+              color: !hasFitnessData
+                ? 'var(--text-muted, #8892A4)'
+                : fitnessScore >= 70
+                  ? '#00C48C'
+                  : '#EF4444',
+              WebkitTextFillColor: !hasFitnessData
+                ? 'var(--text-muted, #8892A4)'
+                : fitnessScore >= 70
+                  ? '#00C48C'
+                  : '#EF4444',
             }}
           >
-            {fitnessScore >= 70 ? 'Good condition' : 'Needs improvement'}
+            {!hasFitnessData
+              ? 'No fitness data yet'
+              : fitnessScore >= 70
+                ? 'Good condition'
+                : 'Needs improvement'}
           </div>
         </div>
 

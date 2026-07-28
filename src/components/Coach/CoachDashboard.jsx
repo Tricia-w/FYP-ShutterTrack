@@ -173,28 +173,28 @@ function CoachDashboardStats({
       label: 'My players',
       value: myPlayers.length,
       color: '#1A5FFF',
-      background: '#E8EFFE',
+      background: 'var(--soft-blue, #E8EFFE)',
       icon: 'players',
     },
     {
       label: 'Upcoming sessions',
       value: upcomingSessions.length,
       color: '#00976C',
-      background: '#DDF8EF',
+      background: 'var(--soft-green, #DDF8EF)',
       icon: 'upcoming',
     },
     {
       label: 'Past sessions',
       value: pastSessions.length,
       color: '#F59E0B',
-      background: '#FEF3C7',
+      background: 'var(--soft-yellow, #FEF3C7)',
       icon: 'past',
     },
     {
       label: 'Total notes',
       value: notes.length,
       color: '#7C3AED',
-      background: '#EDE9FE',
+      background: 'var(--soft-purple, #EDE9FE)',
       icon: 'notes',
     },
   ]
@@ -249,6 +249,11 @@ export default function CoachDashboard() {
   const [sessions, setSessions] = useState([])
   const [progressRows, setProgressRows] = useState([])
   const [assessments, setAssessments] = useState([])
+  const [verification, setVerification] = useState({
+    status: 'pending',
+    rejectionReason: '',
+    verifiedAt: null,
+  })
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
   const [error, setError] = useState('')
@@ -261,11 +266,17 @@ export default function CoachDashboard() {
 
     try {
       const [
+        verificationRes,
         relationshipRes,
         sessionRes,
         progressRes,
         assessmentRes,
       ] = await Promise.all([
+        supabase
+          .from('coach_profiles')
+          .select('verification_status, rejection_reason, verified_at')
+          .eq('user_id', user.id)
+          .maybeSingle(),
         supabase
           .from('coach_player_relationships')
           .select('player_user_id')
@@ -298,6 +309,16 @@ export default function CoachDashboard() {
           .eq('coach_user_id', user.id)
           .order('updated_at', { ascending: false }),
       ])
+
+      if (verificationRes.error) {
+        console.error('Verification load error:', verificationRes.error)
+      } else {
+        setVerification({
+          status: verificationRes.data?.verification_status || 'pending',
+          rejectionReason: verificationRes.data?.rejection_reason || '',
+          verifiedAt: verificationRes.data?.verified_at || null,
+        })
+      }
 
       if (relationshipRes.error) {
         console.error('Relationship load error:', relationshipRes.error)
@@ -391,6 +412,7 @@ export default function CoachDashboard() {
       setAssessments(assessmentRes.error ? [] : assessmentRes.data || [])
 
       const failedSections = [
+        verificationRes.error ? 'verification' : null,
         relationshipRes.error ? 'players' : null,
         sessionRes.error ? 'sessions' : null,
         progressRes.error ? 'progress' : null,
@@ -548,6 +570,92 @@ export default function CoachDashboard() {
         title="Coach Dashboard"
         subtitle="Manage your players, sessions and track progress"
       />
+
+
+      <div
+        className={styles.card}
+        style={{
+          marginBottom: 16,
+          padding: '14px 16px',
+          border:
+            verification.status === 'verified'
+              ? '1px solid #A7F3D0'
+              : verification.status === 'rejected'
+                ? '1px solid #FECACA'
+                : '1px solid #FDE68A',
+          background:
+            verification.status === 'verified'
+              ? '#ECFDF5'
+              : verification.status === 'rejected'
+                ? '#FEF2F2'
+                : '#FFFBEB',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 800,
+                color:
+                  verification.status === 'verified'
+                    ? '#047857'
+                    : verification.status === 'rejected'
+                      ? '#B91C1C'
+                      : '#B45309',
+              }}
+            >
+              {verification.status === 'verified'
+                ? '✓ Verified Coach'
+                : verification.status === 'rejected'
+                  ? 'Coach verification rejected'
+                  : 'Coach verification pending'}
+            </div>
+
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                lineHeight: 1.6,
+                color:
+                  verification.status === 'verified'
+                    ? '#065F46'
+                    : verification.status === 'rejected'
+                      ? '#991B1B'
+                      : '#92400E',
+              }}
+            >
+              {verification.status === 'verified'
+                ? 'Players can now find your profile and send coaching requests.'
+                : verification.status === 'rejected'
+                  ? verification.rejectionReason ||
+                    'Update your certification in Coach Profile and resubmit it for review.'
+                  : 'Your profile is under admin review. Players cannot find your coach profile until it is verified.'}
+            </div>
+          </div>
+
+          {verification.status !== 'verified' && (
+            <button
+              className={styles.btnOutline}
+              onClick={() => navigate('/coach/profile')}
+              style={{
+                fontSize: 11,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Open coach profile
+            </button>
+          )}
+        </div>
+      </div>
 
       <CoachDashboardStats
         myPlayers={students}
@@ -707,7 +815,8 @@ export default function CoachDashboard() {
                       width: 48,
                       height: 48,
                       borderRadius: 12,
-                      background: '#E8EFFE',
+                      background: 'var(--soft-blue, #E8EFFE)',
+                      border: '1px solid var(--line, transparent)',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -847,9 +956,10 @@ export default function CoachDashboard() {
                   }}
                   style={{
                     padding: '10px 12px',
-                    background: '#F7F9FF',
+                    background: 'var(--soft, #F7F9FF)',
                     borderRadius: 10,
                     marginBottom: 8,
+                    border: '1px solid var(--line, #EEF1F8)',
                     borderLeft: '3px solid #1A5FFF',
                     cursor: 'pointer',
                   }}
