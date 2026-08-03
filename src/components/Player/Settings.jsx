@@ -26,6 +26,12 @@ const readBool = (value, fallback = false) => {
   return Boolean(value)
 }
 
+const sanitizePhone = value => {
+  return String(value || '')
+    .replace(/\D/g, '')
+    .slice(0, 11)
+}
+
 const getSavedTheme = () => {
   if (typeof window === 'undefined') return null
 
@@ -109,6 +115,10 @@ const isTrainingSchedule = row => {
   return type === 'Training'
 }
 
+const isValidEmail = value => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+}
+
 export default function Settings() {
   const navigate = useNavigate()
   const { refreshProfile, logout } = useAuth()
@@ -158,6 +168,13 @@ export default function Settings() {
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [accountSaveStatus, setAccountSaveStatus] = useState('')
   const [accountSaveError, setAccountSaveError] = useState('')
+
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [newEmail, setNewEmail] = useState('')
+  const [changingEmail, setChangingEmail] = useState(false)
+  const [emailChangeMessage, setEmailChangeMessage] = useState('')
+  const [emailChangeError, setEmailChangeError] = useState('')
+
   const accountSaveTimerRef = useRef(null)
   const accountLoadedRef = useRef(false)
   const lastSavedAccountRef = useRef({
@@ -288,8 +305,8 @@ export default function Settings() {
         appUser?.full_name ||
         authUser.user_metadata?.full_name ||
         '',
-      email: appUser?.email || authUser.email || '',
-      phone: userSettings?.phone || '',
+      email: authUser.email || appUser?.email || '',
+      phone: sanitizePhone(userSettings?.phone),
     }
 
     setForm(loadedForm)
@@ -754,6 +771,29 @@ export default function Settings() {
       setLastUpdated(new Date(now).toLocaleString())
       setAutoSaveStatus('Saved automatically')
 
+      if (key === 'profilePublic') {
+        const { error: profilePrivacyError } = await supabase
+          .from('player_profiles')
+          .update({
+            profile_public: nextValue,
+            updated_at: now,
+          })
+          .eq('user_id', user.id)
+
+        if (profilePrivacyError) {
+          throw profilePrivacyError
+        }
+
+        window.dispatchEvent(
+          new CustomEvent('profile-visibility-updated', {
+            detail: {
+              userId: user.id,
+              profilePublic: nextValue,
+            },
+          })
+        )
+      }
+
       window.setTimeout(() => {
         setAutoSaveStatus('')
       }, 1800)
@@ -782,7 +822,7 @@ export default function Settings() {
       const now = new Date().toISOString()
 
       const cleanName = currentForm.name.trim()
-      const cleanPhone = currentForm.phone.trim()
+      const cleanPhone = sanitizePhone(currentForm.phone)
 
       if (!cleanName) {
         throw new Error('Full name is required.')
@@ -909,6 +949,87 @@ export default function Settings() {
       }
     }
   }, [form, loading, saveAccountSettings])
+
+  const openEmailChangeModal = () => {
+    setNewEmail('')
+    setEmailChangeError('')
+    setShowEmailModal(true)
+  }
+
+  const closeEmailChangeModal = () => {
+    if (changingEmail) return
+
+    setShowEmailModal(false)
+    setNewEmail('')
+    setEmailChangeError('')
+  }
+
+  const handleRequestEmailChange = async () => {
+    if (changingEmail) return
+
+    const cleanEmail = newEmail.trim().toLowerCase()
+    const currentEmail = form.email.trim().toLowerCase()
+
+    setEmailChangeError('')
+
+    if (!cleanEmail) {
+      setEmailChangeError('Please enter your new email address.')
+      return
+    }
+
+    if (!isValidEmail(cleanEmail)) {
+      setEmailChangeError('Please enter a valid email address.')
+      return
+    }
+
+    if (cleanEmail === currentEmail) {
+      setEmailChangeError(
+        'The new email address must be different from your current email.'
+      )
+      return
+    }
+
+    setChangingEmail(true)
+    setEmailChangeMessage('')
+
+    try {
+      await getAuthUser()
+
+      const redirectUrl =
+        typeof window !== 'undefined'
+          ? `${window.location.origin}${window.location.pathname}`
+          : undefined
+
+      const { error } = await supabase.auth.updateUser(
+        {
+          email: cleanEmail,
+        },
+        redirectUrl
+          ? {
+              emailRedirectTo: redirectUrl,
+            }
+          : undefined
+      )
+
+      if (error) throw error
+
+      setShowEmailModal(false)
+      setNewEmail('')
+      setEmailChangeError('')
+      setEmailChangeMessage(
+        `Verification sent to ${cleanEmail}. Your current login email will stay active until the required email confirmation is completed.`
+      )
+    } catch (error) {
+      console.error('Change email error:', error)
+
+      setEmailChangeError(
+        error?.message ||
+          'Unable to send the email change verification.'
+      )
+    } finally {
+      setChangingEmail(false)
+    }
+  }
 
   const handleLogout = async () => {
     if (logout) {
@@ -1238,15 +1359,76 @@ export default function Settings() {
 
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Email Address</label>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <input
+                  className={styles.formInput}
+                  value={form.email}
+                  readOnly
+                  title="Current login email"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    opacity: 0.72,
+                    cursor: 'not-allowed',
+                  }}
+                />
+
+                <SmallButton onClick={openEmailChangeModal}>
+                  Change Email
+                </SmallButton>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 11,
+                  color: 'var(--text-muted)',
+                  lineHeight: 1.5,
+                }}
+              >
+                Your current login email stays active until the new email is
+                verified.
+              </div>
+
+              {emailChangeMessage && (
+                <div
+                  style={{
+                    marginTop: 9,
+                    padding: '9px 11px',
+                    borderRadius: 9,
+                    border: '1px solid #A7F3D0',
+                    background: '#ECFDF5',
+                    color: '#047857',
+                    fontSize: 11,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {emailChangeMessage}
+                </div>
+              )}
+            </div>
+
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>Phone Number</label>
               <input
                 className={styles.formInput}
-                value={form.email}
-                readOnly
-                title="Login email cannot be changed from this page."
-                style={{
-                  opacity: 0.72,
-                  cursor: 'not-allowed',
+                value={form.phone}
+                onChange={event => {
+                  const phone = sanitizePhone(event.target.value)
+                  setForm(current => ({ ...current, phone }))
                 }}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={11}
+                autoComplete="tel"
+                placeholder="01xxxxxxxxxx"
               />
               <div
                 style={{
@@ -1255,19 +1437,8 @@ export default function Settings() {
                   color: 'var(--text-muted)',
                 }}
               >
-                This is your login email. Email changes require a separate
-                verification process.
+                Numbers only, maximum 11 digits.
               </div>
-            </div>
-
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>Phone Number</label>
-              <input
-                className={styles.formInput}
-                value={form.phone}
-                onChange={set('phone')}
-                placeholder="016-0000000"
-              />
             </div>
 
             <div className={styles.statRow}>
@@ -1545,6 +1716,149 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      {showEmailModal && (
+        <div
+          className={styles.modalOverlay}
+          onClick={event => {
+            if (
+              event.target === event.currentTarget &&
+              !changingEmail
+            ) {
+              closeEmailChangeModal()
+            }
+          }}
+        >
+          <div className={styles.modal} style={{ maxWidth: 480 }}>
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>Change Login Email</div>
+
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={closeEmailChangeModal}
+                disabled={changingEmail}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p
+              style={{
+                color: 'var(--text-muted)',
+                lineHeight: 1.6,
+              }}
+            >
+              Enter your new email address. Supabase will send the required
+              confirmation email before changing your login email.
+            </p>
+
+            <div style={{ marginTop: 14 }}>
+              <label
+                className={styles.formLabel}
+                htmlFor="player-new-login-email"
+              >
+                New Email Address
+              </label>
+
+              <input
+                id="player-new-login-email"
+                type="email"
+                className={styles.formInput}
+                value={newEmail}
+                onChange={event => {
+                  setNewEmail(event.target.value)
+                  setEmailChangeError('')
+                }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    handleRequestEmailChange()
+                  }
+                }}
+                placeholder="newemail@example.com"
+                autoComplete="email"
+                disabled={changingEmail}
+                autoFocus
+              />
+            </div>
+
+            {emailChangeError && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '9px 11px',
+                  borderRadius: 9,
+                  border: '1px solid #FECACA',
+                  background: '#FEF2F2',
+                  color: '#B91C1C',
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                }}
+              >
+                {emailChangeError}
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: 12,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid var(--line)',
+                background: 'var(--bg)',
+                color: 'var(--text-muted)',
+                fontSize: 12,
+                lineHeight: 1.55,
+              }}
+            >
+              Current email: <b>{form.email}</b>
+              <br />
+              Your account will continue using this email until verification is
+              completed.
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 8,
+                marginTop: 18,
+                flexWrap: 'wrap',
+              }}
+            >
+              <SmallButton
+                onClick={closeEmailChangeModal}
+                disabled={changingEmail}
+              >
+                Cancel
+              </SmallButton>
+
+              <button
+                type="button"
+                onClick={handleRequestEmailChange}
+                disabled={changingEmail}
+                style={{
+                  height: 32,
+                  padding: '0 16px',
+                  borderRadius: 8,
+                  border: '1px solid #1A5FFF',
+                  background: '#1A5FFF',
+                  color: '#FFFFFF',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: changingEmail ? 'not-allowed' : 'pointer',
+                  opacity: changingEmail ? 0.65 : 1,
+                }}
+              >
+                {changingEmail
+                  ? 'Sending Verification...'
+                  : 'Send Verification Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showDeleteModal && (
         <div

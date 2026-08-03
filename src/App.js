@@ -35,6 +35,7 @@ import CoachSessions from './components/Coach/CoachSessions'
 import CoachProgress from './components/Coach/CoachProgress'
 import CoachProfile from './components/Coach/CoachProfile'
 import CoachSettings from './components/Coach/CoachSettings'
+import CoachClubs from './components/Coach/CoachClubs'
 
 function LoadingScreen() {
   return (
@@ -482,7 +483,7 @@ function App() {
             path="/coach/clubs"
             element={
               <CoachRoute>
-                <Clubs />
+                <CoachClubs />
               </CoachRoute>
             }
           />

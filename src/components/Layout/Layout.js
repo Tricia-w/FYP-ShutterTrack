@@ -158,6 +158,78 @@ export default function Layout() {
   }, [loadAvailableModes])
 
   /*
+   * Refresh the sidebar club immediately when club membership changes
+   * in this browser, and also listen for Supabase updates made from
+   * another account/session, such as when a coach accepts a request.
+   */
+  useEffect(() => {
+    if (!user?.id) return undefined
+
+    const refreshClubProfiles = async (event) => {
+      const eventClub = event?.detail?.club
+
+      if (typeof eventClub === 'string') {
+        setPlayerModeProfile((previousProfile) => ({
+          ...(previousProfile || {}),
+          club: eventClub,
+        }))
+
+        if (mode === 'player') {
+          setSidebarProfile((previousProfile) => ({
+            ...(previousProfile || {}),
+            club: eventClub,
+          }))
+        }
+      }
+
+      await loadAvailableModes()
+    }
+
+    window.addEventListener(
+      'club-membership-updated',
+      refreshClubProfiles,
+    )
+
+    const channel = supabase
+      .channel(`layout-profile-club-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'player_profiles',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const updatedClub = payload?.new?.club || ''
+
+          setPlayerModeProfile((previousProfile) => ({
+            ...(previousProfile || {}),
+            ...(payload?.new || {}),
+            club: updatedClub,
+          }))
+
+          if (mode === 'player') {
+            setSidebarProfile((previousProfile) => ({
+              ...(previousProfile || {}),
+              club: updatedClub,
+            }))
+          }
+        },
+      )
+      .subscribe()
+
+    return () => {
+      window.removeEventListener(
+        'club-membership-updated',
+        refreshClubProfiles,
+      )
+
+      supabase.removeChannel(channel)
+    }
+  }, [loadAvailableModes, mode, user?.id])
+
+  /*
    * Profile pages can dispatch this event after saving.
    * The event data is shown immediately, then the latest values
    * are reloaded from Supabase.

@@ -189,6 +189,61 @@ function calculateExperienceYears(dateOfBirth, startedPlayingAge, fallback = 0) 
 }
 
 
+function normaliseMatchResult(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function buildPlayerMatchStats(matches = []) {
+  const sortedMatches = [...matches].sort((a, b) => {
+    const aDate = new Date(a.match_date || a.created_at || 0).getTime();
+    const bDate = new Date(b.match_date || b.created_at || 0).getTime();
+    return bDate - aDate;
+  });
+
+  const totalMatches = sortedMatches.length;
+
+  const wins = sortedMatches.filter(
+    (match) => normaliseMatchResult(match.result) === "win",
+  ).length;
+
+  const winRate =
+    totalMatches > 0
+      ? Math.round((wins / totalMatches) * 100)
+      : 0;
+
+  let streakType = "";
+  let streakCount = 0;
+
+  for (const match of sortedMatches) {
+    const result = normaliseMatchResult(match.result);
+
+    if (result !== "win" && result !== "loss") {
+      continue;
+    }
+
+    const currentType = result === "win" ? "W" : "L";
+
+    if (!streakType) {
+      streakType = currentType;
+      streakCount = 1;
+      continue;
+    }
+
+    if (currentType === streakType) {
+      streakCount += 1;
+    } else {
+      break;
+    }
+  }
+
+  return {
+    matches: totalMatches,
+    winRate,
+    streak: streakType ? `${streakType}${streakCount}` : "W0",
+  };
+}
+
+
 function ReportModal({
   target,
   submitting,
@@ -2221,6 +2276,8 @@ export default function Players() {
         coachCertificatesResult,
         coachVenuesResult,
         clubsResult,
+        acceptedMembershipsResult,
+        playerMatchesResult,
       ] = await Promise.all([
         supabase
           .from("public_players")
@@ -2255,6 +2312,23 @@ export default function Players() {
         supabase
           .from("clubs")
           .select("id, short_name, name, accepting_members"),
+        supabase
+          .from("club_members")
+          .select(`
+            user_id,
+            status,
+            clubs (
+              id,
+              short_name,
+              name
+            )
+          `)
+          .eq("status", "accepted"),
+        supabase
+          .from("player_matches")
+          .select("id, player_id, match_date, result, created_at")
+          .order("match_date", { ascending: false })
+          .order("created_at", { ascending: false }),
       ]);
 
       if (publicPlayerResult.error) {
@@ -2300,6 +2374,63 @@ export default function Players() {
       if (clubsResult.error) {
         console.error("Failed to load clubs:", clubsResult.error);
       }
+
+      if (acceptedMembershipsResult.error) {
+        console.error(
+          "Failed to load accepted club memberships:",
+          acceptedMembershipsResult.error,
+        );
+      }
+
+      const acceptedClubByUserId = new Map();
+
+      (acceptedMembershipsResult.data || []).forEach((row) => {
+        if (!row?.user_id) return;
+
+        const userId = String(row.user_id);
+
+        if (acceptedClubByUserId.has(userId)) return;
+
+        const club = Array.isArray(row.clubs)
+          ? row.clubs[0]
+          : row.clubs;
+
+        const clubName = String(
+          club?.short_name || club?.name || "",
+        ).trim();
+
+        if (clubName) {
+          acceptedClubByUserId.set(userId, clubName);
+        }
+      });
+
+      if (playerMatchesResult.error) {
+        console.error(
+          "Failed to load player matches:",
+          playerMatchesResult.error,
+        );
+      }
+
+      const matchesByProfileId = new Map();
+
+      (playerMatchesResult.data || []).forEach((match) => {
+        const profileId = match.player_id;
+        if (!profileId) return;
+
+        const key = String(profileId);
+        const current = matchesByProfileId.get(key) || [];
+        current.push(match);
+        matchesByProfileId.set(key, current);
+      });
+
+      const matchStatsByProfileId = new Map();
+
+      matchesByProfileId.forEach((matches, profileId) => {
+        matchStatsByProfileId.set(
+          profileId,
+          buildPlayerMatchStats(matches),
+        );
+      });
 
       const certificatesByCoachId = new Map();
 
@@ -2437,12 +2568,39 @@ export default function Players() {
         }
       }
 
-      const registeredPlayers = (profilePlayerResult.data || [])
-        .filter((player) => !user || player.user_id !== user.id)
+      const allRegisteredProfiles = profilePlayerResult.data || [];
+
+      // Build duplicate guards before privacy filtering. This prevents a
+      // hidden registered account from reappearing through public_players.
+      const allRegisteredNames = new Set(
+        allRegisteredProfiles
+          .map((player) =>
+            String(player.display_name || "")
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean),
+      );
+
+      const allRegisteredUserIds = new Set(
+        allRegisteredProfiles
+          .map((player) => player.user_id && String(player.user_id))
+          .filter(Boolean),
+      );
+
+      const registeredPlayers = allRegisteredProfiles
+        .filter((player) => {
+          if (user && player.user_id === user.id) return false;
+          return player.profile_public !== false;
+        })
         .map((player) => {
           const rating =
             ratingsByPlayerId.get(String(player.user_id)) ||
             ratingsByPlayerId.get(String(player.id)) ||
+            null;
+
+          const matchStats =
+            matchStatsByProfileId.get(String(player.id)) ||
             null;
 
           const partner = connectionData.find(
@@ -2479,7 +2637,11 @@ export default function Players() {
             init:
               player.display_name?.charAt(0)?.toUpperCase() || "?",
             name: player.display_name || "Unknown",
-            club: player.club || "No club",
+            club:
+              player.club ||
+              acceptedClubByUserId.get(String(player.user_id)) ||
+              player.external_club ||
+              "No club",
             state: player.state || player.location || "-",
             level:
               player.level ||
@@ -2524,9 +2686,20 @@ export default function Players() {
               0
             ),
             serve: Number(rating?.serve ?? 0),
-            matches: Number(player.matches || 0),
-            winRate: Number(player.win_rate || 0),
-            streak: player.streak || "W0",
+            matches: Number(
+              matchStats?.matches ??
+              player.matches ??
+              0
+            ),
+            winRate: Number(
+              matchStats?.winRate ??
+              player.win_rate ??
+              0
+            ),
+            streak:
+              matchStats?.streak ||
+              player.streak ||
+              "W0",
             isPartner: Boolean(partner),
             partnerRequestStatus:
               outgoingPartnerRequests.find(
@@ -2542,21 +2715,34 @@ export default function Players() {
           };
         });
 
-      const registeredNames = new Set(
-        registeredPlayers.map((player) =>
-          player.name.trim().toLowerCase(),
-        ),
-      );
-
       const publicPlayers = (publicPlayerResult.data || [])
         .filter((player) => {
           if (user && player.user_id === user.id) return false;
+
+          const publicUserId = player.user_id
+            ? String(player.user_id)
+            : "";
 
           const name = String(player.name || "")
             .trim()
             .toLowerCase();
 
-          return name && !registeredNames.has(name);
+          if (!name) return false;
+
+          // Registered player_profiles is always the source of truth.
+          // Block legacy duplicates even when the registered profile is private.
+          if (
+            publicUserId &&
+            allRegisteredUserIds.has(publicUserId)
+          ) {
+            return false;
+          }
+
+          if (allRegisteredNames.has(name)) {
+            return false;
+          }
+
+          return true;
         })
         .map((player) => {
           const rating =
@@ -2564,6 +2750,10 @@ export default function Players() {
             (player.user_id
               ? ratingsByPlayerId.get(String(player.user_id))
               : null);
+
+          const matchStats =
+            matchStatsByProfileId.get(String(player.id)) ||
+            null;
 
           const partner = connectionData.find(
             (connection) =>
@@ -2641,9 +2831,20 @@ export default function Players() {
               rating?.serve ??
               0
             ),
-            matches: Number(player.matches || 0),
-            winRate: Number(player.win_rate || 0),
-            streak: player.streak || "W0",
+            matches: Number(
+              matchStats?.matches ??
+              player.matches ??
+              0
+            ),
+            winRate: Number(
+              matchStats?.winRate ??
+              player.win_rate ??
+              0
+            ),
+            streak:
+              matchStats?.streak ||
+              player.streak ||
+              "W0",
             isPartner: Boolean(partner),
             partnerRequestStatus:
               outgoingPartnerRequests.find(
@@ -2771,6 +2972,35 @@ export default function Players() {
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`players-privacy-${Date.now()}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "player_profiles",
+        },
+        () => fetchData(),
+      )
+      .subscribe();
+
+    const handleVisibilityUpdated = () => fetchData();
+    window.addEventListener(
+      "profile-visibility-updated",
+      handleVisibilityUpdated,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "profile-visibility-updated",
+        handleVisibilityUpdated,
+      );
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   const pool = players.filter((player) => {

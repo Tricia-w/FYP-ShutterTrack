@@ -537,8 +537,18 @@ export default function Profile() {
     .toUpperCase()
     .slice(0, 2)
 
+  const acceptedClub =
+    joinedClubs.find(
+      club =>
+        club.shortName ===
+        String(form.club || '').trim().toUpperCase()
+    ) ||
+    (joinedClubs.length === 1 ? joinedClubs[0] : null)
+
+  const hasAcceptedClub = Boolean(acceptedClub)
+
   const displayedClub =
-    form.club ||
+    acceptedClub?.shortName ||
     form.externalClub?.trim() ||
     'No club'
 
@@ -571,6 +581,10 @@ export default function Profile() {
   }
 
   const getValidatedClubValue = () => {
+    if (acceptedClub?.shortName) {
+      return acceptedClub.shortName
+    }
+
     const selectedClub = String(form.club || '').trim().toUpperCase()
 
     if (!selectedClub) return null
@@ -598,7 +612,9 @@ export default function Profile() {
           player_category: preferredEvent,
           state: form.state || null,
           club: getValidatedClubValue(),
-          external_club: form.externalClub?.trim() || null,
+          external_club: hasAcceptedClub
+            ? null
+            : form.externalClub?.trim() || null,
           date_of_birth: form.dateOfBirth || null,
           age: form.dateOfBirth ? calculateAge(form.dateOfBirth) : null,
           gender: form.gender || null,
@@ -903,6 +919,24 @@ export default function Profile() {
   }
 
   const handleSaveProfile = async () => {
+    if (
+      hasAcceptedClub &&
+      String(form.club || '').trim().toUpperCase() !==
+        acceptedClub.shortName
+    ) {
+      alert(
+        'Your club is linked to an accepted ShuttleTrack membership. Leave the club from the Clubs page before changing it.',
+      )
+
+      setForm(previous => ({
+        ...previous,
+        club: acceptedClub.shortName,
+        externalClub: '',
+      }))
+      setClubEntryMode(acceptedClub.shortName)
+      return
+    }
+
     if (clubEntryMode === '__external__' && !form.externalClub.trim()) {
       alert('Please enter your club name, or select No club.')
       return
@@ -946,7 +980,9 @@ export default function Profile() {
         ...user,
         ...form,
         club: validatedClub || '',
-        externalClub: form.externalClub?.trim() || '',
+        externalClub: hasAcceptedClub
+          ? ''
+          : form.externalClub?.trim() || '',
         name: form.name,
         avatarUrl,
       })
@@ -1738,74 +1774,105 @@ export default function Profile() {
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Club optional</label>
 
-              <select
-                className={styles.formSelect}
-                value={clubEntryMode}
-                onChange={event => {
-                  const value = event.target.value
-                  setClubEntryMode(value)
+              {hasAcceptedClub ? (
+                <>
+                  <select
+                    className={styles.formSelect}
+                    value={acceptedClub.shortName}
+                    disabled
+                    style={{
+                      cursor: 'not-allowed',
+                      opacity: 0.78,
+                    }}
+                  >
+                    <option value={acceptedClub.shortName}>
+                      {acceptedClub.shortName
+                        ? `${acceptedClub.shortName} · ${acceptedClub.name}`
+                        : acceptedClub.name}
+                    </option>
+                  </select>
 
-                  if (value === '__external__') {
-                    setForm(previous => ({
-                      ...previous,
-                      club: '',
-                    }))
-                    return
-                  }
+                  <div
+                    style={{
+                      marginTop: 6,
+                      padding: '9px 11px',
+                      borderRadius: 10,
+                      background: '#EFF6FF',
+                      border: '1px solid #BFDBFE',
+                      color: '#1D4ED8',
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    This club is linked to your accepted ShuttleTrack
+                    membership. Leave the club from the Clubs page before
+                    changing it.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <select
+                    className={styles.formSelect}
+                    value={clubEntryMode}
+                    onChange={event => {
+                      const value = event.target.value
+                      setClubEntryMode(value)
 
-                  if (value === 'none') {
-                    setForm(previous => ({
-                      ...previous,
-                      club: '',
-                      externalClub: '',
-                    }))
-                    return
-                  }
+                      if (value === '__external__') {
+                        setForm(previous => ({
+                          ...previous,
+                          club: '',
+                        }))
+                        return
+                      }
 
-                  setForm(previous => ({
-                    ...previous,
-                    club: value,
-                    externalClub: '',
-                  }))
-                }}
-              >
-                <option value="none">No club</option>
+                      if (value === 'none') {
+                        setForm(previous => ({
+                          ...previous,
+                          club: '',
+                          externalClub: '',
+                        }))
+                        return
+                      }
 
-                {joinedClubs.map(club => (
-                  <option key={club.id} value={club.shortName}>
-                    {club.shortName
-                      ? `${club.shortName} · ${club.name}`
-                      : club.name}
-                  </option>
-                ))}
+                      setForm(previous => ({
+                        ...previous,
+                        club: value,
+                        externalClub: '',
+                      }))
+                    }}
+                  >
+                    <option value="none">No club</option>
+                    <option value="__external__">
+                      Other club outside ShuttleTrack
+                    </option>
+                  </select>
 
-                <option value="__external__">
-                  Other club outside ShuttleTrack
-                </option>
-              </select>
+                  {clubEntryMode === '__external__' && (
+                    <input
+                      className={styles.formInput}
+                      value={form.externalClub}
+                      onChange={set('externalClub')}
+                      placeholder="Type your club name"
+                      maxLength={120}
+                      style={{ marginTop: 8 }}
+                    />
+                  )}
 
-              {clubEntryMode === '__external__' && (
-                <input
-                  className={styles.formInput}
-                  value={form.externalClub}
-                  onChange={set('externalClub')}
-                  placeholder="Type your club name"
-                  maxLength={120}
-                  style={{ marginTop: 8 }}
-                />
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 11,
+                      color: 'var(--text-muted, #8892A4)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    You can select No club or enter a club outside
+                    ShuttleTrack. Accepted ShuttleTrack memberships are
+                    linked automatically.
+                  </div>
+                </>
               )}
-
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 11,
-                  color: 'var(--text-muted, #8892A4)',
-                  lineHeight: 1.5,
-                }}
-              >
-                Accepted ShuttleTrack clubs appear in the list. Choose
-                “Other club outside ShuttleTrack” to enter a club manually.
-              </div>
             </div>
             <div className={styles.g2} style={{ marginBottom: 0 }}>
               <div className={styles.formRow}><label className={styles.formLabel}>Instagram optional</label><input className={styles.formInput} placeholder="@yourusername" value={form.instagram} onChange={set('instagram')} /></div>

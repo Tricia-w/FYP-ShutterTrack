@@ -27,6 +27,52 @@ function getPlayerId(row) {
   return row?.user_id || row?.player_id || row?.id || null
 }
 
+function normalizeMatchResult(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function buildPlayerMatchStats(matches = []) {
+  const sortedMatches = [...matches].sort((a, b) => {
+    const aDate = new Date(a.match_date || a.created_at || 0).getTime()
+    const bDate = new Date(b.match_date || b.created_at || 0).getTime()
+    return bDate - aDate
+  })
+
+  const wins = sortedMatches.filter(
+    match => normalizeMatchResult(match.result) === 'win'
+  ).length
+
+  const totalMatches = sortedMatches.length
+  const winRate = totalMatches
+    ? Math.round((wins / totalMatches) * 100)
+    : 0
+
+  let streakCount = 0
+  let streakType = ''
+
+  for (const match of sortedMatches) {
+    const result = normalizeMatchResult(match.result)
+    if (result !== 'win' && result !== 'loss') continue
+
+    const currentType = result === 'win' ? 'W' : 'L'
+
+    if (!streakType) {
+      streakType = currentType
+      streakCount = 1
+      continue
+    }
+
+    if (currentType === streakType) streakCount += 1
+    else break
+  }
+
+  return {
+    matches: totalMatches,
+    winRate,
+    streak: streakType ? `${streakType}${streakCount}` : 'W0',
+  }
+}
+
 function getRelationshipStatus(row) {
   const rawStatus = String(
     row?.status ||
@@ -77,7 +123,7 @@ function getRequestedBy(row) {
   ).toLowerCase()
 }
 
-function normalizePlayer(profile, skillRow, relationship, source = 'registered') {
+function normalizePlayer(profile, skillRow, relationship, source = 'registered', matchStats = null) {
   const playerId = getPlayerId(profile)
   const status = getRelationshipStatus(relationship)
   const requestedBy = getRequestedBy(relationship)
@@ -95,7 +141,10 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered')
       profile?.username ||
       'Unnamed player',
 
-    club: profile?.club || 'No club',
+    club:
+      profile?.club ||
+      profile?.external_club ||
+      'No club',
     state: profile?.state || profile?.location || '',
     location: profile?.location || profile?.state || '',
     category:
@@ -143,17 +192,20 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered')
       null,
 
     matches: Number(
+      matchStats?.matches ??
       profile?.matches ??
       profile?.total_matches ??
       profile?.match_count ??
       0
     ),
     winRate: Number(
+      matchStats?.winRate ??
       profile?.win_rate ??
       profile?.winRate ??
       0
     ),
     streak:
+      matchStats?.streak ||
       profile?.streak ||
       profile?.current_streak ||
       'W0',
@@ -1020,6 +1072,7 @@ export default function CoachPlayers() {
         publicPlayersResult,
         skillsResult,
         relationshipsResult,
+        matchesResult,
       ] = await Promise.all([
         supabase
           .from('player_profiles')
@@ -1039,12 +1092,19 @@ export default function CoachPlayers() {
           .from('coach_player_relationships')
           .select('*')
           .eq('coach_user_id', user.id),
+
+        supabase
+          .from('player_matches')
+          .select('*')
+          .order('match_date', { ascending: false })
+          .order('created_at', { ascending: false }),
       ])
 
       if (profilesResult.error) throw profilesResult.error
       if (publicPlayersResult.error) throw publicPlayersResult.error
       if (skillsResult.error) throw skillsResult.error
       if (relationshipsResult.error) throw relationshipsResult.error
+      if (matchesResult.error) throw matchesResult.error
 
       const relationshipMap = new Map(
         (relationshipsResult.data || []).map(row => [
@@ -1068,7 +1128,73 @@ export default function CoachPlayers() {
         })
       })
 
-      const registeredPlayers = (profilesResult.data || [])
+      const matchesByProfileId = new Map()
+
+      ;(matchesResult.data || []).forEach(match => {
+        const profileId = match.player_id || match.profile_id || null
+        if (!profileId) return
+
+        const currentMatches = matchesByProfileId.get(profileId) || []
+        currentMatches.push(match)
+        matchesByProfileId.set(profileId, currentMatches)
+      })
+
+      const matchStatsByProfileId = new Map()
+
+      matchesByProfileId.forEach((playerMatches, profileId) => {
+        matchStatsByProfileId.set(
+          profileId,
+          buildPlayerMatchStats(playerMatches)
+        )
+      })
+
+      const allRegisteredProfiles = profilesResult.data || []
+
+      /*
+       * Build duplicate guards before filtering private profiles.
+       * This prevents a hidden registered account from reappearing
+       * through an old public_players row.
+       */
+      const allRegisteredNames = new Set(
+        allRegisteredProfiles
+          .map(profile =>
+            String(profile.display_name || '')
+              .trim()
+              .toLowerCase()
+          )
+          .filter(Boolean)
+      )
+
+      const allRegisteredUserIds = new Set(
+        allRegisteredProfiles
+          .map(profile =>
+            profile.user_id ? String(profile.user_id) : ''
+          )
+          .filter(Boolean)
+      )
+
+      const registeredPlayers = allRegisteredProfiles
+        .filter(profile => {
+          const playerId = getPlayerId(profile)
+          if (!playerId || playerId === user.id) return false
+
+          const relationship = relationshipMap.get(playerId)
+          const relationshipStatus =
+            getRelationshipStatus(relationship)
+
+          /*
+           * Private profiles stay visible only when this coach already
+           * has a pending or accepted relationship with the player.
+           */
+          const connectedToThisCoach =
+            relationshipStatus === 'accepted' ||
+            relationshipStatus === 'pending'
+
+          return (
+            profile.profile_public !== false ||
+            connectedToThisCoach
+          )
+        })
         .map(profile => {
           const playerId = getPlayerId(profile)
 
@@ -1081,24 +1207,43 @@ export default function CoachPlayers() {
             profile,
             skillRow,
             relationshipMap.get(playerId),
-            'registered'
+            'registered',
+            matchStatsByProfileId.get(profile.id) || null
           )
         })
-        .filter(player => player.id && player.id !== user.id)
-
-      const registeredNames = new Set(
-        registeredPlayers.map(player =>
-          player.name.trim().toLowerCase()
-        )
-      )
 
       const publicPlayers = (publicPlayersResult.data || [])
         .filter(row => {
-          const name = String(row?.name || '').trim().toLowerCase()
-          return name && !registeredNames.has(name)
+          const linkedUserId =
+            row.user_id ||
+            row.player_user_id ||
+            null
+
+          const name = String(row?.name || '')
+            .trim()
+            .toLowerCase()
+
+          if (!name) return false
+
+          if (
+            linkedUserId &&
+            allRegisteredUserIds.has(String(linkedUserId))
+          ) {
+            return false
+          }
+
+          if (allRegisteredNames.has(name)) {
+            return false
+          }
+
+          return true
         })
         .map(row => {
-          const linkedUserId = row.user_id || row.player_user_id || null
+          const linkedUserId =
+            row.user_id ||
+            row.player_user_id ||
+            null
+
           const relationship = linkedUserId
             ? relationshipMap.get(linkedUserId)
             : null
@@ -1131,7 +1276,8 @@ export default function CoachPlayers() {
             },
             publicSkillRow,
             relationship,
-            linkedUserId ? 'registered' : 'public'
+            linkedUserId ? 'registered' : 'public',
+            matchStatsByProfileId.get(row.id) || null
           )
         })
         .filter(player => player.id)
@@ -1156,6 +1302,25 @@ export default function CoachPlayers() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`coach-players-profile-updates-${user?.id || 'guest'}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'player_profiles',
+        },
+        () => loadData()
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadData, user?.id])
 
   const myPlayers = useMemo(
     () => players.filter(player => player.assigned),
@@ -1460,56 +1625,6 @@ export default function CoachPlayers() {
       setSubmittingReport(false)
     }
   }
-
-  const renderProfileDetails = player => (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-        gap: 12,
-      }}
-    >
-      {[
-        ['Category', player.category],
-        ['Level', player.level],
-        ['Playing style', player.style],
-        ['Dominant hand', player.dominantHand],
-        ['Club', player.club],
-        ['State', player.state || 'Not specified'],
-        ['Age', player.age || 'Not specified'],
-        ['Height', player.height ? `${player.height} cm` : 'Not specified'],
-        ['Weight', player.weight ? `${player.weight} kg` : 'Not specified'],
-      ].map(([label, value]) => (
-        <div
-          key={label}
-          style={{
-            padding: '10px 12px',
-            background: '#F7F9FF',
-            borderRadius: 10,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              color: '#8892A4',
-              marginBottom: 3,
-            }}
-          >
-            {label}
-          </div>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: '#0D1B3E',
-            }}
-          >
-            {value}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 
   return (
     <div>

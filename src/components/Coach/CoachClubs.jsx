@@ -2816,7 +2816,7 @@ function ManageClub({
   );
 }
 
-export default function Clubs() {
+export default function CoachClubs() {
   const [tab, setTab] = useState("find");
   const [clubs, setClubs] = useState([]);
   const [selectedClub, setSelectedClub] = useState(null);
@@ -3663,7 +3663,7 @@ export default function Clubs() {
 
     try {
       const { data: ownProfile } = await supabase
-        .from("player_profiles")
+        .from("coach_profiles")
         .select("display_name")
         .eq("user_id", user.id)
         .maybeSingle();
@@ -3673,7 +3673,7 @@ export default function Clubs() {
         user.user_metadata?.display_name ||
         user.user_metadata?.full_name ||
         user.email?.split("@")[0] ||
-        "Player";
+        "Coach";
 
       const { error } = await supabase
         .from("club_members")
@@ -3683,7 +3683,7 @@ export default function Clubs() {
             user_id: user.id,
             member_name: memberName,
             status: "pending",
-            member_role: "player",
+            member_role: "coach",
             requested_at: new Date().toISOString(),
             responded_at: null,
           },
@@ -3697,7 +3697,7 @@ export default function Clubs() {
         type: "club_join_request",
         title: "New club join request",
         message: `${memberName} requested to join ${club.shortName || club.name}.`,
-        actionUrl: "/clubs",
+        actionUrl: "/coach/clubs",
       });
 
       await fetchClubs();
@@ -3723,7 +3723,7 @@ export default function Clubs() {
       if (!user) throw new Error("Please log in again.");
 
       const { data: ownProfile } = await supabase
-        .from("player_profiles")
+        .from("coach_profiles")
         .select("display_name")
         .eq("user_id", user.id)
         .maybeSingle();
@@ -3752,7 +3752,7 @@ export default function Clubs() {
         type: "club_request_cancelled",
         title: "Club request cancelled",
         message: `${memberName} cancelled the request to join ${club.shortName || club.name}.`,
-        actionUrl: "/clubs",
+        actionUrl: "/coach/clubs",
       });
 
       await fetchClubs();
@@ -3789,7 +3789,7 @@ export default function Clubs() {
       );
 
       const { data: ownProfile } = await supabase
-        .from("player_profiles")
+        .from("coach_profiles")
         .select("display_name")
         .eq("user_id", user.id)
         .maybeSingle();
@@ -3806,7 +3806,7 @@ export default function Clubs() {
         type: "club_member_left",
         title: "Club member left",
         message: `${memberName} left ${club.shortName || club.name}.`,
-        actionUrl: "/clubs",
+        actionUrl: "/coach/clubs",
       });
 
       await fetchClubs();
@@ -3844,7 +3844,10 @@ export default function Clubs() {
           type: "club_request_accepted",
           title: "Club request accepted",
           message: `Your request to join ${ownedClub?.shortName || ownedClub?.name || "the club"} was accepted.`,
-          actionUrl: "/clubs",
+          actionUrl:
+            request.member_role === "coach"
+              ? "/coach/clubs"
+              : "/clubs",
         });
       } else {
         await sendClubNotification({
@@ -3852,7 +3855,10 @@ export default function Clubs() {
           type: "club_request_declined",
           title: "Club request declined",
           message: `Your request to join ${ownedClub?.shortName || ownedClub?.name || "the club"} was declined.`,
-          actionUrl: "/clubs",
+          actionUrl:
+            request.member_role === "coach"
+              ? "/coach/clubs"
+              : "/clubs",
         });
       }
 
@@ -4068,9 +4074,9 @@ export default function Clubs() {
           }}
         >
           <div>
-            <div className={styles.pageTitle}>Clubs</div>
+            <div className={styles.pageTitle}>Coach Clubs</div>
             <div className={styles.pageSub}>
-              Discover, join, create and manage badminton clubs
+              Join a club as a coach, or create and manage your own club
             </div>
           </div>
 
