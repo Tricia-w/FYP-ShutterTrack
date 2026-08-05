@@ -21,6 +21,7 @@ const emptyForm = () => ({
   date: '',
   startTime: '',
   endTime: '',
+  duration: '',
   venue: '',
   type: SESSION_TYPES[0],
   players: [],
@@ -31,6 +32,57 @@ const emptyForm = () => ({
 const formatTime = value => {
   if (!value) return ''
   return String(value).slice(0, 5)
+}
+
+const parseDurationMinutes = value => {
+  const text = String(value || '').toLowerCase().trim()
+  if (!text) return 0
+
+  const hourMatch = text.match(/(\d+(?:\.\d+)?)\s*h/)
+  const minuteMatch = text.match(/(\d+)\s*(?:min|m)\b/)
+
+  const hours = hourMatch ? Number(hourMatch[1]) : 0
+  const minutes = minuteMatch ? Number(minuteMatch[1]) : 0
+
+  if (hourMatch || minuteMatch) {
+    return Math.round(hours * 60 + minutes)
+  }
+
+  const numeric = Number(
+    text.match(/\d+(?:\.\d+)?/)?.[0] || 0
+  )
+
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+const calculateEndTime = (startTime, durationValue) => {
+  const durationMinutes =
+    parseDurationMinutes(durationValue)
+
+  if (!startTime || durationMinutes <= 0) return ''
+
+  const [hour, minute] = String(startTime)
+    .slice(0, 5)
+    .split(':')
+    .map(Number)
+
+  if (
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return ''
+  }
+
+  const totalMinutes =
+    (hour * 60 + minute + durationMinutes) %
+    (24 * 60)
+
+  const endHour = Math.floor(totalMinutes / 60)
+  const endMinute = totalMinutes % 60
+
+  return `${String(endHour).padStart(2, '0')}:${String(
+    endMinute
+  ).padStart(2, '0')}`
 }
 
 const calculateDuration = (start, end) => {
@@ -579,43 +631,17 @@ export default function CoachSessions() {
           )
         }
 
-        const { data: existingSchedule, error: scheduleLookupError } =
-          await supabase
-            .from('player_schedule')
-            .select('id')
-            .eq('user_id', assignment.player_user_id)
-            .eq('coach_session_id', session.id)
-            .maybeSingle()
+        const { error: scheduleDeleteError } = await supabase
+          .from('player_schedule')
+          .delete()
+          .eq('user_id', assignment.player_user_id)
+          .eq('coach_session_id', session.id)
 
-        if (scheduleLookupError) {
-          throw scheduleLookupError
-        }
-
-        const schedulePayload = {
-          user_id: assignment.player_user_id,
-          event_date: session.session_date,
-          event_time: session.start_time,
-          title: session.session_type,
-          location: session.venue || null,
-          schedule_type: 'Training',
-          notes: session.group_notes || null,
-          coach_session_id: session.id,
-          is_coach_created: true,
-        }
-
-        const scheduleQuery = existingSchedule?.id
-          ? supabase
-              .from('player_schedule')
-              .update(schedulePayload)
-              .eq('id', existingSchedule.id)
-          : supabase
-              .from('player_schedule')
-              .insert(schedulePayload)
-
-        const { error: scheduleError } = await scheduleQuery
-
-        if (scheduleError) {
-          throw scheduleError
+        if (scheduleDeleteError) {
+          console.error(
+            'Unable to remove absent player schedule:',
+            scheduleDeleteError
+          )
         }
       }
 
@@ -644,6 +670,35 @@ export default function CoachSessions() {
 
     setDeleting(true)
     setError('')
+
+    const [
+      scheduleDeleteResult,
+      trainingLogDeleteResult,
+    ] = await Promise.all([
+      supabase
+        .from('player_schedule')
+        .delete()
+        .eq('coach_session_id', deleteTarget.id),
+
+      supabase
+        .from('fitness_training_logs')
+        .delete()
+        .eq('coach_session_id', deleteTarget.id),
+    ])
+
+    if (scheduleDeleteResult.error) {
+      console.error(
+        'Unable to remove linked player schedules:',
+        scheduleDeleteResult.error
+      )
+    }
+
+    if (trainingLogDeleteResult.error) {
+      console.error(
+        'Unable to remove linked training logs:',
+        trainingLogDeleteResult.error
+      )
+    }
 
     const { error: deleteError } = await supabase
       .from('coach_training_sessions')
@@ -1705,12 +1760,20 @@ export default function CoachSessions() {
                   className={styles.formInput}
                   type="time"
                   value={sessionForm.startTime}
-                  onChange={event =>
+                  onChange={event => {
+                    const nextStartTime = event.target.value
+
                     setSessionForm(current => ({
                       ...current,
-                      startTime: event.target.value,
+                      startTime: nextStartTime,
+                      endTime: current.duration
+                        ? calculateEndTime(
+                            nextStartTime,
+                            current.duration
+                          )
+                        : current.endTime,
                     }))
-                  }
+                  }}
                 />
               </div>
             </div>
@@ -1722,12 +1785,20 @@ export default function CoachSessions() {
                   className={styles.formInput}
                   type="time"
                   value={sessionForm.endTime}
-                  onChange={event =>
+                  onChange={event => {
+                    const nextEndTime = event.target.value
+
                     setSessionForm(current => ({
                       ...current,
-                      endTime: event.target.value,
+                      endTime: nextEndTime,
+                      duration: current.startTime
+                        ? calculateDuration(
+                            current.startTime,
+                            nextEndTime
+                          )
+                        : current.duration,
                     }))
-                  }
+                  }}
                 />
               </div>
 
@@ -1747,6 +1818,47 @@ export default function CoachSessions() {
                     <option key={type}>{type}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>
+                Duration
+              </label>
+
+              <input
+                className={styles.formInput}
+                value={
+                  sessionForm.duration ||
+                  calculateDuration(
+                    sessionForm.startTime,
+                    sessionForm.endTime
+                  )
+                }
+                onChange={event => {
+                  const nextDuration = event.target.value
+
+                  setSessionForm(current => ({
+                    ...current,
+                    duration: nextDuration,
+                    endTime: calculateEndTime(
+                      current.startTime,
+                      nextDuration
+                    ),
+                  }))
+                }}
+                placeholder="e.g. 2h, 1h 30min or 45min"
+              />
+
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 10,
+                  color: 'var(--text-muted, #8892A4)',
+                }}
+              >
+                Entering a duration automatically sets the end time.
+                Changing the end time recalculates the duration.
               </div>
             </div>
 

@@ -281,7 +281,8 @@ export default function AdminDashboard({
       >
         <div
           style={{
-            background: "#FFFFFF",
+            background: "var(--card, #FFFFFF)",
+            border: "1px solid var(--line, transparent)",
             borderRadius: 16,
             boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
             padding: 20,
@@ -291,7 +292,7 @@ export default function AdminDashboard({
             style={{
               fontSize: 17,
               fontWeight: 800,
-              color: "#0D1B3E",
+              color: "var(--text, #0D1B3E)",
             }}
           >
             User role distribution
@@ -300,7 +301,7 @@ export default function AdminDashboard({
           <div
             style={{
               fontSize: 12,
-              color: "#8892A4",
+              color: "var(--text-muted, #8892A4)",
               marginTop: 3,
               marginBottom: 22,
             }}
@@ -338,7 +339,7 @@ export default function AdminDashboard({
                       style={{
                         fontSize: 13,
                         fontWeight: 700,
-                        color: "#334155",
+                        color: "var(--text-soft, #334155)",
                       }}
                     >
                       {item.label}
@@ -348,7 +349,7 @@ export default function AdminDashboard({
                       style={{
                         fontSize: 13,
                         fontWeight: 800,
-                        color: "#0D1B3E",
+                        color: "var(--text, #0D1B3E)",
                       }}
                     >
                       {item.value}
@@ -360,7 +361,7 @@ export default function AdminDashboard({
                       width: "100%",
                       height: 10,
                       borderRadius: 999,
-                      background: "#EEF1F7",
+                      background: "var(--line, #EEF1F7)",
                       overflow: "hidden",
                     }}
                   >
@@ -382,7 +383,8 @@ export default function AdminDashboard({
 
         <div
           style={{
-            background: "#FFFFFF",
+            background: "var(--card, #FFFFFF)",
+            border: "1px solid var(--line, transparent)",
             borderRadius: 16,
             boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
             padding: 20,
@@ -392,7 +394,7 @@ export default function AdminDashboard({
             style={{
               fontSize: 17,
               fontWeight: 800,
-              color: "#0D1B3E",
+              color: "var(--text, #0D1B3E)",
             }}
           >
             New registrations
@@ -401,7 +403,7 @@ export default function AdminDashboard({
           <div
             style={{
               fontSize: 12,
-              color: "#8892A4",
+              color: "var(--text-muted, #8892A4)",
               marginTop: 3,
             }}
           >
@@ -444,7 +446,7 @@ export default function AdminDashboard({
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: "#0D1B3E",
+                      color: "var(--text, #0D1B3E)",
                       marginBottom: 7,
                     }}
                   >
@@ -463,7 +465,7 @@ export default function AdminDashboard({
                       borderRadius: "9px 9px 3px 3px",
                       background:
                         item.count === 0
-                          ? "#E5EAF4"
+                          ? "var(--line, #E5EAF4)"
                           : "#1A5FFF",
                       transition: "height 0.3s ease",
                     }}
@@ -472,7 +474,7 @@ export default function AdminDashboard({
                   <div
                     style={{
                       fontSize: 10,
-                      color: "#8892A4",
+                      color: "var(--text-muted, #8892A4)",
                       marginTop: 9,
                       whiteSpace: "nowrap",
                     }}
@@ -490,13 +492,14 @@ export default function AdminDashboard({
         style={{
           display: "grid",
           gridTemplateColumns:
-            "minmax(0, 1.25fr) minmax(280px, 0.75fr)",
+            "repeat(auto-fit, minmax(320px, 1fr))",
           gap: 18,
         }}
       >
         <div
           style={{
-            background: "#FFFFFF",
+            background: "var(--card, #FFFFFF)",
+            border: "1px solid var(--line, transparent)",
             borderRadius: 16,
             boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
             padding: 20,
@@ -516,7 +519,7 @@ export default function AdminDashboard({
                 style={{
                   fontSize: 17,
                   fontWeight: 800,
-                  color: "#0D1B3E",
+                  color: "var(--text, #0D1B3E)",
                 }}
               >
                 Recent activity
@@ -525,7 +528,7 @@ export default function AdminDashboard({
               <div
                 style={{
                   fontSize: 12,
-                  color: "#8892A4",
+                  color: "var(--text-muted, #8892A4)",
                   marginTop: 3,
                 }}
               >
@@ -539,8 +542,9 @@ export default function AdminDashboard({
               style={{
                 ...buttonBase,
                 padding: "8px 12px",
-                background: "#EEF3FF",
-                color: "#1A5FFF",
+                background: "var(--soft, #EEF3FF)",
+                color: "#6EA0FF",
+                border: "1px solid var(--line, transparent)",
               }}
             >
               View all
@@ -557,7 +561,7 @@ export default function AdminDashboard({
                   padding: "13px 0",
                   borderBottom:
                     index < recentLogs.length - 1
-                      ? "1px solid #EEF1F8"
+                      ? "1px solid var(--line, #EEF1F8)"
                       : "none",
                 }}
               >
@@ -567,8 +571,8 @@ export default function AdminDashboard({
                     minWidth: 36,
                     height: 36,
                     borderRadius: 10,
-                    background: "#EEF3FF",
-                    color: "#1A5FFF",
+                    background: "var(--soft, #EEF3FF)",
+                    color: "#6EA0FF",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -583,7 +587,7 @@ export default function AdminDashboard({
                     style={{
                       fontSize: 13,
                       fontWeight: 800,
-                      color: "#0D1B3E",
+                      color: "var(--text, #0D1B3E)",
                     }}
                   >
                     {log.action || "Administrative update"}
@@ -592,7 +596,7 @@ export default function AdminDashboard({
                   <div
                     style={{
                       fontSize: 12,
-                      color: "#6B7280",
+                      color: "var(--text-muted, #6B7280)",
                       marginTop: 2,
                     }}
                   >
@@ -602,7 +606,7 @@ export default function AdminDashboard({
                   <div
                     style={{
                       fontSize: 11,
-                      color: "#A0A8B8",
+                      color: "var(--text-muted, #A0A8B8)",
                       marginTop: 4,
                     }}
                   >
@@ -621,7 +625,7 @@ export default function AdminDashboard({
                 alignItems: "center",
                 justifyContent: "center",
                 textAlign: "center",
-                color: "#8892A4",
+                color: "var(--text-muted, #8892A4)",
               }}
             >
               <div
@@ -629,8 +633,8 @@ export default function AdminDashboard({
                   width: 42,
                   height: 42,
                   borderRadius: 12,
-                  background: "#F1F5FF",
-                  color: "#1A5FFF",
+                  background: "var(--soft, #F1F5FF)",
+                  color: "#6EA0FF",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -645,7 +649,7 @@ export default function AdminDashboard({
                 style={{
                   fontSize: 13,
                   fontWeight: 800,
-                  color: "#334155",
+                  color: "var(--text-soft, #334155)",
                 }}
               >
                 No recent activity
@@ -665,7 +669,8 @@ export default function AdminDashboard({
 
         <div
           style={{
-            background: "#FFFFFF",
+            background: "var(--card, #FFFFFF)",
+            border: "1px solid var(--line, transparent)",
             borderRadius: 16,
             boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
             padding: 20,
@@ -675,7 +680,7 @@ export default function AdminDashboard({
             style={{
               fontSize: 17,
               fontWeight: 800,
-              color: "#0D1B3E",
+              color: "var(--text, #0D1B3E)",
             }}
           >
             Attention required
@@ -684,7 +689,7 @@ export default function AdminDashboard({
           <div
             style={{
               fontSize: 12,
-              color: "#8892A4",
+              color: "var(--text-muted, #8892A4)",
               marginTop: 3,
             }}
           >
@@ -699,8 +704,9 @@ export default function AdminDashboard({
               marginTop: 18,
               padding: 16,
               borderRadius: 13,
-              border: "1px solid #E6EBF5",
-              background: "#FAFBFF",
+              border: "1px solid var(--line, #E6EBF5)",
+              background: "var(--soft, #FAFBFF)",
+              color: "var(--text, #0D1B3E)",
               cursor: "pointer",
               textAlign: "left",
             }}
@@ -718,7 +724,7 @@ export default function AdminDashboard({
                   style={{
                     fontSize: 13,
                     fontWeight: 800,
-                    color: "#0D1B3E",
+                    color: "var(--text, #0D1B3E)",
                   }}
                 >
                   Coach verification
@@ -727,7 +733,7 @@ export default function AdminDashboard({
                 <div
                   style={{
                     fontSize: 11,
-                    color: "#8892A4",
+                    color: "var(--text-muted, #8892A4)",
                     marginTop: 4,
                   }}
                 >
@@ -749,8 +755,9 @@ export default function AdminDashboard({
               marginTop: 10,
               padding: 16,
               borderRadius: 13,
-              border: "1px solid #E6EBF5",
-              background: "#FAFBFF",
+              border: "1px solid var(--line, #E6EBF5)",
+              background: "var(--soft, #FAFBFF)",
+              color: "var(--text, #0D1B3E)",
               cursor: "pointer",
               textAlign: "left",
             }}
@@ -768,7 +775,7 @@ export default function AdminDashboard({
                   style={{
                     fontSize: 13,
                     fontWeight: 800,
-                    color: "#0D1B3E",
+                    color: "var(--text, #0D1B3E)",
                   }}
                 >
                   User reports
@@ -777,7 +784,7 @@ export default function AdminDashboard({
                 <div
                   style={{
                     fontSize: 11,
-                    color: "#8892A4",
+                    color: "var(--text-muted, #8892A4)",
                     marginTop: 4,
                   }}
                 >
@@ -796,14 +803,14 @@ export default function AdminDashboard({
               marginTop: 14,
               padding: 16,
               borderRadius: 13,
-              background: "#F7F9FC",
-              border: "1px solid #EEF1F7",
+              background: "var(--soft, #F7F9FC)",
+              border: "1px solid var(--line, #EEF1F7)",
             }}
           >
             <div
               style={{
                 fontSize: 12,
-                color: "#64748B",
+                color: "var(--text-muted, #64748B)",
               }}
             >
               New users this month
@@ -814,7 +821,7 @@ export default function AdminDashboard({
                 marginTop: 5,
                 fontSize: 24,
                 fontWeight: 900,
-                color: "#0D1B3E",
+                color: "var(--text, #0D1B3E)",
               }}
             >
               {statistics.newUsersThisMonth}

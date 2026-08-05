@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect } from "react";
+import "./AdminTheme.css";
 
 export const ROLE_META = {
   Admin: { color: "#7C3AED", bg: "#EDE9FE" },
@@ -21,13 +22,13 @@ export const STATUS_META = {
 export const inputStyle = {
   width: "100%",
   padding: "10px 14px",
-  border: "1.5px solid #DDE3EF",
+  border: "1.5px solid var(--line, #DDE3EF)",
   borderRadius: 10,
   fontSize: 13,
   outline: "none",
   boxSizing: "border-box",
-  color: "#0D1B3E",
-  background: "#fff",
+  color: "var(--text, #0D1B3E)",
+  background: "var(--input, var(--card, #FFFFFF))",
 };
 
 export const buttonBase = {
@@ -75,7 +76,10 @@ export function Badge({ value, type = "status" }) {
   const meta =
     type === "role"
       ? ROLE_META[value] || ROLE_META.Player
-      : STATUS_META[value] || { color: "#6B7280", bg: "#F3F4F6" };
+      : STATUS_META[value] || {
+          color: "#6B7280",
+          bg: "#F3F4F6",
+        };
 
   return (
     <span
@@ -103,7 +107,7 @@ export function Modal({ title, onClose, children, maxWidth = 500 }) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(13,27,62,0.45)",
+        background: "rgba(5, 12, 24, 0.66)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -118,10 +122,12 @@ export function Modal({ title, onClose, children, maxWidth = 500 }) {
           maxWidth,
           maxHeight: "90vh",
           overflowY: "auto",
-          background: "#fff",
+          background: "var(--card, #FFFFFF)",
+          color: "var(--text, #0D1B3E)",
+          border: "1px solid var(--line, #EEF1F8)",
           borderRadius: 20,
           padding: 26,
-          boxShadow: "0 15px 50px rgba(13,27,62,0.2)",
+          boxShadow: "0 18px 55px rgba(0, 0, 0, 0.32)",
         }}
       >
         <div
@@ -133,7 +139,13 @@ export function Modal({ title, onClose, children, maxWidth = 500 }) {
             marginBottom: 22,
           }}
         >
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#0D1B3E" }}>
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 800,
+              color: "var(--text, #0D1B3E)",
+            }}
+          >
             {title}
           </div>
 
@@ -144,8 +156,8 @@ export function Modal({ title, onClose, children, maxWidth = 500 }) {
               ...buttonBase,
               width: 34,
               height: 34,
-              background: "#EEF1F8",
-              color: "#8892A4",
+              background: "var(--soft, #EEF1F8)",
+              color: "var(--text-muted, #8892A4)",
             }}
           >
             ✕
@@ -167,7 +179,7 @@ export function Field({ label, children }) {
           marginBottom: 6,
           fontSize: 11,
           fontWeight: 800,
-          color: "#8892A4",
+          color: "var(--text-muted, #8892A4)",
           textTransform: "uppercase",
           letterSpacing: "0.5px",
         }}
@@ -179,26 +191,71 @@ export function Field({ label, children }) {
   );
 }
 
-export function SectionHeader({ title, subtitle, action }) {
+export function SectionHeader({
+  title,
+  subtitle,
+  action,
+  children,
+}) {
+  useEffect(() => {
+    document.body.classList.add("admin-theme-active");
+
+    return () => {
+      document.body.classList.remove("admin-theme-active");
+    };
+  }, []);
+
   return (
     <div
+      className="admin-section-header"
       style={{
         display: "flex",
         justifyContent: "space-between",
         alignItems: "flex-start",
         gap: 16,
         marginBottom: 22,
+        flexWrap: "wrap",
       }}
     >
       <div>
-        <div style={{ fontSize: 24, fontWeight: 800, color: "#0D1B3E" }}>
+        <div
+          style={{
+            fontSize: 24,
+            fontWeight: 800,
+            lineHeight: 1.2,
+            color: "var(--text, #0D1B3E)",
+          }}
+        >
           {title}
         </div>
-        <div style={{ fontSize: 13, color: "#8892A4", marginTop: 4 }}>
-          {subtitle}
-        </div>
+
+        {subtitle && (
+          <div
+            style={{
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: "var(--text-muted, #8892A4)",
+              marginTop: 4,
+            }}
+          >
+            {subtitle}
+          </div>
+        )}
       </div>
-      {action}
+
+      {(action || children) && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          {action}
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -214,11 +271,12 @@ export function SummaryCard({
     <div
       style={{
         background: dark
-          ? "linear-gradient(135deg,#0D1B3E,#1C3160)"
-          : "#fff",
+          ? "linear-gradient(135deg,#172B55,#203B70)"
+          : "var(--card, #FFFFFF)",
+        border: "1px solid var(--line, transparent)",
         borderRadius: 16,
         padding: "20px 22px",
-        boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
+        boxShadow: "0 5px 18px rgba(0, 0, 0, 0.08)",
       }}
     >
       <div
@@ -226,27 +284,33 @@ export function SummaryCard({
           fontSize: 30,
           lineHeight: 1,
           fontWeight: 800,
-          color: dark ? "#fff" : color,
+          color: dark ? "#FFFFFF" : color,
         }}
       >
         {value}
       </div>
+
       <div
         style={{
           marginTop: 7,
           fontSize: 12,
           fontWeight: 700,
-          color: dark ? "rgba(255,255,255,0.7)" : "#6B7280",
+          color: dark
+            ? "rgba(255,255,255,0.78)"
+            : "var(--text-muted, #6B7280)",
         }}
       >
         {label}
       </div>
+
       {helper && (
         <div
           style={{
             marginTop: 5,
             fontSize: 11,
-            color: dark ? "rgba(255,255,255,0.5)" : "#A0A8B8",
+            color: dark
+              ? "rgba(255,255,255,0.55)"
+              : "var(--text-muted, #A0A8B8)",
           }}
         >
           {helper}
@@ -260,9 +324,11 @@ export function TableCard({ children }) {
   return (
     <div
       style={{
-        background: "#fff",
+        background: "var(--card, #FFFFFF)",
+        color: "var(--text, #0D1B3E)",
+        border: "1px solid var(--line, transparent)",
         borderRadius: 16,
-        boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
+        boxShadow: "0 5px 18px rgba(0, 0, 0, 0.08)",
         overflowX: "auto",
       }}
     >
@@ -277,7 +343,7 @@ export function EmptyState({ text }) {
       style={{
         padding: 42,
         textAlign: "center",
-        color: "#8892A4",
+        color: "var(--text-muted, #8892A4)",
         fontSize: 13,
       }}
     >

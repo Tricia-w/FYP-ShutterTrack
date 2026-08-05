@@ -13,6 +13,14 @@ import {
 
 const DEFAULT_SKILL = 50
 
+function getLocalISODate(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
 const REPORT_REASON_OPTIONS = [
   'Harassment or bullying',
   'Fake or misleading profile',
@@ -29,6 +37,152 @@ function getPlayerId(row) {
 
 function normalizeMatchResult(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function getNumericValue(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return null
+  }
+
+  const directNumber = Number(value)
+
+  if (Number.isFinite(directNumber)) {
+    return directNumber
+  }
+
+  const numberMatch = String(value).match(/\d+(?:\.\d+)?/)
+
+  if (!numberMatch) return null
+
+  const parsedNumber = Number(numberMatch[0])
+
+  return Number.isFinite(parsedNumber)
+    ? parsedNumber
+    : null
+}
+
+function getProfileAge(profile) {
+  const savedAge = getNumericValue(profile?.age)
+
+  if (savedAge !== null && savedAge >= 0) {
+    return savedAge
+  }
+
+  const birthValue =
+    profile?.date_of_birth ||
+    profile?.dateOfBirth ||
+    profile?.dob ||
+    null
+
+  if (!birthValue) return null
+
+  const birthDate = new Date(birthValue)
+
+  if (Number.isNaN(birthDate.getTime())) {
+    return null
+  }
+
+  const today = new Date()
+  let age =
+    today.getFullYear() -
+    birthDate.getFullYear()
+
+  const monthDifference =
+    today.getMonth() -
+    birthDate.getMonth()
+
+  if (
+    monthDifference < 0 ||
+    (
+      monthDifference === 0 &&
+      today.getDate() < birthDate.getDate()
+    )
+  ) {
+    age -= 1
+  }
+
+  return age >= 0 ? age : null
+}
+
+function getProfileExperienceYears(profile) {
+  const directExperienceFields = [
+    profile?.experience_years,
+    profile?.years_experience,
+    profile?.playing_experience_years,
+    profile?.playing_experience,
+    profile?.experience,
+  ]
+
+  for (const value of directExperienceFields) {
+    const parsedValue = getNumericValue(value)
+
+    if (parsedValue !== null && parsedValue >= 0) {
+      return Math.round(parsedValue)
+    }
+  }
+
+  const playingSinceValue =
+    profile?.playing_since ||
+    profile?.since ||
+    profile?.started_playing_year ||
+    profile?.start_year ||
+    null
+
+  if (playingSinceValue) {
+    const textValue =
+      String(playingSinceValue).trim()
+
+    if (/^\d{4}$/.test(textValue)) {
+      const startYear = Number(textValue)
+      const currentYear = new Date().getFullYear()
+
+      if (
+        startYear >= 1900 &&
+        startYear <= currentYear
+      ) {
+        return currentYear - startYear
+      }
+    }
+
+    const startDate = new Date(playingSinceValue)
+
+    if (!Number.isNaN(startDate.getTime())) {
+      const currentYear = new Date().getFullYear()
+      const startYear = startDate.getFullYear()
+
+      if (
+        startYear >= 1900 &&
+        startYear <= currentYear
+      ) {
+        return currentYear - startYear
+      }
+    }
+  }
+
+  const currentAge = getProfileAge(profile)
+  const startedPlayingAge = getNumericValue(
+    profile?.started_playing_age ??
+      profile?.starting_age ??
+      profile?.start_age
+  )
+
+  if (
+    currentAge !== null &&
+    startedPlayingAge !== null &&
+    startedPlayingAge >= 0 &&
+    startedPlayingAge <= currentAge
+  ) {
+    return Math.max(
+      0,
+      Math.round(currentAge - startedPlayingAge)
+    )
+  }
+
+  return null
 }
 
 function buildPlayerMatchStats(matches = []) {
@@ -209,15 +363,8 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered',
       profile?.streak ||
       profile?.current_streak ||
       'W0',
-    playingSince:
-      profile?.playing_since ||
-      profile?.since ||
-      'Not specified',
-    preferredCourt:
-      profile?.preferred_court ||
-      profile?.court ||
-      'Not specified',
-
+    experienceYears:
+      getProfileExperienceYears(profile),
     smash: Number(skillRow?.smash ?? DEFAULT_SKILL),
     defense: Number(skillRow?.defense ?? DEFAULT_SKILL),
     footwork: Number(skillRow?.footwork ?? DEFAULT_SKILL),
@@ -1304,14 +1451,26 @@ export default function CoachPlayers() {
   }, [loadData])
 
   useEffect(() => {
+    if (!user?.id) return undefined
+
     const channel = supabase
-      .channel(`coach-players-profile-updates-${user?.id || 'guest'}`)
+      .channel(`coach-players-updates-${user.id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'player_profiles',
+        },
+        () => loadData()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'coach_player_relationships',
+          filter: `coach_user_id=eq.${user.id}`,
         },
         () => loadData()
       )
@@ -1328,7 +1487,22 @@ export default function CoachPlayers() {
   )
 
   const pendingPlayers = useMemo(
-    () => players.filter(player => player.pending),
+    () =>
+      players.filter(
+        player =>
+          player.pending &&
+          player.requestedBy !== 'coach'
+      ),
+    [players]
+  )
+
+  const outgoingRequests = useMemo(
+    () =>
+      players.filter(
+        player =>
+          player.pending &&
+          player.requestedBy === 'coach'
+      ),
     [players]
   )
 
@@ -1427,9 +1601,10 @@ export default function CoachPlayers() {
           {
             player_user_id: player.id,
             coach_user_id: user.id,
-            status: 'accepted',
+            status: 'pending',
+            requested_by: 'coach',
             message: null,
-            responded_at: new Date().toISOString(),
+            responded_at: null,
           },
           {
             onConflict: 'player_user_id,coach_user_id',
@@ -1440,15 +1615,47 @@ export default function CoachPlayers() {
 
       if (relationshipError) throw relationshipError
 
+      const coachName =
+        user?.user_metadata?.display_name ||
+        user?.user_metadata?.full_name ||
+        user?.user_metadata?.name ||
+        user?.email ||
+        'A coach'
+
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: player.id,
+          title: 'New coaching request',
+          message: `${coachName} sent you a coaching request.`,
+          type: 'info',
+          source_type: 'coach_request_received',
+          action_url: '/players?tab=coach',
+          is_read: false,
+        })
+
+      if (notificationError) {
+        console.error(
+          'Coach request notification error:',
+          notificationError
+        )
+      }
+
       updatePlayerRelationship(player.id, {
         relationshipId: data.id,
-        relationshipStatus: 'accepted',
-        assigned: true,
-        pending: false,
+        relationshipStatus: 'pending',
+        requestedBy: 'coach',
+        assigned: false,
+        pending: true,
       })
 
       setPlayerSearch('')
-      setSuccess(`${player.name} was added to My Players.`)
+
+      setSuccess(
+        notificationError
+          ? `The coaching request was sent to ${player.name}, but the notification could not be created.`
+          : `A coaching request and notification were sent to ${player.name}. They must accept it before appearing in My Players.`
+      )
     } catch (addError) {
       console.error('Add player error:', addError)
       setError(addError.message || 'Unable to add player.')
@@ -1524,9 +1731,11 @@ export default function CoachPlayers() {
     }
   }
 
-  const handleRemove = async player => {
+  const handleCancelOutgoingRequest = async player => {
+    if (!user?.id || !player?.id) return
+
     const confirmed = window.confirm(
-      `Remove ${player.name} from My Players?`
+      `Cancel the coaching request sent to ${player.name}?`
     )
 
     if (!confirmed) return
@@ -1535,6 +1744,92 @@ export default function CoachPlayers() {
     setSavingId(player.id)
 
     try {
+      const { error: cancelError } = await supabase
+        .from('coach_player_relationships')
+        .update({
+          status: 'cancelled',
+          responded_at: new Date().toISOString(),
+        })
+        .eq('coach_user_id', user.id)
+        .eq('player_user_id', player.id)
+        .eq('status', 'pending')
+        .eq('requested_by', 'coach')
+
+      if (cancelError) throw cancelError
+
+      updatePlayerRelationship(player.id, {
+        relationshipStatus: 'removed',
+        requestedBy: 'coach',
+        assigned: false,
+        pending: false,
+      })
+
+      if (profilePlayerId === player.id) {
+        setProfilePlayerId(null)
+      }
+
+      setSuccess(
+        `The coaching request to ${player.name} was cancelled.`
+      )
+    } catch (cancelError) {
+      console.error('Cancel outgoing request error:', cancelError)
+      setError(
+        cancelError.message ||
+        'Unable to cancel the coaching request.'
+      )
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const handleRemove = async player => {
+    const confirmed = window.confirm(
+      `Remove ${player.name} from My Players? Their future coach-created sessions will also be removed. Completed training history will be kept.`
+    )
+
+    if (!confirmed) return
+
+    clearMessages()
+    setSavingId(player.id)
+
+    try {
+      const today = getLocalISODate()
+
+      const {
+        data: futureCoachSessions,
+        error: futureSessionsError,
+      } = await supabase
+        .from('coach_training_sessions')
+        .select('id, session_date')
+        .eq('coach_user_id', user.id)
+        .gte('session_date', today)
+
+      if (futureSessionsError) throw futureSessionsError
+
+      const futureSessionIds = (
+        futureCoachSessions || []
+      )
+        .map(session => session.id)
+        .filter(Boolean)
+
+      if (futureSessionIds.length > 0) {
+        const { error: scheduleDeleteError } = await supabase
+          .from('player_schedule')
+          .delete()
+          .eq('user_id', player.id)
+          .in('coach_session_id', futureSessionIds)
+
+        if (scheduleDeleteError) throw scheduleDeleteError
+
+        const { error: assignmentDeleteError } = await supabase
+          .from('coach_training_session_players')
+          .delete()
+          .eq('player_user_id', player.id)
+          .in('session_id', futureSessionIds)
+
+        if (assignmentDeleteError) throw assignmentDeleteError
+      }
+
       const { error: removeError } = await supabase
         .from('coach_player_relationships')
         .update({
@@ -1546,6 +1841,31 @@ export default function CoachPlayers() {
 
       if (removeError) throw removeError
 
+      const coachName =
+        user?.user_metadata?.display_name ||
+        user?.user_metadata?.full_name ||
+        user?.user_metadata?.name ||
+        user?.email ||
+        'Your coach'
+
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: player.id,
+          title: 'Removed from coach',
+          message: `${coachName} removed you from their player list. Future coach-created sessions were removed, while your completed training history was kept.`,
+          source_type: 'coach_relationship_removed',
+          action_url: '/player/players',
+          is_read: false,
+        })
+
+      if (notificationError) {
+        console.error(
+          'Remove player notification error:',
+          notificationError
+        )
+      }
+
       updatePlayerRelationship(player.id, {
         relationshipStatus: 'removed',
         assigned: false,
@@ -1556,10 +1876,21 @@ export default function CoachPlayers() {
         setSelectedPlayerId(null)
       }
 
-      setSuccess(`${player.name} was removed from My Players.`)
+      if (profilePlayerId === player.id) {
+        setProfilePlayerId(null)
+      }
+
+      setSuccess(
+        notificationError
+          ? `${player.name} was removed and their future sessions were cleared, but the notification could not be sent.`
+          : `${player.name} was removed from My Players. Their future sessions were cleared and a notification was sent.`
+      )
     } catch (removeError) {
       console.error('Remove player error:', removeError)
-      setError(removeError.message || 'Unable to remove player.')
+      setError(
+        removeError.message ||
+        'Unable to remove the player and clean up future sessions.'
+      )
     } finally {
       setSavingId(null)
     }
@@ -1849,7 +2180,95 @@ export default function CoachPlayers() {
                 color: '#8892A4',
               }}
             >
-              No pending player requests.
+              No incoming player requests.
+            </div>
+          )}
+
+          {showRequests && outgoingRequests.length > 0 && (
+            <div
+              className={styles.card}
+              style={{ marginBottom: 14 }}
+            >
+              <div
+                className={styles.cardTitle}
+                style={{ marginBottom: 12 }}
+              >
+                Requests sent ({outgoingRequests.length})
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                {outgoingRequests.map(player => (
+                  <div
+                    key={player.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '12px',
+                      background: '#F7F9FF',
+                      borderRadius: 10,
+                    }}
+                  >
+                    <Avatar name={player.name} size={38} />
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: '#0D1B3E',
+                        }}
+                      >
+                        {player.name}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: '#8892A4',
+                          marginTop: 2,
+                        }}
+                      >
+                        Awaiting player response
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      onClick={() => setProfilePlayerId(player.id)}
+                      style={{ fontSize: 11 }}
+                    >
+                      View profile
+                    </button>
+
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      disabled={savingId === player.id}
+                      onClick={() =>
+                        handleCancelOutgoingRequest(player)
+                      }
+                      style={{
+                        fontSize: 11,
+                        color: '#DC2626',
+                        borderColor: '#FECACA',
+                        background: '#FEF2F2',
+                      }}
+                    >
+                      {savingId === player.id
+                        ? 'Cancelling...'
+                        : 'Cancel request'}
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -2077,13 +2496,42 @@ export default function CoachPlayers() {
                       {searchResults.map(player => (
                         <div
                           key={player.id}
+                          role="button"
+                          tabIndex={0}
+                          title={`View ${player.name}'s profile`}
+                          onClick={() => setProfilePlayerId(player.id)}
+                          onKeyDown={event => {
+                            if (
+                              event.key === 'Enter' ||
+                              event.key === ' '
+                            ) {
+                              event.preventDefault()
+                              setProfilePlayerId(player.id)
+                            }
+                          }}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
                             gap: 10,
                             padding: '10px 12px',
-                            background: '#F7F9FF',
+                            background: 'var(--soft, #F7F9FF)',
+                            border: '1px solid transparent',
                             borderRadius: 10,
+                            cursor: 'pointer',
+                            transition:
+                              'background 0.15s ease, border-color 0.15s ease',
+                          }}
+                          onMouseEnter={event => {
+                            event.currentTarget.style.background =
+                              'color-mix(in srgb, #1A5FFF 8%, var(--card, #FFFFFF))'
+                            event.currentTarget.style.borderColor =
+                              'color-mix(in srgb, #1A5FFF 28%, var(--line, #DDE3EF))'
+                          }}
+                          onMouseLeave={event => {
+                            event.currentTarget.style.background =
+                              'var(--soft, #F7F9FF)'
+                            event.currentTarget.style.borderColor =
+                              'transparent'
                           }}
                         >
                           <Avatar name={player.name} size={32} />
@@ -2111,30 +2559,21 @@ export default function CoachPlayers() {
 
                           <LevelBadge level={player.level} />
 
-                          <button
-                            type="button"
-                            className={styles.btnOutline}
-                            onClick={() => setProfilePlayerId(player.id)}
-                            style={{
-                              fontSize: 11,
-                              padding: '4px 10px',
-                            }}
-                          >
-                            Profile
-                          </button>
-
                           {player.isRegistered ? (
                             <button
                               type="button"
                               className={styles.btnPrimary}
                               disabled={savingId === player.id}
-                              onClick={() => handleAddPlayer(player)}
+                              onClick={event => {
+                                event.stopPropagation()
+                                handleAddPlayer(player)
+                              }}
                               style={{
                                 fontSize: 11,
                                 padding: '4px 12px',
                               }}
                             >
-                              {savingId === player.id ? 'Saving...' : '+ Add'}
+                              {savingId === player.id ? 'Sending...' : '+ Request'}
                             </button>
                           ) : (
                             <span
@@ -2616,12 +3055,17 @@ export default function CoachPlayers() {
                     value={profilePlayer.state}
                   />
                   <ProfileInfoItem
-                    label="Playing since"
-                    value={profilePlayer.playingSince}
-                  />
-                  <ProfileInfoItem
-                    label="Preferred court"
-                    value={profilePlayer.preferredCourt}
+                    label="Experience"
+                    value={
+                      profilePlayer.experienceYears !== null &&
+                      profilePlayer.experienceYears !== undefined
+                        ? `${profilePlayer.experienceYears} ${
+                            profilePlayer.experienceYears === 1
+                              ? 'year'
+                              : 'years'
+                          }`
+                        : 'Not specified'
+                    }
                   />
                   <ProfileInfoItem
                     label="Age"
@@ -2670,6 +3114,27 @@ export default function CoachPlayers() {
                   </button>
                 )}
 
+                {profilePlayer.pending &&
+                  profilePlayer.requestedBy === 'coach' && (
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      disabled={savingId === profilePlayer.id}
+                      onClick={() =>
+                        handleCancelOutgoingRequest(profilePlayer)
+                      }
+                      style={{
+                        color: '#DC2626',
+                        borderColor: '#FECACA',
+                        background: '#FEF2F2',
+                      }}
+                    >
+                      {savingId === profilePlayer.id
+                        ? 'Cancelling...'
+                        : 'Cancel request'}
+                    </button>
+                  )}
+
                 {!profilePlayer.assigned &&
                   !profilePlayer.pending &&
                   profilePlayer.isRegistered && (
@@ -2680,8 +3145,8 @@ export default function CoachPlayers() {
                       onClick={() => handleAddPlayer(profilePlayer)}
                     >
                       {savingId === profilePlayer.id
-                        ? 'Adding...'
-                        : '+ Add to My Players'}
+                        ? 'Sending...'
+                        : '+ Send coaching request'}
                     </button>
                   )}
               </div>

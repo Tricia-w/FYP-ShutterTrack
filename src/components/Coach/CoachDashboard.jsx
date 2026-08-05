@@ -34,6 +34,16 @@ const averageValues = (row, fields) => {
     : 0
 }
 
+const hasMeaningfulProgressNote = (progress, assessment) =>
+  Boolean(
+    String(progress?.coach_comment || '').trim() ||
+    String(progress?.focus_area || '').trim() ||
+    String(progress?.progress_status || '').trim() ||
+    String(progress?.injury_recommendation || '').trim() ||
+    String(assessment?.performance_comment || '').trim() ||
+    String(assessment?.fitness_comment || '').trim()
+  )
+
 const formatDate = value => {
   if (!value) return '-'
 
@@ -482,40 +492,30 @@ export default function CoachDashboard() {
 
   const playerOverview = useMemo(
     () =>
-      students.map(student => {
-        const coachAssessment =
-          assessmentMap.get(String(student.id)) || null
+      students.map(student => ({
+        ...student,
+        performanceAverage: averageValues(
+          student.rating,
+          PERFORMANCE_FIELDS
+        ),
+      })),
+    [students]
+  )
 
-        const performanceAverage = coachAssessment
-          ? averageValues(coachAssessment, PERFORMANCE_FIELDS)
-          : averageValues(student.rating, PERFORMANCE_FIELDS)
-
-        const fitnessAverage = coachAssessment
-          ? averageValues(coachAssessment, FITNESS_FIELDS)
-          : 0
-
-        return {
-          ...student,
-          overallAverage:
-            performanceAverage && fitnessAverage
-              ? Math.round((performanceAverage + fitnessAverage) / 2)
-              : performanceAverage || fitnessAverage || 0,
-        }
-      }),
-    [students, assessmentMap]
+  const progressNotes = useMemo(
+    () =>
+      progressRows.filter(row =>
+        hasMeaningfulProgressNote(
+          row,
+          assessmentMap.get(String(row.player_user_id))
+        )
+      ),
+    [progressRows, assessmentMap]
   )
 
   const recentNotes = useMemo(
-    () =>
-      progressRows
-        .filter(
-          row =>
-            row.coach_comment ||
-            row.focus_area ||
-            row.progress_status
-        )
-        .slice(0, 3),
-    [progressRows]
+    () => progressNotes.slice(0, 3),
+    [progressNotes]
   )
 
   const teamFocus = useMemo(
@@ -661,7 +661,7 @@ export default function CoachDashboard() {
         myPlayers={students}
         upcomingSessions={upcomingSessions}
         pastSessions={pastSessions}
-        notes={progressRows}
+        notes={progressNotes}
       />
 
       {error && (
@@ -747,12 +747,12 @@ export default function CoachDashboard() {
                       fontSize: 18,
                       fontWeight: 800,
                       color:
-                        player.overallAverage >= 75
+                        player.performanceAverage >= 75
                           ? '#00976C'
                           : '#1A5FFF',
                     }}
                   >
-                    {player.overallAverage || '-'}
+                    {player.performanceAverage || '-'}
                   </div>
                 </div>
               </div>
@@ -929,10 +929,16 @@ export default function CoachDashboard() {
                 String(note.player_user_id)
               )
 
+              const assessment =
+                assessmentMap.get(String(note.player_user_id))
+
               const noteText =
                 note.coach_comment ||
+                assessment?.performance_comment ||
+                assessment?.fitness_comment ||
                 note.focus_area ||
-                note.progress_status
+                note.progress_status ||
+                note.injury_recommendation
 
               return (
                 <div

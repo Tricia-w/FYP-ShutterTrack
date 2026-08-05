@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import NotificationBell from '../Notifications/NotificationBell'
 import { supabase } from '../../lib/supabase'
 import MonthlyTrendLineChart from '../Layout/MonthlyTrendLineChart'
 import styles from '../Layout/Pages.module.css'
@@ -444,7 +445,9 @@ function BudgetModal({
 
         <div className={styles.statRow}>
           <span className={styles.statLabel}>Budget used</span>
-          <span className={styles.statVal}>{budgetUsedPercent}%</span>
+          <span className={styles.statVal}>
+            {Number.isFinite(budgetUsedPercent) ? `${budgetUsedPercent}%` : '—'}
+          </span>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
@@ -555,13 +558,14 @@ export default function Expenses() {
   const [expenseForm, setExpenseForm] = useState(createEmptyExpenseForm)
 
   const [monthlyBudget, setMonthlyBudget] = useState(0)
+  const [hasMonthlyBudget, setHasMonthlyBudget] = useState(false)
   const [showBudgetModal, setShowBudgetModal] = useState(false)
 
   // Expense-page notification bell.
   // These notifications are calculated from the selected month's budget,
   // so this page only shows expense-related alerts.
-  const [showExpenseNotifications, setShowExpenseNotifications] = useState(false)
   const [readExpenseNotificationKeys, setReadExpenseNotificationKeys] = useState([])
+  const [clearedExpenseNotificationKeys, setClearedExpenseNotificationKeys] = useState([])
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true)
@@ -612,6 +616,7 @@ export default function Expenses() {
 
     if (!user) {
       setMonthlyBudget(0)
+      setHasMonthlyBudget(false)
       return
     }
 
@@ -627,7 +632,13 @@ export default function Expenses() {
       return
     }
 
-    setMonthlyBudget(data?.budget !== undefined ? Number(data.budget) : 0)
+    const budgetExists =
+      data?.budget !== undefined &&
+      data?.budget !== null &&
+      Number(data.budget) > 0
+
+    setHasMonthlyBudget(budgetExists)
+    setMonthlyBudget(budgetExists ? Number(data.budget) : 0)
   }, [selectedMonth])
 
   useEffect(() => {
@@ -639,6 +650,13 @@ export default function Expenses() {
   }, [fetchBudget])
 
   const saveBudget = async () => {
+    const nextBudget = Number(monthlyBudget)
+
+    if (!Number.isFinite(nextBudget) || nextBudget <= 0) {
+      alert('Please enter a monthly budget greater than RM 0.')
+      return
+    }
+
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
     if (!user) return
@@ -647,7 +665,7 @@ export default function Expenses() {
       {
         user_id: user.id,
         month: selectedMonth,
-        budget: Number(monthlyBudget),
+        budget: nextBudget,
       },
       {
         onConflict: 'user_id,month',
@@ -660,6 +678,8 @@ export default function Expenses() {
       return
     }
 
+    setHasMonthlyBudget(true)
+    setMonthlyBudget(nextBudget)
     setShowBudgetModal(false)
   }
 
@@ -708,17 +728,21 @@ export default function Expenses() {
   const avgMonth = monthsPassed > 0 ? thisYearTotal / monthsPassed : 0
 
   const budgetUsedPercent =
-    monthlyBudget > 0 ? Math.round((selectedMonthTotal / monthlyBudget) * 100) : 0
+    hasMonthlyBudget && monthlyBudget > 0
+      ? Math.round((selectedMonthTotal / monthlyBudget) * 100)
+      : null
 
-  const remainingBudget = monthlyBudget - selectedMonthTotal
+  const remainingBudget =
+    hasMonthlyBudget ? monthlyBudget - selectedMonthTotal : null
 
-  let budgetStatus = 'Safe'
-  if (monthlyBudget > 0 && budgetUsedPercent >= 100) budgetStatus = 'Exceeded'
-  else if (monthlyBudget > 0 && budgetUsedPercent >= 80) budgetStatus = 'Near Limit'
+  let budgetStatus = 'Not Set'
+  if (hasMonthlyBudget && budgetUsedPercent >= 100) budgetStatus = 'Exceeded'
+  else if (hasMonthlyBudget && budgetUsedPercent >= 80) budgetStatus = 'Near Limit'
+  else if (hasMonthlyBudget) budgetStatus = 'Safe'
 
   const expenseNotifications = []
 
-  if (monthlyBudget > 0 && budgetStatus === 'Exceeded') {
+  if (hasMonthlyBudget && budgetStatus === 'Exceeded') {
     expenseNotifications.push({
       key: `budget-exceeded-${selectedMonth}`,
       title: 'Monthly budget exceeded',
@@ -727,7 +751,7 @@ export default function Expenses() {
       )} over your ${formatRM(monthlyBudget)} budget for ${selectedMonth}.`,
       type: 'danger',
     })
-  } else if (monthlyBudget > 0 && budgetStatus === 'Near Limit') {
+  } else if (hasMonthlyBudget && budgetStatus === 'Near Limit') {
     expenseNotifications.push({
       key: `budget-near-limit-${selectedMonth}`,
       title: 'Monthly budget almost reached',
@@ -738,18 +762,52 @@ export default function Expenses() {
     })
   }
 
-  const unreadExpenseNotificationCount = expenseNotifications.filter(
-    notification => !readExpenseNotificationKeys.includes(notification.key)
-  ).length
+  const visibleExpenseNotifications = expenseNotifications
+    .filter(
+      notification =>
+        !clearedExpenseNotificationKeys.includes(notification.key)
+    )
+    .map(notification => ({
+      ...notification,
+      id: notification.key,
+      created_at: new Date().toISOString(),
+      is_read: readExpenseNotificationKeys.includes(
+        notification.key
+      ),
+      action_url: '/expenses',
+    }))
 
   const markAllExpenseNotificationsRead = () => {
-    setReadExpenseNotificationKeys(prev =>
-      Array.from(new Set([...prev, ...expenseNotifications.map(notification => notification.key)]))
+    setReadExpenseNotificationKeys(previous =>
+      Array.from(
+        new Set([
+          ...previous,
+          ...visibleExpenseNotifications.map(
+            notification => notification.key
+          ),
+        ])
+      )
     )
   }
 
-  const openExpenseNotifications = () => {
-    setShowExpenseNotifications(current => !current)
+  const clearExpenseNotifications = id => {
+    const keys = id
+      ? [id]
+      : visibleExpenseNotifications.map(
+          notification => notification.key
+        )
+
+    setClearedExpenseNotificationKeys(previous =>
+      Array.from(new Set([...previous, ...keys]))
+    )
+  }
+
+  const openExpenseNotification = notification => {
+    setReadExpenseNotificationKeys(previous =>
+      previous.includes(notification.key)
+        ? previous
+        : [...previous, notification.key]
+    )
   }
 
   const byCategory = Object.keys(categoryInfo)
@@ -774,7 +832,7 @@ export default function Expenses() {
       : null
 
   const budgetAlertMessage = (() => {
-    if (monthlyBudget <= 0) {
+    if (!hasMonthlyBudget) {
       return `No monthly budget has been set for ${selectedMonth}. Set a budget to receive expense notifications.`
     }
 
@@ -815,11 +873,17 @@ export default function Expenses() {
       title: 'Budget near limit',
       text: 'Your spending is close to the monthly budget limit. Review upcoming court, transport, or equipment costs.',
     })
-  } else if (selectedMonthTotal > 0) {
+  } else if (hasMonthlyBudget && selectedMonthTotal > 0) {
     ruleSuggestions.push({
       type: 'success',
       title: 'Spending under control',
       text: 'Your current spending is still within the monthly budget. Continue monitoring expenses regularly.',
+    })
+  } else if (!hasMonthlyBudget && selectedMonthTotal > 0) {
+    ruleSuggestions.push({
+      type: 'info',
+      title: 'Set a monthly budget',
+      text: `You have recorded ${formatRM(selectedMonthTotal)} in spending for ${selectedMonth}. Set a budget to track how much remains.`,
     })
   }
 
@@ -997,231 +1061,15 @@ export default function Expenses() {
               </svg>
               Add Expense
             </button>
-            <div style={{ position: 'relative' }}>
-              <button
-                type="button"
-                aria-label="Expense notifications"
-                onClick={openExpenseNotifications}
-                style={{
-                  width: 42,
-                  height: 42,
-                  padding: 0,
-                  borderRadius: 12,
-                  border: `1px solid ${C.line}`,
-                  background: C.card,
-                  color: C.text,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  flexShrink: 0,
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    display: 'block',
-                    fontSize: 18,
-                    lineHeight: 1,
-                  }}
-                >
-                  🔔
-                </span>
-
-                {unreadExpenseNotificationCount > 0 && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: -5,
-                      right: -5,
-                      minWidth: 18,
-                      height: 18,
-                      padding: '0 5px',
-                      borderRadius: 999,
-                      background: '#EF4444',
-                      color: '#FFFFFF',
-                      fontSize: 10,
-                      fontWeight: 800,
-                      lineHeight: '18px',
-                      textAlign: 'center',
-                      border: '2px solid var(--card, #FFFFFF)',
-                    }}
-                  >
-                    {unreadExpenseNotificationCount}
-                  </span>
-                )}
-              </button>
-
-              {showExpenseNotifications && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 46,
-                    right: 0,
-                    width: 360,
-                    maxWidth: 'calc(100vw - 32px)',
-                    background: C.card,
-                    border: `1px solid ${C.line}`,
-                    borderRadius: 14,
-                    boxShadow: '0 18px 45px rgba(13, 27, 62, 0.18)',
-                    zIndex: 50,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: '14px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      borderBottom: `1px solid ${C.line}`,
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>
-                        Expense notifications
-                      </div>
-                      <div style={{ marginTop: 3, fontSize: 11, color: C.muted }}>
-                        Budget alerts for {selectedMonth}
-                      </div>
-                    </div>
-
-                    {expenseNotifications.length > 0 && unreadExpenseNotificationCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={markAllExpenseNotificationsRead}
-                        style={{
-                          border: 0,
-                          background: 'transparent',
-                          color: '#1A5FFF',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          padding: 4,
-                        }}
-                      >
-                        Mark as read
-                      </button>
-                    )}
-                  </div>
-
-                  {expenseNotifications.length === 0 ? (
-                    <div style={{ padding: 24, textAlign: 'center' }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          margin: '0 auto 10px',
-                          borderRadius: 12,
-                          display: 'grid',
-                          placeItems: 'center',
-                          background: '#E0FAF3',
-                          color: '#00A876',
-                        }}
-                      >
-                        <ExpenseIcon type="check" color="#00A876" size={19} />
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
-                        No expense alerts
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.5, color: C.muted }}>
-                        Your selected month's budget is currently under control.
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                      {expenseNotifications.map(notification => {
-                        const isRead = readExpenseNotificationKeys.includes(notification.key)
-                        const isDanger = notification.type === 'danger'
-
-                        return (
-                          <div
-                            key={notification.key}
-                            onClick={() =>
-                              setReadExpenseNotificationKeys(prev =>
-                                prev.includes(notification.key)
-                                  ? prev
-                                  : [...prev, notification.key]
-                              )
-                            }
-                            style={{
-                              padding: '14px 16px',
-                              display: 'flex',
-                              gap: 11,
-                              cursor: 'pointer',
-                              background: isRead
-                                ? C.card
-                                : isDanger
-                                ? 'rgba(239, 68, 68, 0.06)'
-                                : 'rgba(245, 158, 11, 0.08)',
-                              borderBottom: `1px solid ${C.line}`,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: 34,
-                                height: 34,
-                                flexShrink: 0,
-                                borderRadius: 10,
-                                display: 'grid',
-                                placeItems: 'center',
-                                background: isDanger ? '#FEE2E2' : '#FEF3C7',
-                                color: isDanger ? '#EF4444' : '#F59E0B',
-                              }}
-                            >
-                              <ExpenseIcon
-                                type="warning"
-                                color={isDanger ? '#EF4444' : '#F59E0B'}
-                                size={17}
-                              />
-                            </div>
-
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  gap: 8,
-                                }}
-                              >
-                                <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>
-                                  {notification.title}
-                                </div>
-
-                                {!isRead && (
-                                  <span
-                                    style={{
-                                      width: 7,
-                                      height: 7,
-                                      borderRadius: '50%',
-                                      background: '#1A5FFF',
-                                      flexShrink: 0,
-                                    }}
-                                  />
-                                )}
-                              </div>
-
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 11,
-                                  lineHeight: 1.5,
-                                  color: C.muted,
-                                }}
-                              >
-                                {notification.message}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <NotificationBell
+              supabase={supabase}
+              title="Expense notifications"
+              localOnly
+              localItems={visibleExpenseNotifications}
+              onLocalMarkAllRead={markAllExpenseNotificationsRead}
+              onLocalClear={clearExpenseNotifications}
+              onLocalItemClick={openExpenseNotification}
+            />
 
           </div>
         </div>
@@ -1284,7 +1132,9 @@ export default function Expenses() {
               WebkitTextFillColor: '#1A5FFF',
             }}
           >
-            {formatRMNoDecimal(monthlyBudget)}
+            {hasMonthlyBudget
+              ? formatRMNoDecimal(monthlyBudget)
+              : 'Not set'}
           </div>
 
           <div className={styles.metricLbl}>Monthly budget</div>
@@ -1294,7 +1144,7 @@ export default function Expenses() {
             style={{ marginTop: 10, fontSize: 11, padding: '6px 10px', borderRadius: 8 }}
             onClick={() => setShowBudgetModal(true)}
           >
-            Set Budget
+            {hasMonthlyBudget ? 'Edit Budget' : 'Set Budget'}
           </button>
         </div>
 
@@ -1540,7 +1390,9 @@ export default function Expenses() {
                   ? '1.5px solid #EF4444'
                   : budgetStatus === 'Near Limit'
                   ? '1.5px solid #F59E0B'
-                  : '1.5px solid #00C48C',
+                  : budgetStatus === 'Safe'
+                  ? '1.5px solid #00C48C'
+                  : `1.5px solid ${C.line}`,
             }}
           >
             <div
@@ -1551,7 +1403,9 @@ export default function Expenses() {
                     ? '#EF4444'
                     : budgetStatus === 'Near Limit'
                     ? '#F59E0B'
-                    : '#00C48C',
+                    : budgetStatus === 'Safe'
+                    ? '#00C48C'
+                    : C.muted,
               }}
             >
               Budget Alert
@@ -1564,22 +1418,54 @@ export default function Expenses() {
             <div style={{ marginTop: 12 }}>
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Budget used</span>
-                <span className={styles.statVal} style={{ color: budgetStatus === 'Exceeded' ? '#EF4444' : budgetStatus === 'Near Limit' ? '#F59E0B' : '#00C48C' }}>
-                  {budgetUsedPercent}%
+                <span
+                  className={styles.statVal}
+                  style={{
+                    color:
+                      budgetStatus === 'Exceeded'
+                        ? '#EF4444'
+                        : budgetStatus === 'Near Limit'
+                        ? '#F59E0B'
+                        : budgetStatus === 'Safe'
+                        ? '#00C48C'
+                        : C.muted,
+                  }}
+                >
+                  {hasMonthlyBudget ? `${budgetUsedPercent}%` : '—'}
                 </span>
               </div>
 
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Remaining</span>
-                <span className={styles.statVal} style={{ color: remainingBudget < 0 ? '#EF4444' : '#00C48C' }}>
-                  {formatRM(remainingBudget)}
+                <span
+                  className={styles.statVal}
+                  style={{
+                    color:
+                      !hasMonthlyBudget
+                        ? C.muted
+                        : remainingBudget < 0
+                        ? '#EF4444'
+                        : '#00C48C',
+                  }}
+                >
+                  {hasMonthlyBudget ? formatRM(remainingBudget) : '—'}
                 </span>
               </div>
 
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Status</span>
                 <span className={styles.statVal}>
-                  <span className={budgetStatus === 'Exceeded' ? styles.badgeRed : budgetStatus === 'Near Limit' ? styles.badgeAmber : styles.badgeGreen}>
+                  <span
+                    className={
+                      budgetStatus === 'Exceeded'
+                        ? styles.badgeRed
+                        : budgetStatus === 'Near Limit'
+                        ? styles.badgeAmber
+                        : budgetStatus === 'Safe'
+                        ? styles.badgeGreen
+                        : styles.badgeGray
+                    }
+                  >
                     {budgetStatus}
                   </span>
                 </span>

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+//import { useNavigate } from 'react-router-dom'
+import NotificationBell from '../Notifications/NotificationBell'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
+import { calculateMatchStats } from '../../utils/matchStats'
 import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
@@ -447,289 +449,6 @@ const PERFORMANCE_NOTIFICATION_TYPES = [
   'coach_performance_feedback',
   'coach_progress',
 ]
-
-const getPerformanceNotificationMeta = item => {
-  const title = String(item?.title || '').toLowerCase()
-  const type = String(item?.type || '').toLowerCase()
-  const sourceType = String(item?.source_type || '').toLowerCase()
-
-  if (
-    type === 'success' ||
-    title.includes('accepted') ||
-    title.includes('completed')
-  ) {
-    return {
-      icon: 'success',
-      background: '#E7F8F0',
-      color: '#16A34A',
-    }
-  }
-
-  if (
-    type === 'warning' ||
-    title.includes('reminder') ||
-    title.includes('upcoming')
-  ) {
-    return {
-      icon: 'warning',
-      background: '#FFF7E6',
-      color: '#F59E0B',
-    }
-  }
-
-  if (
-    sourceType.includes('coach') ||
-    title.includes('coach') ||
-    title.includes('progress')
-  ) {
-    return {
-      icon: 'score',
-      background: '#E8EFFE',
-      color: '#1A5FFF',
-    }
-  }
-
-  return {
-    icon: 'bell',
-    background: '#EEF2FF',
-    color: '#6366F1',
-  }
-}
-
-
-function PageNotificationBell({ userId }) {
-  const navigate = useNavigate()
-  const [items, setItems] = useState([])
-  const [open, setOpen] = useState(false)
-
-  const loadNotifications = useCallback(async () => {
-    if (!userId) return
-
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .in('source_type', PERFORMANCE_NOTIFICATION_TYPES)
-      .order('created_at', { ascending: false })
-      .limit(8)
-
-    if (error) {
-      console.error('Page notification load error:', error)
-      return
-    }
-
-    setItems(data || [])
-  }, [userId])
-
-  useEffect(() => {
-    loadNotifications()
-  }, [loadNotifications])
-
-  const unread = items.filter(item => !item.is_read).length
-
-  const openNotification = async item => {
-    setItems(current =>
-      current.map(row =>
-        row.id === item.id ? { ...row, is_read: true } : row
-      )
-    )
-
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', item.id)
-      .eq('user_id', userId)
-
-    setOpen(false)
-
-    if (item.action_url) {
-      navigate(item.action_url)
-    }
-  }
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <button
-        type="button"
-        onClick={event => {
-          event.stopPropagation()
-          setOpen(current => !current)
-          loadNotifications()
-        }}
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: 12,
-          border: '1px solid var(--line, #E2E8F0)',
-          background: 'var(--card, #FFFFFF)',
-          color: 'var(--text, #0D1B3E)',
-          cursor: 'pointer',
-          display: 'grid',
-          placeItems: 'center',
-          position: 'relative',
-          fontSize: 18,
-        }}
-        title="Page notifications"
-      >
-        🔔
-
-        {unread > 0 && (
-          <span
-            style={{
-              position: 'absolute',
-              top: -5,
-              right: -5,
-              minWidth: 18,
-              height: 18,
-              borderRadius: 999,
-              padding: '0 5px',
-              display: 'grid',
-              placeItems: 'center',
-              background: '#EF4444',
-              color: '#FFFFFF',
-              fontSize: 9,
-              fontWeight: 800,
-            }}
-          >
-            {unread}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 50,
-            right: 0,
-            width: 330,
-            maxHeight: 360,
-            overflowY: 'auto',
-            padding: 10,
-            borderRadius: 16,
-            border: '1px solid var(--line, #EEF1F8)',
-            background: 'var(--card, #FFFFFF)',
-            boxShadow: '0 18px 45px rgba(13, 27, 62, 0.16)',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 800,
-              color: 'var(--text, #0D1B3E)',
-              marginBottom: 9,
-            }}
-          >
-            Performance notifications
-          </div>
-
-          {items.length === 0 ? (
-            <div
-              style={{
-                padding: 20,
-                textAlign: 'center',
-                color: 'var(--text-muted, #8892A4)',
-                fontSize: 12,
-              }}
-            >
-              No notifications for this page.
-            </div>
-          ) : (
-            items.map(item => {
-              const meta = getPerformanceNotificationMeta(item)
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => openNotification(item)}
-                  style={{
-                    width: '100%',
-                    border: 'none',
-                    borderRadius: 12,
-                    padding: '10px 11px',
-                    marginBottom: 7,
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    background: item.is_read
-                      ? 'var(--soft, #F6F8FF)'
-                      : 'color-mix(in srgb, #1A5FFF 9%, var(--card, #FFFFFF))',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 5,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: 8,
-                        background: meta.background,
-                        color: meta.color,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <MiniIcon
-                        type={meta.icon}
-                        color={meta.color}
-                        size={14}
-                      />
-                    </span>
-
-                    <span
-                      style={{
-                        minWidth: 0,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: 'var(--text, #0D1B3E)',
-                      }}
-                    >
-                      {item.title}
-                    </span>
-
-                    {!item.is_read && (
-                      <span
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: 999,
-                          background: '#1A5FFF',
-                          marginLeft: 'auto',
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      paddingLeft: 34,
-                      fontSize: 11,
-                      lineHeight: 1.45,
-                      color: 'var(--text-muted, #8892A4)',
-                    }}
-                  >
-                    {item.message}
-                  </div>
-                </button>
-              )
-            })
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 const getSkillAdvice = skillName => {
   const adviceMap = {
     Smash:
@@ -1007,36 +726,10 @@ export default function Performance() {
     }
   }
 
-  const stats = useMemo(() => {
-    const wins = matches.filter(match => match.result === 'Win').length
-    const losses = matches.filter(match => match.result === 'Loss').length
-    const winRate = matches.length ? Math.round((wins / matches.length) * 100) : 0
-
-    const setScores = matches
-      .flatMap(match => [match.score1, match.score2, match.score3])
-      .filter(Boolean)
-      .flatMap(score => String(score).split('-').map(num => Number(num.trim())))
-      .filter(num => !Number.isNaN(num))
-
-    const avgScore = setScores.length
-      ? (setScores.reduce((sum, score) => sum + score, 0) / setScores.length).toFixed(1)
-      : '0.0'
-
-    let bestStreak = 0
-    let currentStreak = 0
-    ;[...matches]
-      .sort((a, b) => new Date(a.match_date) - new Date(b.match_date))
-      .forEach(match => {
-        if (match.result === 'Win') {
-          currentStreak += 1
-          bestStreak = Math.max(bestStreak, currentStreak)
-        } else {
-          currentStreak = 0
-        }
-      })
-
-    return { wins, losses, winRate, avgScore, bestStreak }
-  }, [matches])
+  const stats = useMemo(
+    () => calculateMatchStats(matches),
+    [matches]
+  )
 
   const visibleMatches = useMemo(() => {
     return matches
@@ -1397,7 +1090,12 @@ export default function Performance() {
               Log Match
             </button>
 
-            <PageNotificationBell userId={user?.id} />
+            <NotificationBell
+              supabase={supabase}
+              userId={user?.id}
+              title="Performance notifications"
+              sourceTypes={PERFORMANCE_NOTIFICATION_TYPES}
+            />
           </div>
         </div>
       </div>
@@ -1482,7 +1180,7 @@ export default function Performance() {
               WebkitTextFillColor: '#1A5FFF',
             }}
           >
-            {stats.avgScore}
+            {stats.averageScorePerSet}
           </div>
           <div className={styles.metricLbl}>Avg score/set</div>
         </div>
@@ -1510,7 +1208,7 @@ export default function Performance() {
               WebkitTextFillColor: '#F59E0B',
             }}
           >
-            {stats.bestStreak}W
+            {stats.bestWinStreak}W
           </div>
           <div className={styles.metricLbl}>Best win streak</div>
         </div>

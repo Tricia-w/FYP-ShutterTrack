@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import NotificationBell from "../Notifications/NotificationBell";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+
+import { QRCodeCanvas } from "qrcode.react";
+import { Html5Qrcode } from "html5-qrcode";
 import { supabase } from "../../lib/supabase";
+import { calculateMatchStats } from "../../utils/matchStats";
 import styles from "../Layout/Pages.module.css";
 import Loader from "../Loader/Loader";
 import useLoadingDelay from "../Loader/LoadingDelay";
@@ -188,60 +194,33 @@ function calculateExperienceYears(dateOfBirth, startedPlayingAge, fallback = 0) 
   return Number(fallback || 0);
 }
 
+function calculatePlayerExperience(player = {}) {
+  const calculated = calculateExperienceYears(
+    player.date_of_birth,
+    player.started_playing_age,
+    player.experience_years ?? player.years_experience
+  );
 
-function normaliseMatchResult(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function buildPlayerMatchStats(matches = []) {
-  const sortedMatches = [...matches].sort((a, b) => {
-    const aDate = new Date(a.match_date || a.created_at || 0).getTime();
-    const bDate = new Date(b.match_date || b.created_at || 0).getTime();
-    return bDate - aDate;
-  });
-
-  const totalMatches = sortedMatches.length;
-
-  const wins = sortedMatches.filter(
-    (match) => normaliseMatchResult(match.result) === "win",
-  ).length;
-
-  const winRate =
-    totalMatches > 0
-      ? Math.round((wins / totalMatches) * 100)
-      : 0;
-
-  let streakType = "";
-  let streakCount = 0;
-
-  for (const match of sortedMatches) {
-    const result = normaliseMatchResult(match.result);
-
-    if (result !== "win" && result !== "loss") {
-      continue;
-    }
-
-    const currentType = result === "win" ? "W" : "L";
-
-    if (!streakType) {
-      streakType = currentType;
-      streakCount = 1;
-      continue;
-    }
-
-    if (currentType === streakType) {
-      streakCount += 1;
-    } else {
-      break;
-    }
+  if (calculated > 0) {
+    return calculated;
   }
 
-  return {
-    matches: totalMatches,
-    winRate,
-    streak: streakType ? `${streakType}${streakCount}` : "W0",
-  };
+  const sinceYear = Number(
+    String(player.since || "").trim()
+  );
+  const currentYear = new Date().getFullYear();
+
+  if (
+    Number.isInteger(sinceYear) &&
+    sinceYear >= 1900 &&
+    sinceYear <= currentYear
+  ) {
+    return currentYear - sinceYear;
+  }
+
+  return 0;
 }
+
 
 
 function ReportModal({
@@ -729,6 +708,31 @@ function PlayerDetail({
         </div>
       </div>
 
+      <div className={styles.card}>
+        <div className={styles.cardTitle}>Equipment</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 12,
+          }}
+        >
+          <SmallInfo label="Racket" value={p.racket} />
+          <SmallInfo label="String" value={p.stringName} />
+          <SmallInfo
+            label="String tension"
+            value={
+              p.stringTension !== null &&
+              p.stringTension !== undefined &&
+              p.stringTension !== ""
+                ? `${p.stringTension} lbs`
+                : "—"
+            }
+          />
+          <SmallInfo label="Shoes" value={p.shoes} />
+        </div>
+      </div>
+
       <div
         style={{
           display: "grid",
@@ -909,16 +913,28 @@ function getCoachVenueMapEmbedUrl(venue, state) {
   )}&output=embed`;
 }
 
-function CoachDetail({ coach, onRequest, onCancel, onReport, onRequestClub, onCancelClubRequest }) {
+function CoachDetail({
+  coach,
+  onRequest,
+  onCancel,
+  onAcceptIncoming,
+  onDeclineIncoming,
+  onReport,
+  onRequestClub,
+  onCancelClubRequest,
+}) {
   const [message, setMessage] = useState(coach.requestMessage || "");
   const requestStatus = coach.requestStatus;
+  const requestSentByCoach =
+    requestStatus === "pending" &&
+    coach.requestedBy === "coach";
 
   useEffect(() => {
     setMessage(coach.requestMessage || "");
   }, [coach.id, coach.requestMessage]);
 
   const requestButtonLabel =
-    requestStatus === "rejected" || requestStatus === "cancelled"
+    ["rejected", "cancelled", "removed"].includes(requestStatus)
       ? "Send request again"
       : "Request coach";
 
@@ -1603,7 +1619,8 @@ function CoachDetail({ coach, onRequest, onCancel, onReport, onRequestClub, onCa
 
       {(requestStatus === null ||
         requestStatus === "rejected" ||
-        requestStatus === "cancelled") && (
+        requestStatus === "cancelled" ||
+        requestStatus === "removed") && (
         <div className={styles.card}>
           <div className={styles.cardTitle}>Request this coach</div>
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
@@ -1632,7 +1649,71 @@ function CoachDetail({ coach, onRequest, onCancel, onReport, onRequestClub, onCa
         </div>
       )}
 
-      {requestStatus === "pending" && (
+      {requestSentByCoach && (
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Coach request received</div>
+          <div
+            style={{
+              fontSize: 13,
+              color: C.muted,
+              lineHeight: 1.6,
+            }}
+          >
+            {coach.name} invited you to connect as their player.
+            Accepting gives the coach access to your synced progress,
+            fitness and assigned training sessions.
+          </div>
+
+          {coach.requestMessage && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: 11,
+                borderRadius: 10,
+                background: C.soft,
+                color: C.text,
+                fontSize: 12,
+                lineHeight: 1.55,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {coach.requestMessage}
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
+              marginTop: 12,
+            }}
+          >
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={() => onDeclineIncoming(coach)}
+              style={{
+                color: "#DC2626",
+                borderColor: "#FECACA",
+                background: "#FEF2F2",
+              }}
+            >
+              Decline
+            </button>
+
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              onClick={() => onAcceptIncoming(coach)}
+            >
+              Accept coach
+            </button>
+          </div>
+        </div>
+      )}
+
+      {requestStatus === "pending" && !requestSentByCoach && (
         <div className={styles.card}>
           <div className={styles.cardTitle}>Request sent</div>
           <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>
@@ -1675,539 +1756,6 @@ function CoachDetail({ coach, onRequest, onCancel, onReport, onRequestClub, onCa
 }
 
 
-function formatNotificationDate(value) {
-  if (!value) return "";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  return date.toLocaleString("en-MY", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-const PLAYER_DIRECTORY_NOTIFICATION_TYPES = [
-  "coach_request_accepted",
-  "coach_request_declined",
-  "coach_request_rejected",
-  "partner_request_received",
-  "partner_request_accepted",
-  "partner_request_rejected",
-];
-
-function normaliseNotificationText(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
-}
-
-function isPlayerDirectoryNotification(notification) {
-  const type = normaliseNotificationText(notification?.type);
-  const title = normaliseNotificationText(notification?.title);
-  const message = normaliseNotificationText(notification?.message);
-
-  const acceptedTypes = PLAYER_DIRECTORY_NOTIFICATION_TYPES.map((item) =>
-    normaliseNotificationText(item),
-  );
-
-  if (acceptedTypes.includes(type)) {
-    return true;
-  }
-
-  const combined = `${title} ${message}`;
-
-  return [
-    "coach request accepted",
-    "coach request declined",
-    "coach request rejected",
-    "new partner request",
-    "partner request accepted",
-    "partner request declined",
-    "partner request rejected",
-  ].some((phrase) => combined.includes(phrase));
-}
-
-function NotificationCenter({ onPartnerChanged }) {
-  const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [partnerRequests, setPartnerRequests] = useState([]);
-  const [loadingNotifications, setLoadingNotifications] = useState(false);
-
-  const loadNotifications = useCallback(async () => {
-    setLoadingNotifications(true);
-
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        setNotifications([]);
-        setPartnerRequests([]);
-        return;
-      }
-
-      const [notificationResult, requestResult] = await Promise.all([
-        supabase
-          .from("notifications")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(100),
-        supabase
-          .from("player_partner_requests")
-          .select("*")
-          .eq("recipient_user_id", user.id)
-          .eq("status", "pending")
-          .order("created_at", { ascending: false }),
-      ]);
-
-      if (notificationResult.error) {
-        console.error("Failed to load notifications:", notificationResult.error);
-      } else {
-        setNotifications(
-          (notificationResult.data || []).filter(
-            isPlayerDirectoryNotification,
-          ),
-        );
-      }
-
-      if (requestResult.error) {
-        console.error("Failed to load partner requests:", requestResult.error);
-      } else {
-        setPartnerRequests(requestResult.data || []);
-      }
-    } finally {
-      setLoadingNotifications(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    let channel = null;
-
-    loadNotifications();
-
-    async function setupRealtime() {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-
-      if (error) {
-        console.error("Failed to start notification realtime:", error);
-        return;
-      }
-
-      if (!active || !user) return;
-
-      const channelName = [
-        "players-notifications",
-        user.id,
-        Date.now(),
-        Math.random().toString(36).slice(2),
-      ].join("-");
-
-      const nextChannel = supabase.channel(channelName);
-
-      nextChannel.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          if (active) loadNotifications();
-        },
-      );
-
-      nextChannel.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "player_partner_requests",
-          filter: `recipient_user_id=eq.${user.id}`,
-        },
-        () => {
-          if (!active) return;
-          loadNotifications();
-          onPartnerChanged?.();
-        },
-      );
-
-      channel = nextChannel;
-
-      nextChannel.subscribe((status) => {
-        if (status === "CHANNEL_ERROR") {
-          console.error("Notification realtime channel failed.");
-        }
-      });
-
-      if (!active) {
-        supabase.removeChannel(nextChannel);
-      }
-    }
-
-    setupRealtime();
-
-    return () => {
-      active = false;
-
-      if (channel) {
-        supabase.removeChannel(channel);
-        channel = null;
-      }
-    };
-  }, [loadNotifications, onPartnerChanged]);
-
-  const unreadCount =
-    notifications.filter((item) => !item.is_read).length + partnerRequests.length;
-
-  async function markAllRead() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) return;
-
-    const unreadIds = notifications
-      .filter((notification) => !notification.is_read)
-      .map((notification) => notification.id);
-
-    if (unreadIds.length === 0) return;
-
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", user.id)
-      .in("id", unreadIds);
-
-    if (error) {
-      console.error("Failed to mark notifications read:", error);
-      return;
-    }
-
-    await loadNotifications();
-  }
-
-  async function clearNotifications() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) return;
-
-    const notificationIds = notifications.map(
-      (notification) => notification.id,
-    );
-
-    if (notificationIds.length === 0) return;
-
-    const { error } = await supabase
-      .from("notifications")
-      .delete()
-      .eq("user_id", user.id)
-      .in("id", notificationIds);
-
-    if (error) {
-      console.error("Failed to clear notifications:", error);
-      return;
-    }
-
-    await loadNotifications();
-  }
-
-  async function deleteNotification(id) {
-    const { error } = await supabase
-      .from("notifications")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      console.error("Failed to delete notification:", error);
-      return;
-    }
-
-    await loadNotifications();
-  }
-
-  async function respondToPartnerRequest(request, nextStatus) {
-    const { error } = await supabase
-      .from("player_partner_requests")
-      .update({
-        status: nextStatus,
-        responded_at: new Date().toISOString(),
-      })
-      .eq("id", request.id);
-
-    if (error) {
-      console.error("Failed to respond to partner request:", error);
-      alert(error.message || "Failed to update partner request.");
-      return;
-    }
-
-    await loadNotifications();
-    await onPartnerChanged?.();
-  }
-
-  return (
-    <div style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={() => {
-          setOpen((current) => !current);
-          if (!open) loadNotifications();
-        }}
-        aria-label="Notifications"
-        style={{
-          width: 46,
-          height: 42,
-          borderRadius: 12,
-          border: `1.5px solid ${C.line}`,
-          background: C.card,
-          cursor: "pointer",
-          fontSize: 20,
-          position: "relative",
-        }}
-      >
-        🔔
-        {unreadCount > 0 && (
-          <span
-            style={{
-              position: "absolute",
-              right: -5,
-              top: -7,
-              minWidth: 21,
-              height: 21,
-              padding: "0 5px",
-              borderRadius: 999,
-              background: "#EF4444",
-              color: "#FFFFFF",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 11,
-              fontWeight: 800,
-              border: "2px solid #FFFFFF",
-            }}
-          >
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: 50,
-            right: 0,
-            width: "min(430px, calc(100vw - 30px))",
-            maxHeight: 560,
-            overflowY: "auto",
-            background: C.card,
-            border: `1px solid ${C.line}`,
-            borderRadius: 18,
-            boxShadow: "0 18px 45px rgba(13,27,62,0.18)",
-            padding: 14,
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              marginBottom: 12,
-            }}
-          >
-            <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>
-              Notifications
-            </div>
-
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                onClick={markAllRead}
-                style={{
-                  border: 0,
-                  background: "transparent",
-                  color: "#1A5FFF",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
-              >
-                Mark read
-              </button>
-              <button
-                type="button"
-                onClick={clearNotifications}
-                style={{
-                  border: 0,
-                  background: "transparent",
-                  color: "#EF4444",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-
-          {partnerRequests.length > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: C.muted,
-                  letterSpacing: 0.8,
-                  textTransform: "uppercase",
-                  marginBottom: 7,
-                }}
-              >
-                Partner requests
-              </div>
-
-              {partnerRequests.map((request) => (
-                <div
-                  key={request.id}
-                  style={{
-                    padding: 12,
-                    borderRadius: 13,
-                    border: "1px solid #BFDBFE",
-                    background: "#EFF6FF",
-                    marginBottom: 8,
-                  }}
-                >
-                  <div style={{ fontWeight: 800, color: C.text, fontSize: 13 }}>
-                    🤝 {request.requester_name || "A player"} wants to be your partner
-                  </div>
-                  {request.message && (
-                    <div
-                      style={{
-                        color: C.muted,
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        marginTop: 5,
-                      }}
-                    >
-                      {request.message}
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 7,
-                      marginTop: 10,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className={styles.btnOutline}
-                      onClick={() => respondToPartnerRequest(request, "rejected")}
-                      style={{ color: "#DC2626", borderColor: "#FECACA" }}
-                    >
-                      Decline
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.btnPrimary}
-                      onClick={() => respondToPartnerRequest(request, "accepted")}
-                    >
-                      Accept
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {loadingNotifications && notifications.length === 0 ? (
-            <div style={{ padding: 20, textAlign: "center", color: C.muted }}>
-              Loading notifications...
-            </div>
-          ) : notifications.length === 0 && partnerRequests.length === 0 ? (
-            <div style={{ padding: 24, textAlign: "center", color: C.muted }}>
-              No coach or partner notifications yet.
-            </div>
-          ) : (
-            notifications.map((notification) => (
-              <div
-                key={notification.id}
-                style={{
-                  position: "relative",
-                  padding: "12px 38px 12px 12px",
-                  borderRadius: 13,
-                  border: notification.is_read
-                    ? `1px solid ${C.line}`
-                    : "1px solid #93C5FD",
-                  background: notification.is_read ? C.soft : "#EFF6FF",
-                  marginBottom: 8,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => deleteNotification(notification.id)}
-                  style={{
-                    position: "absolute",
-                    right: 9,
-                    top: 9,
-                    width: 25,
-                    height: 25,
-                    borderRadius: 999,
-                    border: "1px solid #FECACA",
-                    background: "#FFFFFF",
-                    color: "#EF4444",
-                    cursor: "pointer",
-                    fontWeight: 800,
-                  }}
-                >
-                  ×
-                </button>
-
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>
-                  {notification.title || "Notification"}
-                  {!notification.is_read && (
-                    <span style={{ color: "#1A5FFF", marginLeft: 7 }}>●</span>
-                  )}
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    lineHeight: 1.55,
-                    color: C.muted,
-                    marginTop: 4,
-                  }}
-                >
-                  {notification.message || notification.body || ""}
-                </div>
-                <div style={{ fontSize: 10, color: "#A0A9BA", marginTop: 6 }}>
-                  {formatNotificationDate(notification.created_at)}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-    </div>
-  );
-}
 
 function normaliseSpecialties(value) {
   if (Array.isArray(value)) {
@@ -2225,6 +1773,10 @@ function normaliseSpecialties(value) {
 }
 
 export default function Players() {
+  const [searchParams] = useSearchParams();
+  const notificationTab = searchParams.get("tab");
+  const notificationCoachId = searchParams.get("coach");
+
   const [tab, setTab] = useState("all");
 
   const [search, setSearch] = useState("");
@@ -2242,6 +1794,16 @@ export default function Players() {
 
   const [reportTarget, setReportTarget] = useState(null);
   const [submittingReport, setSubmittingReport] = useState(false);
+
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [showMyQr, setShowMyQr] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerStarting, setScannerStarting] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [scanSuccess, setScanSuccess] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const qrScannerRef = useRef(null);
+  const scanCloseTimerRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
   const showLoader = useLoadingDelay(loading, 350);
@@ -2270,6 +1832,7 @@ export default function Players() {
       const [
         publicPlayerResult,
         profilePlayerResult,
+        equipmentResult,
         skillResult,
         playerMediaResult,
         coachResult,
@@ -2287,6 +1850,9 @@ export default function Players() {
           .from("player_profiles")
           .select("*")
           .order("display_name", { ascending: true }),
+        supabase
+          .from("player_equipment")
+          .select("player_id, racket, string, tension_lbs, shoes"),
         supabase
           .from("player_skill_ratings")
           .select("*"),
@@ -2342,6 +1908,13 @@ export default function Players() {
         console.error(
           "Failed to load registered player profiles:",
           profilePlayerResult.error,
+        );
+      }
+
+      if (equipmentResult.error) {
+        console.error(
+          "Failed to load player equipment:",
+          equipmentResult.error,
         );
       }
 
@@ -2428,7 +2001,7 @@ export default function Players() {
       matchesByProfileId.forEach((matches, profileId) => {
         matchStatsByProfileId.set(
           profileId,
-          buildPlayerMatchStats(matches),
+          calculateMatchStats(matches),
         );
       });
 
@@ -2568,6 +2141,13 @@ export default function Players() {
         }
       }
 
+      const equipmentByPlayerId = new Map();
+
+      (equipmentResult.data || []).forEach((equipment) => {
+        if (!equipment?.player_id) return;
+        equipmentByPlayerId.set(String(equipment.player_id), equipment);
+      });
+
       const allRegisteredProfiles = profilePlayerResult.data || [];
 
       // Build duplicate guards before privacy filtering. This prevents a
@@ -2597,6 +2177,10 @@ export default function Players() {
           const rating =
             ratingsByPlayerId.get(String(player.user_id)) ||
             ratingsByPlayerId.get(String(player.id)) ||
+            null;
+
+          const equipment =
+            equipmentByPlayerId.get(String(player.id)) ||
             null;
 
           const matchStats =
@@ -2664,14 +2248,37 @@ export default function Players() {
               player.started_playing_age !== undefined
                 ? Number(player.started_playing_age)
                 : null,
-            experienceYears: calculateExperienceYears(
-              player.date_of_birth,
-              player.started_playing_age,
-              player.experience_years
-            ),
+            experienceYears: calculatePlayerExperience(player),
             videoUrl: videoByPlayerId.get(String(player.id))?.url || null,
             videoTitle: videoByPlayerId.get(String(player.id))?.title || "Playing video",
             ig: player.instagram || null,
+            racket:
+              equipment?.racket ||
+              player.racket ||
+              "—",
+            stringName:
+              equipment?.string ||
+              player.string ||
+              player.string_name ||
+              "—",
+            stringTension:
+              equipment?.tension_lbs !== null &&
+              equipment?.tension_lbs !== undefined &&
+              equipment?.tension_lbs !== ""
+                ? Number(equipment.tension_lbs)
+                : player.tension_lbs !== null &&
+                  player.tension_lbs !== undefined &&
+                  player.tension_lbs !== ""
+                  ? Number(player.tension_lbs)
+                  : player.string_tension !== null &&
+                    player.string_tension !== undefined &&
+                    player.string_tension !== ""
+                    ? Number(player.string_tension)
+                    : null,
+            shoes:
+              equipment?.shoes ||
+              player.shoes ||
+              "—",
             smash: Number(rating?.smash ?? 0),
             defense: Number(rating?.defense ?? 0),
             footwork: Number(rating?.footwork ?? 0),
@@ -2687,7 +2294,7 @@ export default function Players() {
             ),
             serve: Number(rating?.serve ?? 0),
             matches: Number(
-              matchStats?.matches ??
+              matchStats?.totalMatches ??
               player.matches ??
               0
             ),
@@ -2697,7 +2304,7 @@ export default function Players() {
               0
             ),
             streak:
-              matchStats?.streak ||
+              matchStats?.currentStreak ||
               player.streak ||
               "W0",
             isPartner: Boolean(partner),
@@ -2751,6 +2358,10 @@ export default function Players() {
               ? ratingsByPlayerId.get(String(player.user_id))
               : null);
 
+          const equipment =
+            equipmentByPlayerId.get(String(player.id)) ||
+            null;
+
           const matchStats =
             matchStatsByProfileId.get(String(player.id)) ||
             null;
@@ -2789,14 +2400,37 @@ export default function Players() {
               player.started_playing_age !== undefined
                 ? Number(player.started_playing_age)
                 : null,
-            experienceYears: calculateExperienceYears(
-              player.date_of_birth,
-              player.started_playing_age,
-              player.experience_years || player.years_experience
-            ),
+            experienceYears: calculatePlayerExperience(player),
             videoUrl: player.video_url || player.playing_video_url || null,
             videoTitle: player.video_title || "Playing video",
             ig: player.instagram || null,
+            racket:
+              equipment?.racket ||
+              player.racket ||
+              "—",
+            stringName:
+              equipment?.string ||
+              player.string ||
+              player.string_name ||
+              "—",
+            stringTension:
+              equipment?.tension_lbs !== null &&
+              equipment?.tension_lbs !== undefined &&
+              equipment?.tension_lbs !== ""
+                ? Number(equipment.tension_lbs)
+                : player.tension_lbs !== null &&
+                  player.tension_lbs !== undefined &&
+                  player.tension_lbs !== ""
+                  ? Number(player.tension_lbs)
+                  : player.string_tension !== null &&
+                    player.string_tension !== undefined &&
+                    player.string_tension !== ""
+                    ? Number(player.string_tension)
+                    : null,
+            shoes:
+              equipment?.shoes ||
+              player.shoes ||
+              "—",
             smash: Number(
               player.smash ??
               rating?.smash ??
@@ -2832,7 +2466,7 @@ export default function Players() {
               0
             ),
             matches: Number(
-              matchStats?.matches ??
+              matchStats?.totalMatches ??
               player.matches ??
               0
             ),
@@ -2842,7 +2476,7 @@ export default function Players() {
               0
             ),
             streak:
-              matchStats?.streak ||
+              matchStats?.currentStreak ||
               player.streak ||
               "W0",
             isPartner: Boolean(partner),
@@ -2943,6 +2577,10 @@ export default function Players() {
             maxPlayers: Number(coach.player_capacity || 10),
             requestStatus: relationship?.status || null,
             requestMessage: relationship?.message || "",
+            requestedBy:
+              String(relationship?.requested_by || "")
+                .trim()
+                .toLowerCase(),
             relationshipId: relationship?.id || null,
             clubMatch,
             clubMembershipStatus: clubMembership?.status || null,
@@ -2975,6 +2613,54 @@ export default function Players() {
   }, [fetchData]);
 
   useEffect(() => {
+    if (notificationTab !== "coach") return;
+
+    setTab("coach");
+    setSelected(null);
+
+    if (!notificationCoachId || coaches.length === 0) {
+      return;
+    }
+
+    const matchingCoach = coaches.find(
+      (coach) =>
+        String(coach.userId || "") === String(notificationCoachId) ||
+        String(coach.id || "") === String(notificationCoachId)
+    );
+
+    if (matchingCoach) {
+      setSelectedCoach(matchingCoach);
+      setCoachSearch("");
+    }
+  }, [notificationTab, notificationCoachId, coaches]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadCurrentUserId() {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (error) {
+        console.error("Failed to load current user for QR:", error);
+        return;
+      }
+
+      if (mounted) {
+        setCurrentUserId(user?.id || "");
+      }
+    }
+
+    loadCurrentUserId();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const channel = supabase
       .channel(`players-privacy-${Date.now()}`)
       .on(
@@ -2983,6 +2669,18 @@ export default function Players() {
           event: "*",
           schema: "public",
           table: "player_profiles",
+        },
+        () => fetchData(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "coach_player_relationships",
+          filter: currentUserId
+            ? `player_user_id=eq.${currentUserId}`
+            : undefined,
         },
         () => fetchData(),
       )
@@ -3001,7 +2699,7 @@ export default function Players() {
       );
       supabase.removeChannel(channel);
     };
-  }, [fetchData]);
+  }, [fetchData, currentUserId]);
 
   const pool = players.filter((player) => {
     if (tab === "opp") return player.isOpp;
@@ -3451,6 +3149,7 @@ export default function Players() {
         player_user_id: user.id,
         coach_user_id: coach.userId,
         status: "pending",
+        requested_by: "player",
         message: message.trim() || null,
         responded_at: null,
       },
@@ -3465,6 +3164,66 @@ export default function Players() {
 
     await fetchData();
     alert("Coach request sent.");
+  }
+
+  async function respondToIncomingCoachRequest(
+    coach,
+    nextStatus,
+  ) {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      alert("Please log in again.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("coach_player_relationships")
+      .update({
+        status: nextStatus,
+        responded_at: new Date().toISOString(),
+      })
+      .eq("player_user_id", user.id)
+      .eq("coach_user_id", coach.userId)
+      .eq("status", "pending")
+      .eq("requested_by", "coach");
+
+    if (error) {
+      console.error(
+        "Failed to respond to coach request:",
+        error,
+      );
+      alert(
+        error.message ||
+          "Failed to respond to the coach request.",
+      );
+      return;
+    }
+
+    await fetchData();
+
+    alert(
+      nextStatus === "accepted"
+        ? `${coach.name} is now your coach.`
+        : `You declined ${coach.name}'s request.`,
+    );
+  }
+
+  async function acceptIncomingCoachRequest(coach) {
+    await respondToIncomingCoachRequest(
+      coach,
+      "accepted",
+    );
+  }
+
+  async function declineIncomingCoachRequest(coach) {
+    await respondToIncomingCoachRequest(
+      coach,
+      "rejected",
+    );
   }
 
   async function cancelCoachRelationship(coach, isAccepted) {
@@ -3577,6 +3336,213 @@ export default function Players() {
     await fetchData();
   }
 
+  const stopQrScanner = useCallback(async () => {
+    if (scanCloseTimerRef.current) {
+      window.clearTimeout(scanCloseTimerRef.current);
+      scanCloseTimerRef.current = null;
+    }
+
+    const scanner = qrScannerRef.current;
+    qrScannerRef.current = null;
+
+    if (scanner) {
+      try {
+        if (scanner.isScanning) {
+          await scanner.stop();
+        }
+      } catch (error) {
+        console.warn("Unable to stop QR scanner:", error);
+      }
+
+      try {
+        await scanner.clear();
+      } catch (error) {
+        console.warn("Unable to clear QR scanner:", error);
+      }
+    }
+
+    setCameraActive(false);
+    setScannerStarting(false);
+  }, []);
+
+  const closeScanner = useCallback(async () => {
+    await stopQrScanner();
+    setShowScanner(false);
+    setScanSuccess(false);
+    setScanError("");
+  }, [stopQrScanner]);
+
+  const processScannedValue = useCallback(
+    async (decodedText) => {
+      if (scanSuccess) return;
+
+      const rawValue = String(decodedText || "").trim();
+      let scannedUserId = "";
+
+      if (rawValue.startsWith("SHUTTLETRACK_PLAYER:")) {
+        scannedUserId = rawValue
+          .slice("SHUTTLETRACK_PLAYER:".length)
+          .trim();
+      } else {
+        try {
+          const scannedUrl = new URL(rawValue);
+          const parts = scannedUrl.pathname.split("/").filter(Boolean);
+          const playerMarkerIndex = parts.findIndex(
+            (part) => part === "player" || part === "p" || part === "scan",
+          );
+
+          scannedUserId =
+            playerMarkerIndex >= 0
+              ? parts[parts.length - 1] || ""
+              : "";
+        } catch {
+          scannedUserId = "";
+        }
+      }
+
+      if (!scannedUserId) {
+        setScanError("This is not a valid ShuttleTrack player QR code.");
+        return;
+      }
+
+      if (currentUserId && scannedUserId === currentUserId) {
+        setScanError("This is your own QR code. Scan another player's QR.");
+        return;
+      }
+
+      const scannedPlayer = players.find(
+        (player) =>
+          String(player.userId || "") === scannedUserId ||
+          String(player.id || "") === scannedUserId,
+      );
+
+      if (!scannedPlayer) {
+        setScanError(
+          "Player profile not found. The profile may be private or unavailable.",
+        );
+        return;
+      }
+
+      setScanError("");
+      setScanSuccess(true);
+      setTab("all");
+      setSelected(scannedPlayer);
+      setSelectedCoach(null);
+
+      if (qrScannerRef.current?.isScanning) {
+        try {
+          await qrScannerRef.current.pause(true);
+        } catch (error) {
+          console.warn("Unable to pause scanner after success:", error);
+        }
+      }
+
+      scanCloseTimerRef.current = window.setTimeout(async () => {
+        await closeScanner();
+      }, 900);
+    },
+    [closeScanner, currentUserId, players, scanSuccess],
+  );
+
+  const startQrScanner = useCallback(async () => {
+    if (scannerStarting || cameraActive || scanSuccess) return;
+
+    setScanError("");
+
+    try {
+      await stopQrScanner();
+      setScannerStarting(true);
+
+      const readerElement = document.getElementById("player-qr-reader");
+
+      if (!readerElement) {
+        throw new Error("Scanner area is not ready. Please reopen the scanner.");
+      }
+
+      const scanner = new Html5Qrcode("player-qr-reader", {
+        verbose: false,
+      });
+      qrScannerRef.current = scanner;
+
+      let cameraConfig = { facingMode: "environment" };
+
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+
+        if (cameras.length > 0) {
+          const backCamera = cameras.find((camera) =>
+            /back|rear|environment/i.test(camera.label || ""),
+          );
+          cameraConfig = backCamera?.id || cameras[0].id;
+        }
+      } catch (cameraListError) {
+        console.warn("Unable to list cameras, using default camera:", cameraListError);
+      }
+
+      await scanner.start(
+        cameraConfig,
+        {
+          fps: 10,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const size = Math.floor(
+              Math.min(viewfinderWidth, viewfinderHeight) * 0.72,
+            );
+            return { width: size, height: size };
+          },
+          aspectRatio: 1,
+        },
+        processScannedValue,
+        () => {
+          // Normal scan misses happen many times per second. Ignore them.
+        },
+      );
+
+      setCameraActive(true);
+    } catch (error) {
+      console.error("Failed to start QR scanner:", error);
+      setScanError(
+        error?.message ||
+          "Camera could not start. Allow camera permission and try again.",
+      );
+      await stopQrScanner();
+    } finally {
+      setScannerStarting(false);
+    }
+  }, [
+    cameraActive,
+    processScannedValue,
+    scanSuccess,
+    scannerStarting,
+    stopQrScanner,
+  ]);
+
+  useEffect(() => {
+    if (!showScanner) return undefined;
+
+    const timer = window.setTimeout(() => {
+      startQrScanner();
+    }, 150);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [showScanner, startQrScanner]);
+
+  useEffect(() => {
+    return () => {
+      if (scanCloseTimerRef.current) {
+        window.clearTimeout(scanCloseTimerRef.current);
+      }
+
+      const scanner = qrScannerRef.current;
+      qrScannerRef.current = null;
+
+      if (scanner?.isScanning) {
+        scanner.stop().catch(() => {});
+      }
+    };
+  }, []);
+
   function switchTab(nextTab) {
     setTab(nextTab);
     setSelected(null);
@@ -3614,46 +3580,103 @@ export default function Players() {
           </div>
         </div>
 
-        <NotificationCenter onPartnerChanged={fetchData} />
+        <NotificationBell
+          supabase={supabase}
+          title="Notifications"
+          mode="players"
+          includePartnerRequests
+          onPartnerChanged={fetchData}
+        />
       </div>
 
-      <div className={styles.tabs} style={{ marginBottom: 16 }}>
-        <button
-          className={`${styles.tab} ${tab === "all" ? styles.tabActive : ""}`}
-          onClick={() => switchTab("all")}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 14,
+          marginBottom: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div
+          className={styles.tabs}
+          style={{
+            marginBottom: 0,
+            width: "fit-content",
+            flex: "0 1 auto",
+            minWidth: 0,
+          }}
         >
-          All players
-        </button>
+          <button
+            className={`${styles.tab} ${tab === "all" ? styles.tabActive : ""}`}
+            onClick={() => switchTab("all")}
+          >
+            All players
+          </button>
 
-        <button
-          className={`${styles.tab} ${
-            tab === "partner" ? styles.tabActive : ""
-          }`}
-          onClick={() => switchTab("partner")}
-        >
-          Find partner
-        </button>
+          <button
+            className={`${styles.tab} ${
+              tab === "partner" ? styles.tabActive : ""
+            }`}
+            onClick={() => switchTab("partner")}
+          >
+            Find partner
+          </button>
 
-        <button
-          className={`${styles.tab} ${tab === "opp" ? styles.tabActive : ""}`}
-          onClick={() => switchTab("opp")}
-        >
-          My opponents
-        </button>
+          <button
+            className={`${styles.tab} ${tab === "opp" ? styles.tabActive : ""}`}
+            onClick={() => switchTab("opp")}
+          >
+            My opponents
+          </button>
 
-        <button
-          className={`${styles.tab} ${tab === "fav" ? styles.tabActive : ""}`}
-          onClick={() => switchTab("fav")}
-        >
-          My favourites
-        </button>
+          <button
+            className={`${styles.tab} ${tab === "fav" ? styles.tabActive : ""}`}
+            onClick={() => switchTab("fav")}
+          >
+            My favourites
+          </button>
 
-        <button
-          className={`${styles.tab} ${tab === "coach" ? styles.tabActive : ""}`}
-          onClick={() => switchTab("coach")}
+          <button
+            className={`${styles.tab} ${tab === "coach" ? styles.tabActive : ""}`}
+            onClick={() => switchTab("coach")}
+          >
+            Find coach
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginLeft: "auto",
+            flexShrink: 0,
+          }}
         >
-          Find coach
-        </button>
+          <button
+            type="button"
+            className={styles.btnPrimary}
+            onClick={() => setShowMyQr(true)}
+            style={{ whiteSpace: "nowrap" }}
+          >
+            My QR
+          </button>
+
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={() => {
+              setScanError("");
+              setScanSuccess(false);
+              setShowScanner(true);
+            }}
+            style={{ whiteSpace: "nowrap" }}
+          >
+            Scan Player
+          </button>
+        </div>
       </div>
 
       {tab !== "partner" && tab !== "coach" && (
@@ -4294,11 +4317,335 @@ export default function Players() {
                 coach={selectedCoach}
                 onRequest={requestCoach}
                 onCancel={cancelCoachRelationship}
+                onAcceptIncoming={acceptIncomingCoachRequest}
+                onDeclineIncoming={declineIncomingCoachRequest}
                 onReport={openCoachReport}
                 onRequestClub={requestCoachClub}
                 onCancelClubRequest={cancelCoachClubRequest}
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {showMyQr && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowMyQr(false);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 3200,
+            background: "rgba(13, 27, 62, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+        >
+          <div
+            style={{
+              width: "min(420px, 100%)",
+              background: C.card,
+              borderRadius: 20,
+              padding: 24,
+              textAlign: "center",
+              boxShadow: "0 24px 60px rgba(13,27,62,0.28)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 12,
+                marginBottom: 18,
+                textAlign: "left",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>
+                  My Player QR
+                </div>
+                <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
+                  Let another ShuttleTrack player or coach scan this code.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Close QR"
+                onClick={() => setShowMyQr(false)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 999,
+                  border: `1px solid ${C.line}`,
+                  background: C.card,
+                  color: C.muted,
+                  cursor: "pointer",
+                  fontSize: 18,
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {!currentUserId ? (
+              <div style={{ padding: 30, color: C.muted }}>
+                Loading your QR code...
+              </div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: "inline-block",
+                    padding: 14,
+                    background: "#FFFFFF",
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 16,
+                  }}
+                >
+                  <QRCodeCanvas
+                    value={`SHUTTLETRACK_PLAYER:${currentUserId}`}
+                    size={240}
+                    level="H"
+                    includeMargin
+                  />
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 16,
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    color: C.muted,
+                  }}
+                >
+                  This QR contains only your ShuttleTrack player identifier, not
+                  your password or private account information.
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showScanner && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeScanner();
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 3200,
+            background: "rgba(13, 27, 62, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+        >
+          <div
+            style={{
+              width: "min(520px, 100%)",
+              maxHeight: "calc(100vh - 36px)",
+              overflowY: "auto",
+              background: C.card,
+              borderRadius: 20,
+              padding: 20,
+              boxShadow: "0 24px 60px rgba(13,27,62,0.28)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 12,
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>
+                  Scan Player
+                </div>
+                <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
+                  Point the camera at another ShuttleTrack player&apos;s QR code.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Close scanner"
+                onClick={closeScanner}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 999,
+                  border: `1px solid ${C.line}`,
+                  background: C.card,
+                  color: C.muted,
+                  cursor: "pointer",
+                  fontSize: 18,
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                position: "relative",
+                overflow: "hidden",
+                borderRadius: 18,
+                border: scanSuccess
+                  ? "4px solid #16A34A"
+                  : scanError
+                    ? "3px solid #EF4444"
+                    : "3px solid #D9E2F2",
+                background: scanSuccess ? "#F0FDF4" : "#0F172A",
+                minHeight: 300,
+                transition: "border-color 0.2s ease, background 0.2s ease",
+                boxShadow: scanSuccess
+                  ? "0 0 0 6px rgba(22,163,74,0.13)"
+                  : "none",
+              }}
+            >
+              <div
+                id="player-qr-reader"
+                style={{
+                  width: "100%",
+                  minHeight: 300,
+                  background: "#0F172A",
+                }}
+              />
+
+              {!cameraActive && !scannerStarting && !scanSuccess && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 12,
+                    padding: 24,
+                    textAlign: "center",
+                    background: "linear-gradient(180deg,#172554,#0F172A)",
+                    color: "#FFFFFF",
+                  }}
+                >
+                  <div style={{ fontSize: 38 }}>📷</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.6, opacity: 0.85 }}>
+                    Camera did not start automatically. Press the button below
+                    and allow camera permission.
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.btnPrimary}
+                    onClick={startQrScanner}
+                  >
+                    Start camera
+                  </button>
+                </div>
+              )}
+
+              {scannerStarting && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(15,23,42,0.8)",
+                    color: "#FFFFFF",
+                    fontSize: 13,
+                    fontWeight: 800,
+                  }}
+                >
+                  Starting camera...
+                </div>
+              )}
+
+              {scanSuccess && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                    background: "rgba(240,253,244,0.94)",
+                    color: "#166534",
+                    fontWeight: 900,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 70,
+                      height: 70,
+                      borderRadius: 999,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "#16A34A",
+                      color: "#FFFFFF",
+                      fontSize: 38,
+                    }}
+                  >
+                    ✓
+                  </div>
+                  Player found
+                </div>
+              )}
+            </div>
+
+            {scanError && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 11,
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  color: "#B91C1C",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}
+              >
+                {scanError}
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: 12,
+                padding: 12,
+                borderRadius: 11,
+                background: C.soft,
+                color: C.muted,
+                fontSize: 11,
+                lineHeight: 1.6,
+              }}
+            >
+              Camera access works on localhost and normally requires HTTPS after
+              deployment. Chrome must also have camera permission enabled.
+            </div>
           </div>
         </div>
       )}

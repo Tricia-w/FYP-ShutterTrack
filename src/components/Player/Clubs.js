@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+//import { useNavigate } from "react-router-dom";
+import NotificationBell from "../Notifications/NotificationBell";
 import { supabase } from "../../lib/supabase";
 import styles from "../Layout/Pages.module.css";
 import Loader from "../Loader/Loader";
@@ -23,403 +24,6 @@ const C = {
 };
 
 
-const formatClubNotificationTime = value => {
-  if (!value) return "";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  return date.toLocaleString("en-MY", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
-
-function ClubNotificationBell() {
-  const navigate = useNavigate();
-  const wrapRef = useRef(null);
-  const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [loadingNotifications, setLoadingNotifications] = useState(false);
-
-  const loadNotifications = useCallback(async () => {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) return;
-
-    setLoadingNotifications(true);
-
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("user_id", user.id)
-      .in("type", CLUB_NOTIFICATION_TYPES)
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (error) {
-      console.error("Club notification load error:", error);
-      setNotifications([]);
-    } else {
-      setNotifications(data || []);
-    }
-
-    setLoadingNotifications(false);
-  }, []);
-
-  useEffect(() => {
-    loadNotifications();
-  }, [loadNotifications]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let channel = null;
-
-    const subscribe = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user?.id || cancelled) return;
-
-      const channelName = `clubs-notifications-${user.id}-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`;
-
-      const nextChannel = supabase
-        .channel(channelName)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "notifications",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => loadNotifications(),
-        );
-
-      channel = nextChannel;
-      nextChannel.subscribe();
-    };
-
-    subscribe();
-
-    return () => {
-      cancelled = true;
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, [loadNotifications]);
-
-  useEffect(() => {
-    const closeOutside = event => {
-      if (wrapRef.current && !wrapRef.current.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", closeOutside);
-    return () => document.removeEventListener("mousedown", closeOutside);
-  }, []);
-
-  const unreadCount = notifications.filter(item => !item.is_read).length;
-
-  const openNotification = async notification => {
-    if (!notification.is_read) {
-      await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("id", notification.id);
-
-      setNotifications(current =>
-        current.map(item =>
-          item.id === notification.id
-            ? { ...item, is_read: true }
-            : item,
-        ),
-      );
-    }
-
-    setOpen(false);
-
-    if (notification.action_url) {
-      navigate(notification.action_url);
-    }
-  };
-
-  const markAllRead = async event => {
-    event.stopPropagation();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) return;
-
-    await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", user.id)
-      .in("type", CLUB_NOTIFICATION_TYPES)
-      .eq("is_read", false);
-
-    setNotifications(current =>
-      current.map(item => ({ ...item, is_read: true })),
-    );
-  };
-
-  const deleteNotification = async (event, id) => {
-    event.stopPropagation();
-
-    const { error } = await supabase
-      .from("notifications")
-      .delete()
-      .eq("id", id);
-
-    if (!error) {
-      setNotifications(current =>
-        current.filter(item => item.id !== id),
-      );
-    }
-  };
-
-  return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={() => {
-          setOpen(value => !value);
-          loadNotifications();
-        }}
-        title="Notifications"
-        aria-label="Notifications"
-        style={{
-          width: 46,
-          height: 46,
-          borderRadius: 14,
-          border: `1px solid ${C.line}`,
-          background: C.card,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 19,
-          cursor: "pointer",
-          position: "relative",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.04)",
-        }}
-      >
-        🔔
-
-        {unreadCount > 0 && (
-          <span
-            style={{
-              position: "absolute",
-              top: -5,
-              right: -5,
-              minWidth: 19,
-              height: 19,
-              padding: "0 5px",
-              borderRadius: 999,
-              background: "#EF4444",
-              color: "#FFFFFF",
-              fontSize: 10,
-              fontWeight: 800,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "2px solid #FFFFFF",
-            }}
-          >
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: 54,
-            right: 0,
-            zIndex: 2000,
-            width: "min(390px, calc(100vw - 28px))",
-            maxHeight: 500,
-            overflow: "hidden",
-            background: C.card,
-            border: `1px solid ${C.line}`,
-            borderRadius: 18,
-            boxShadow: "0 22px 55px rgba(13,27,62,0.18)",
-          }}
-        >
-          <div
-            style={{
-              padding: "14px 16px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              borderBottom: `1px solid ${C.line}`,
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>
-                Notifications
-              </div>
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                {unreadCount} unread
-              </div>
-            </div>
-
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={markAllRead}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "#1A5FFF",
-                  fontSize: 11,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                }}
-              >
-                Mark all read
-              </button>
-            )}
-          </div>
-
-          <div style={{ maxHeight: 430, overflowY: "auto" }}>
-            {loadingNotifications ? (
-              <div
-                style={{
-                  padding: 24,
-                  textAlign: "center",
-                  color: C.muted,
-                  fontSize: 12,
-                }}
-              >
-                Loading notifications...
-              </div>
-            ) : notifications.length === 0 ? (
-              <div
-                style={{
-                  padding: 28,
-                  textAlign: "center",
-                  color: C.muted,
-                  fontSize: 12,
-                }}
-              >
-                No club notifications yet.
-              </div>
-            ) : (
-              notifications.map(notification => (
-                <div
-                  key={notification.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openNotification(notification)}
-                  onKeyDown={event => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      openNotification(notification);
-                    }
-                  }}
-                  style={{
-                    position: "relative",
-                    padding: "13px 44px 13px 16px",
-                    borderBottom: `1px solid ${C.line}`,
-                    background: notification.is_read
-                      ? C.card
-                      : "#F2F6FF",
-                    cursor: "pointer",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={event =>
-                      deleteNotification(event, notification.id)
-                    }
-                    title="Delete notification"
-                    style={{
-                      position: "absolute",
-                      top: 10,
-                      right: 10,
-                      width: 26,
-                      height: 26,
-                      borderRadius: 8,
-                      border: "none",
-                      background: "transparent",
-                      color: "#EF4444",
-                      fontSize: 16,
-                      cursor: "pointer",
-                    }}
-                  >
-                    ×
-                  </button>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    <span style={{ fontSize: 16 }}>🔔</span>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 900,
-                        color: C.text,
-                      }}
-                    >
-                      {notification.title || "Notification"}
-                    </div>
-
-                    {!notification.is_read && (
-                      <span
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: "50%",
-                          background: "#1A5FFF",
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: 5,
-                      fontSize: 12,
-                      color: C.muted,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {notification.message || ""}
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 10,
-                      color: C.muted,
-                    }}
-                  >
-                    {formatClubNotificationTime(notification.created_at)}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function getVenueMapEmbedUrl(venue, club) {
   const address = String(venue?.address || "").trim();
@@ -1572,6 +1176,146 @@ function ClubPlayerProfileModal({ member, onClose }) {
       : member.memberRole === "coach"
         ? "Club coach"
         : "Club player";
+
+  const isPrivatePlayer =
+    clubRole === "Club player" &&
+    member.profilePrivate === true;
+
+  if (isPrivatePlayer) {
+    const privateDisplayName =
+      member.playerName ||
+      member.member_name ||
+      "Club member";
+
+    return (
+      <div
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 3000,
+          background: "rgba(13,27,62,0.48)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 18,
+        }}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${privateDisplayName} private profile`}
+          style={{
+            width: "min(520px, 100%)",
+            background: C.card,
+            border: `1px solid ${C.line}`,
+            borderRadius: 20,
+            padding: 22,
+            boxShadow: "0 24px 65px rgba(13,27,62,0.28)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 14,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+              <div
+                className={styles.av}
+                style={{ width: 62, height: 62, fontSize: 18 }}
+              >
+                {privateDisplayName.charAt(0).toUpperCase()}
+              </div>
+
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
+                  {privateDisplayName}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 12,
+                    color: C.muted,
+                  }}
+                >
+                  Club player
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 5,
+                    flexWrap: "wrap",
+                    marginTop: 7,
+                  }}
+                >
+                  <span className={styles.badgeGray}>Private profile</span>
+                  <span className={styles.badgeBlue}>{clubRole}</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close profile"
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 999,
+                border: `1px solid ${C.line}`,
+                background: C.card,
+                color: C.muted,
+                cursor: "pointer",
+                fontSize: 18,
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          <div
+            style={{
+              marginTop: 20,
+              padding: 18,
+              borderRadius: 14,
+              border: `1px solid ${C.line}`,
+              background: C.soft,
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 900,
+                color: C.text,
+              }}
+            >
+              This player&apos;s profile is private
+            </div>
+            <div
+              style={{
+                marginTop: 7,
+                fontSize: 12,
+                lineHeight: 1.65,
+                color: C.muted,
+              }}
+            >
+              Their name and club role remain visible for membership purposes,
+              but personal profile details are hidden.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const profileLabel = isCoachProfile
     ? "Coach profile"
@@ -2919,7 +2663,7 @@ export default function Clubs() {
             supabase
               .from("player_profiles")
               .select(
-                "user_id, display_name, state, player_category, profile_photo_url, playing_hand, experience_years, bio, instagram",
+                "user_id, display_name, state, player_category, profile_photo_url, playing_hand, experience_years, bio, instagram, profile_public",
               )
               .in("user_id", acceptedMemberUserIds),
             supabase
@@ -2969,11 +2713,6 @@ export default function Clubs() {
           membership.member_role === "coach" ||
           membership.member_role === "manager";
 
-        const preferredProfile =
-          isCoachMember && coachProfile
-            ? coachProfile
-            : playerProfile || coachProfile;
-
         const normalisedCoachProfile = coachProfile
           ? {
               ...coachProfile,
@@ -3019,25 +2758,34 @@ export default function Clubs() {
             ? normalisedCoachProfile
             : playerProfile || normalisedCoachProfile;
 
+        const isPrivatePlayer =
+          !isCoachMember &&
+          playerProfile?.profile_public === false;
+
         const member = {
           ...membership,
           playerName:
-            normalisedPreferredProfile?.display_name ||
+            (isPrivatePlayer
+              ? membership.member_name
+              : normalisedPreferredProfile?.display_name) ||
             membership.member_name ||
             "Member",
-          playerState:
-            normalisedPreferredProfile?.state ||
-            "—",
-          playerLevel:
-            isCoachMember
+          playerState: isPrivatePlayer
+            ? "—"
+            : normalisedPreferredProfile?.state || "—",
+          playerLevel: isPrivatePlayer
+            ? "—"
+            : isCoachMember
               ? normalisedCoachProfile?.coaching_level || "Coach"
               : playerProfile?.player_category || "—",
-          playerAvatarUrl:
-            normalisedCoachProfile?.avatar_url ||
-            playerProfile?.profile_photo_url ||
-            null,
-          playerProfile,
+          playerAvatarUrl: isPrivatePlayer
+            ? null
+            : normalisedCoachProfile?.avatar_url ||
+              playerProfile?.profile_photo_url ||
+              null,
+          playerProfile: isPrivatePlayer ? null : playerProfile,
           coachProfile: normalisedCoachProfile,
+          profilePrivate: isPrivatePlayer,
           memberRole: membership.member_role || "player",
         };
 
@@ -3153,7 +2901,7 @@ export default function Clubs() {
         if (userIds.length > 0) {
           const { data: profileRows, error: profileError } = await supabase
             .from("player_profiles")
-            .select("user_id, display_name, state, player_category, profile_photo_url, playing_hand, experience_years, bio, instagram")
+            .select("user_id, display_name, state, player_category, profile_photo_url, playing_hand, experience_years, bio, instagram, profile_public")
             .in("user_id", userIds);
 
           if (profileError) {
@@ -3169,25 +2917,37 @@ export default function Clubs() {
         }
 
         const formattedMemberships = rows.map((row) => {
-          const playerProfile = profilesByUserId.get(row.user_id) || null
+          const playerProfile =
+            profilesByUserId.get(row.user_id) || null;
+          const isPrivatePlayer =
+            row.member_role !== "coach" &&
+            row.member_role !== "manager" &&
+            playerProfile?.profile_public === false;
 
           return {
             ...row,
             playerName:
-              playerProfile?.display_name ||
+              (isPrivatePlayer
+                ? row.member_name
+                : playerProfile?.display_name) ||
               row.member_name ||
               (row.user_id === user?.id
                 ? nextOwnedClub.ownerName
                 : "Player"),
-            playerState: playerProfile?.state || "—",
-            playerLevel:
-              playerProfile?.player_category ||
-              "—",
-            playerAvatarUrl: playerProfile?.profile_photo_url || null,
-            playerProfile,
+            playerState: isPrivatePlayer
+              ? "—"
+              : playerProfile?.state || "—",
+            playerLevel: isPrivatePlayer
+              ? "—"
+              : playerProfile?.player_category || "—",
+            playerAvatarUrl: isPrivatePlayer
+              ? null
+              : playerProfile?.profile_photo_url || null,
+            playerProfile: isPrivatePlayer ? null : playerProfile,
+            profilePrivate: isPrivatePlayer,
             isOwner: row.user_id === nextOwnedClub.ownerId,
             memberRole: row.member_role || "player",
-          }
+          };
         });
 
         setRequests(
@@ -3447,13 +3207,21 @@ export default function Clubs() {
           }
         : null;
 
-      const playerProfile = playerResult.data || null;
+      const rawPlayerProfile = playerResult.data || null;
 
       const isCoachMember =
         member.memberRole === "coach" ||
         member.memberRole === "manager" ||
         member.member_role === "coach" ||
         member.member_role === "manager";
+
+      const isPrivatePlayer =
+        !isCoachMember &&
+        rawPlayerProfile?.profile_public === false;
+
+      const playerProfile = isPrivatePlayer
+        ? null
+        : rawPlayerProfile;
 
       const preferredProfile =
         isCoachMember
@@ -3463,31 +3231,37 @@ export default function Clubs() {
       setSelectedMemberProfile({
         ...member,
         playerName:
-          preferredProfile?.display_name ||
+          (isPrivatePlayer
+            ? member.playerName || member.member_name
+            : preferredProfile?.display_name) ||
           appUserResult.data?.full_name ||
           appUserResult.data?.username ||
           member.playerName ||
           member.member_name ||
           "Member",
-        playerState:
-          preferredProfile?.state ||
-          member.playerState ||
-          "—",
-        playerLevel:
-          isCoachMember
+        playerState: isPrivatePlayer
+          ? "—"
+          : preferredProfile?.state ||
+            member.playerState ||
+            "—",
+        playerLevel: isPrivatePlayer
+          ? "—"
+          : isCoachMember
             ? coachProfile?.coaching_level ||
               member.playerLevel ||
               "Coach"
             : playerProfile?.player_category ||
               member.playerLevel ||
               "—",
-        playerAvatarUrl:
-          coachProfile?.avatar_url ||
-          playerProfile?.profile_photo_url ||
-          member.playerAvatarUrl ||
-          null,
+        playerAvatarUrl: isPrivatePlayer
+          ? null
+          : coachProfile?.avatar_url ||
+            playerProfile?.profile_photo_url ||
+            member.playerAvatarUrl ||
+            null,
         playerProfile,
         coachProfile,
+        profilePrivate: isPrivatePlayer,
         memberRole:
           member.memberRole ||
           member.member_role ||
@@ -4074,7 +3848,11 @@ export default function Clubs() {
             </div>
           </div>
 
-          <ClubNotificationBell />
+          <NotificationBell
+            supabase={supabase}
+            title="Club notifications"
+            sourceTypes={CLUB_NOTIFICATION_TYPES}
+          />
         </div>
       </div>
 

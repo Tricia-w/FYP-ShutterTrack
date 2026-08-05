@@ -85,6 +85,16 @@ const averageValues = values => {
   return Math.round(numbers.reduce((sum, value) => sum + value, 0) / numbers.length)
 }
 
+const hasMeaningfulProgressNote = student =>
+  Boolean(
+    String(student.progress?.coach_comment || '').trim() ||
+    String(student.progress?.focus_area || '').trim() ||
+    String(student.progress?.progress_status || '').trim() ||
+    String(student.progress?.injury_recommendation || '').trim() ||
+    String(student.assessment?.performance_comment || '').trim() ||
+    String(student.assessment?.fitness_comment || '').trim()
+  )
+
 function calculateFitnessIndicators({
   tests,
   trainingLogs,
@@ -240,82 +250,149 @@ function getInjuryStatusColor(status) {
 }
 
 function getFallbackInjuryPoint(name = '') {
-  const lower = String(name).toLowerCase()
+  const lower = String(name || '')
+    .toLowerCase()
+    .trim()
 
-  if (lower.includes('neck')) return { cx: 60, cy: 31 }
-  if (lower.includes('back')) return { cx: 60, cy: 66 }
-  if (lower.includes('chest')) return { cx: 60, cy: 53 }
+  const isLeft = /\bleft\b/.test(lower)
+  const isRight = /\bright\b/.test(lower)
 
-  if (lower.includes('right') && lower.includes('shoulder')) {
-    return { cx: 82, cy: 48 }
+  const sideX = isLeft ? 50 : isRight ? 70 : 60
+
+  if (
+    lower.includes('head') ||
+    lower.includes('forehead')
+  ) {
+    return { cx: 60, cy: 16 }
   }
 
-  if (lower.includes('left') && lower.includes('shoulder')) {
-    return { cx: 38, cy: 48 }
+  if (lower.includes('neck')) {
+    return { cx: sideX, cy: 31 }
   }
 
-  if (lower.includes('right') && lower.includes('elbow')) {
-    return { cx: 88, cy: 76 }
-  }
-
-  if (lower.includes('left') && lower.includes('elbow')) {
-    return { cx: 32, cy: 76 }
+  if (lower.includes('shoulder')) {
+    return {
+      cx: isLeft ? 42 : isRight ? 78 : 60,
+      cy: 43,
+    }
   }
 
   if (
-    lower.includes('right') &&
-    (lower.includes('wrist') || lower.includes('hand'))
+    lower.includes('upper chest') ||
+    lower.includes('chest') ||
+    lower.includes('pectoral')
   ) {
-    return { cx: 95, cy: 99 }
+    return {
+      cx: isLeft ? 52 : isRight ? 68 : 60,
+      cy: 50,
+    }
   }
 
   if (
-    lower.includes('left') &&
-    (lower.includes('wrist') || lower.includes('hand'))
+    lower.includes('upper arm') ||
+    lower.includes('bicep') ||
+    lower.includes('tricep') ||
+    (
+      lower.includes('arm') &&
+      !lower.includes('forearm')
+    )
   ) {
-    return { cx: 25, cy: 99 }
+    return {
+      cx: isLeft ? 37 : isRight ? 83 : 60,
+      cy: 63,
+    }
   }
 
-  if (lower.includes('right') && lower.includes('hip')) {
-    return { cx: 68, cy: 98 }
+  if (lower.includes('elbow')) {
+    return {
+      cx: isLeft ? 31 : isRight ? 89 : 60,
+      cy: 78,
+    }
   }
 
-  if (lower.includes('left') && lower.includes('hip')) {
-    return { cx: 52, cy: 98 }
+  if (lower.includes('forearm')) {
+    return {
+      cx: isLeft ? 29 : isRight ? 91 : 60,
+      cy: 88,
+    }
   }
 
-  if (lower.includes('right') && lower.includes('knee')) {
-    return { cx: 70, cy: 124 }
+  if (
+    lower.includes('wrist') ||
+    lower.includes('hand') ||
+    lower.includes('palm') ||
+    lower.includes('finger')
+  ) {
+    return {
+      cx: isLeft ? 27 : isRight ? 93 : 60,
+      cy: 98,
+    }
   }
 
-  if (lower.includes('left') && lower.includes('knee')) {
-    return { cx: 50, cy: 124 }
+  if (
+    lower.includes('rib') ||
+    lower.includes('ribs')
+  ) {
+    return {
+      cx: isLeft ? 51 : isRight ? 69 : 60,
+      cy: 67,
+    }
   }
 
-  if (lower.includes('right') && lower.includes('ankle')) {
-    return { cx: 75, cy: 151 }
+  if (
+    lower.includes('waist') ||
+    lower.includes('abdomen') ||
+    lower.includes('stomach')
+  ) {
+    return { cx: sideX, cy: 86 }
   }
 
-  if (lower.includes('left') && lower.includes('ankle')) {
-    return { cx: 45, cy: 151 }
+  if (lower.includes('back')) {
+    return {
+      cx: sideX,
+      cy: lower.includes('lower') ? 86 : 66,
+    }
   }
 
-  if (lower.includes('shoulder')) return { cx: 82, cy: 48 }
-  if (lower.includes('elbow')) return { cx: 88, cy: 76 }
-  if (lower.includes('wrist') || lower.includes('hand')) {
-    return { cx: 95, cy: 99 }
+  if (
+    lower.includes('hip') ||
+    lower.includes('groin')
+  ) {
+    return { cx: sideX, cy: 94 }
   }
-  if (lower.includes('waist')) return { cx: 60, cy: 88 }
-  if (lower.includes('hip')) return { cx: 68, cy: 98 }
-  if (lower.includes('thigh') || lower.includes('hamstring')) {
-    return { cx: 68, cy: 106 }
+
+  if (
+    lower.includes('thigh') ||
+    lower.includes('hamstring') ||
+    lower.includes('quadricep') ||
+    lower.includes('quad')
+  ) {
+    return { cx: sideX, cy: 106 }
   }
-  if (lower.includes('knee')) return { cx: 70, cy: 124 }
-  if (lower.includes('calf') || lower.includes('shin')) {
-    return { cx: 72, cy: 138 }
+
+  if (lower.includes('knee')) {
+    return { cx: sideX, cy: 122 }
   }
-  if (lower.includes('ankle')) return { cx: 75, cy: 151 }
-  if (lower.includes('foot')) return { cx: 84, cy: 155 }
+
+  if (
+    lower.includes('calf') ||
+    lower.includes('shin') ||
+    lower.includes('lower leg')
+  ) {
+    return { cx: sideX, cy: 140 }
+  }
+
+  if (lower.includes('ankle')) {
+    return { cx: sideX, cy: 153 }
+  }
+
+  if (
+    lower.includes('foot') ||
+    lower.includes('heel') ||
+    lower.includes('toe')
+  ) {
+    return { cx: sideX, cy: 160 }
+  }
 
   return { cx: 60, cy: 90 }
 }
@@ -328,13 +405,14 @@ function InjuryBodyMap({ injuries = [] }) {
   return (
     <div
       style={{
-        width: 150,
-        minWidth: 150,
-        minHeight: 210,
+        width: 180,
+        minWidth: 180,
+        height: 240,
         padding: 12,
+        boxSizing: 'border-box',
         borderRadius: 14,
-        border: '1px solid var(--line, #EEF1F8)',
-        background: 'var(--soft, #F7F9FF)',
+        border: '1px solid var(--line, #E2E8F0)',
+        background: 'var(--card, #FFFFFF)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -343,37 +421,31 @@ function InjuryBodyMap({ injuries = [] }) {
     >
       <svg
         viewBox="0 0 120 170"
-        width="118"
-        height="168"
+        width="132"
+        height="188"
         role="img"
         aria-label="Student injury location body map"
+        style={{
+          display: 'block',
+          overflow: 'visible',
+        }}
       >
-        <g
-          fill="none"
-          stroke="var(--text-muted, #94A3B8)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="60" cy="15" r="10" />
-          <path d="M54 25 L54 33" />
-          <path d="M66 25 L66 33" />
-          <path d="M45 35 C50 31, 70 31, 75 35" />
-          <path d="M46 36 C43 52, 42 72, 45 91" />
-          <path d="M74 36 C77 52, 78 72, 75 91" />
-          <path d="M45 91 C50 97, 55 100, 60 100" />
-          <path d="M75 91 C70 97, 65 100, 60 100" />
-          <path d="M60 35 L60 100" opacity="0.35" />
-          <path d="M45 38 C34 50, 29 72, 25 96" />
-          <path d="M75 38 C86 50, 91 72, 95 96" />
-          <path d="M54 100 C51 116, 48 132, 45 152" />
-          <path d="M45 152 L36 154" />
-          <path d="M66 100 C69 116, 72 132, 75 152" />
-          <path d="M75 152 L84 154" />
-        </g>
+        <image
+          href="/humanbody.png"
+          x="18"
+          y="0"
+          width="84"
+          height="170"
+          preserveAspectRatio="xMidYMid meet"
+          pointerEvents="none"
+        />
 
         {visibleInjuries.map((injury, index) => {
           const hasSavedPoint =
+            injury.bodyX !== null &&
+            injury.bodyX !== undefined &&
+            injury.bodyY !== null &&
+            injury.bodyY !== undefined &&
             Number.isFinite(Number(injury.bodyX)) &&
             Number.isFinite(Number(injury.bodyY))
 
@@ -395,7 +467,7 @@ function InjuryBodyMap({ injuries = [] }) {
                 cy={point.cy}
                 r="8"
                 fill="var(--card, #FFFFFF)"
-                opacity="0.96"
+                opacity="0.98"
               />
               <circle
                 cx={point.cx}
@@ -408,20 +480,6 @@ function InjuryBodyMap({ injuries = [] }) {
         })}
       </svg>
 
-      <div
-        style={{
-          marginTop: 6,
-          display: 'flex',
-          gap: 8,
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-          fontSize: 9,
-          color: 'var(--text-muted, #8892A4)',
-        }}
-      >
-        <span>● Active</span>
-        <span style={{ color: '#10B981' }}>● Recovered</span>
-      </div>
     </div>
   )
 }
@@ -938,10 +996,7 @@ export default function CoachProgress() {
   )
 
   const totalNotes = useMemo(
-    () =>
-      students.filter(student =>
-        String(student.progress?.coach_comment || '').trim()
-      ).length,
+    () => students.filter(hasMeaningfulProgressNote).length,
     [students]
   )
 
@@ -1619,9 +1674,9 @@ export default function CoachProgress() {
                     style={{
                       display: 'grid',
                       gridTemplateColumns:
-                        '150px minmax(0, 1fr)',
+                        '180px minmax(0, 1fr)',
                       gap: 16,
-                      alignItems: 'start',
+                      alignItems: 'stretch',
                     }}
                   >
                     <InjuryBodyMap
@@ -1632,8 +1687,10 @@ export default function CoachProgress() {
                       style={{
                         display: 'flex',
                         flexDirection: 'column',
+                        justifyContent: 'center',
                         gap: 9,
                         minWidth: 0,
+                        minHeight: 240,
                       }}
                     >
                       {selectedStudent.injuries.map(

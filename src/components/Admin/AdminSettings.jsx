@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -296,7 +297,7 @@ export default function AdminSettings() {
     }));
   };
 
-  const saveAdminAccount = async (
+  const saveAdminAccount = useCallback(async (
     currentForm
   ) => {
     const {
@@ -382,7 +383,7 @@ export default function AdminSettings() {
         },
       })
     );
-  };
+  }, [refreshProfile]);
 
   useEffect(() => {
     if (
@@ -458,7 +459,7 @@ export default function AdminSettings() {
         );
       }
     };
-  }, [form.name, loading]);
+  }, [form.name, loading, saveAdminAccount]);
 
   const toggleDarkMode = async () => {
     if (

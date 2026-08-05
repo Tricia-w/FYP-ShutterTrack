@@ -7,6 +7,7 @@ import {
   Field,
   Modal,
   SectionHeader,
+  SummaryCard,
   TableCard,
   buttonBase,
   inputStyle,
@@ -226,65 +227,38 @@ export default function AdminUsers({
         style={{
           display: "grid",
           gridTemplateColumns:
-            "repeat(auto-fit, minmax(170px, 1fr))",
+            "repeat(auto-fit, minmax(180px, 1fr))",
           gap: 14,
           marginBottom: 16,
         }}
       >
-        {[
-          {
-            label: "Total users",
-            value: counts.All,
-            color: "#1A5FFF",
-          },
-          {
-            label: "Players",
-            value: counts.Player,
-            color: "#00976C",
-          },
-          {
-            label: "Coaches",
-            value: counts.Coach,
-            color: "#F59E0B",
-          },
-          {
-            label: "Administrators",
-            value: counts.Admin,
-            color: "#7C3AED",
-          },
-        ].map((item) => (
-          <div
-            key={item.label}
-            style={{
-              minHeight: 112,
-              padding: "20px 22px",
-              borderRadius: 16,
-              background: "#fff",
-              border: "1px solid #E8ECF5",
-              boxShadow: "0 4px 14px rgba(13,27,62,0.06)",
-            }}
-          >
-            <div
-              style={{
-                color: item.color,
-                fontSize: 28,
-                fontWeight: 800,
-                lineHeight: 1,
-              }}
-            >
-              {item.value}
-            </div>
-            <div
-              style={{
-                marginTop: 8,
-                color: "#7B879C",
-                fontSize: 12,
-              }}
-            >
-              {item.label}
-            </div>
-          </div>
-        ))}
+        <SummaryCard
+          label="Total users"
+          value={counts.All}
+          helper="All registered accounts"
+          dark
+        />
+
+        <SummaryCard
+          label="Players"
+          value={counts.Player}
+          helper="Registered player accounts"
+          color="#00976C"
+        />
+
+        <SummaryCard
+          label="Coaches"
+          value={counts.Coach}
+          helper="Registered coach accounts"
+          color="#F59E0B"
+        />
+
+        <SummaryCard
+          label="Administrators"
+          value={counts.Admin}
+          helper="Accounts with admin access"
+          color="#7C3AED"
+        />
       </div>
 
       <div

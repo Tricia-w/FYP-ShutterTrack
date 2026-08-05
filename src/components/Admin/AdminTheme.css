@@ -1,0 +1,349 @@
+html[data-theme="dark"] body.admin-theme-active,
+body[data-theme="dark"].admin-theme-active {
+  --bg: #0b1424;
+  --card: #121f35;
+  --card-hover: #182943;
+  --soft: #17253d;
+  --input: #101c30;
+  --line: #2a3a55;
+  --text: #f4f7fc;
+  --text-muted: #9cabc2;
+  --text-soft: #cad4e4;
+
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------
+   HEADINGS AND TEXT
+--------------------------------------------------------- */
+
+html[data-theme="dark"] body.admin-theme-active
+  [style*="color: rgb(13, 27, 62)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="color: #0D1B3E"],
+body[data-theme="dark"].admin-theme-active
+  [style*="color: rgb(13, 27, 62)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="color: #0D1B3E"] {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body.admin-theme-active
+  [style*="color: rgb(107, 114, 128)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="color: rgb(113, 128, 154)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="color: rgb(123, 135, 156)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="color: rgb(136, 146, 164)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="color: rgb(56, 81, 125)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="color: rgb(107, 114, 128)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="color: rgb(113, 128, 154)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="color: rgb(123, 135, 156)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="color: rgb(136, 146, 164)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="color: rgb(56, 81, 125)"] {
+  color: var(--text-muted) !important;
+}
+
+/* ---------------------------------------------------------
+   WHITE AND PALE PANELS
+--------------------------------------------------------- */
+
+/* Pure white cards and rows */
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(255, 255, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(255, 255, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(255, 255, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(255, 255, 255)"] {
+  background: var(--card) !important;
+  background-color: var(--card) !important;
+  border-color: var(--line) !important;
+}
+
+/* Pale Overview cards, notice bars and action items */
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(248, 250, 252)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(248, 250, 252)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(248, 250, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(248, 250, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(246, 248, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(246, 248, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(244, 247, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(244, 247, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(244, 246, 252)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(244, 246, 252)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(238, 243, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(238, 243, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(248, 250, 252)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(248, 250, 252)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(248, 250, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(248, 250, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(246, 248, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(246, 248, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(244, 247, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(244, 247, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(244, 246, 252)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(244, 246, 252)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(238, 243, 255)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(238, 243, 255)"] {
+  background: var(--soft) !important;
+  background-color: var(--soft) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--line) !important;
+}
+
+/* Pale progress-bar tracks and separators */
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(232, 236, 245)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(232, 236, 245)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(238, 241, 248)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(238, 241, 248)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(227, 232, 242)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(227, 232, 242)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(232, 236, 245)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(232, 236, 245)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(238, 241, 248)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(238, 241, 248)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(227, 232, 242)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(227, 232, 242)"] {
+  background: var(--line) !important;
+  background-color: var(--line) !important;
+}
+
+/* ---------------------------------------------------------
+   BORDERS
+--------------------------------------------------------- */
+
+html[data-theme="dark"] body.admin-theme-active
+  [style*="border-bottom: 1px solid rgb(238, 241, 248)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="border-bottom: 1px solid rgb(227, 232, 242)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="border: 1px solid rgb(232, 236, 245)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="border: 1px solid rgb(221, 227, 239)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="border-bottom: 1px solid rgb(238, 241, 248)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="border-bottom: 1px solid rgb(227, 232, 242)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="border: 1px solid rgb(232, 236, 245)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="border: 1px solid rgb(221, 227, 239)"] {
+  border-color: var(--line) !important;
+}
+
+/* ---------------------------------------------------------
+   TABLES
+--------------------------------------------------------- */
+
+html[data-theme="dark"] body.admin-theme-active table,
+body[data-theme="dark"].admin-theme-active table {
+  color: var(--text);
+}
+
+html[data-theme="dark"] body.admin-theme-active thead tr,
+body[data-theme="dark"].admin-theme-active thead tr {
+  background: var(--soft) !important;
+  background-color: var(--soft) !important;
+  border-color: var(--line) !important;
+}
+
+html[data-theme="dark"] body.admin-theme-active th,
+body[data-theme="dark"].admin-theme-active th {
+  color: var(--text-muted) !important;
+  border-color: var(--line) !important;
+}
+
+html[data-theme="dark"] body.admin-theme-active tbody tr,
+body[data-theme="dark"].admin-theme-active tbody tr {
+  background: var(--card) !important;
+  background-color: var(--card) !important;
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+}
+
+/* Fix the sudden white User Management row */
+html[data-theme="dark"] body.admin-theme-active tbody tr:hover,
+html[data-theme="dark"] body.admin-theme-active tbody tr:focus-within,
+body[data-theme="dark"].admin-theme-active tbody tr:hover,
+body[data-theme="dark"].admin-theme-active tbody tr:focus-within {
+  background: var(--card-hover) !important;
+  background-color: var(--card-hover) !important;
+}
+
+html[data-theme="dark"] body.admin-theme-active tbody tr:hover td,
+html[data-theme="dark"] body.admin-theme-active tbody tr:focus-within td,
+body[data-theme="dark"].admin-theme-active tbody tr:hover td,
+body[data-theme="dark"].admin-theme-active tbody tr:focus-within td {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body.admin-theme-active td,
+body[data-theme="dark"].admin-theme-active td {
+  color: var(--text-soft);
+  border-color: var(--line) !important;
+}
+
+/* ---------------------------------------------------------
+   INPUTS
+--------------------------------------------------------- */
+
+html[data-theme="dark"] body.admin-theme-active input,
+html[data-theme="dark"] body.admin-theme-active select,
+html[data-theme="dark"] body.admin-theme-active textarea,
+body[data-theme="dark"].admin-theme-active input,
+body[data-theme="dark"].admin-theme-active select,
+body[data-theme="dark"].admin-theme-active textarea {
+  background: var(--input) !important;
+  background-color: var(--input) !important;
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+}
+
+html[data-theme="dark"] body.admin-theme-active input::placeholder,
+html[data-theme="dark"] body.admin-theme-active textarea::placeholder,
+body[data-theme="dark"].admin-theme-active input::placeholder,
+body[data-theme="dark"].admin-theme-active textarea::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.86;
+}
+
+/* ---------------------------------------------------------
+   ADMIN SETTINGS DARK-MODE SWITCH
+--------------------------------------------------------- */
+
+html[data-theme="dark"] body.admin-theme-active
+  button[aria-label="Toggle dark mode"],
+body[data-theme="dark"].admin-theme-active
+  button[aria-label="Toggle dark mode"] {
+  background: #334155 !important;
+  background-color: #334155 !important;
+  border: 1px solid #40536f !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="dark"] body.admin-theme-active
+  button[aria-label="Toggle dark mode"][aria-pressed="true"],
+body[data-theme="dark"].admin-theme-active
+  button[aria-label="Toggle dark mode"][aria-pressed="true"] {
+  background: #1a5fff !important;
+  background-color: #1a5fff !important;
+  border-color: #4f82ff !important;
+}
+
+html[data-theme="dark"] body.admin-theme-active
+  button[aria-label="Toggle dark mode"] > span,
+body[data-theme="dark"].admin-theme-active
+  button[aria-label="Toggle dark mode"] > span {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.36) !important;
+}
+
+/* Make the On/Off label visible beside the switch */
+html[data-theme="dark"] body.admin-theme-active
+  div:has(> button[aria-label="Toggle dark mode"]) > span,
+body[data-theme="dark"].admin-theme-active
+  div:has(> button[aria-label="Toggle dark mode"]) > span {
+  color: var(--text-muted) !important;
+}
+
+/* Keep the Current mode badge readable */
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background: rgb(232, 239, 254)"],
+html[data-theme="dark"] body.admin-theme-active
+  [style*="background-color: rgb(232, 239, 254)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background: rgb(232, 239, 254)"],
+body[data-theme="dark"].admin-theme-active
+  [style*="background-color: rgb(232, 239, 254)"] {
+  background: #dbe7ff !important;
+  background-color: #dbe7ff !important;
+  color: #1a5fff !important;
+}
+
+/* ---------------------------------------------------------
+   BUTTONS
+--------------------------------------------------------- */
+
+html[data-theme="dark"] body.admin-theme-active button,
+body[data-theme="dark"].admin-theme-active button {
+  border-color: var(--line);
+}
+
+/* Only neutral white buttons become dark.
+   Coloured status badges and blue action buttons stay unchanged. */
+html[data-theme="dark"] body.admin-theme-active
+  button[style*="background: rgb(255, 255, 255)"],
+html[data-theme="dark"] body.admin-theme-active
+  button[style*="background-color: rgb(255, 255, 255)"],
+body[data-theme="dark"].admin-theme-active
+  button[style*="background: rgb(255, 255, 255)"],
+body[data-theme="dark"].admin-theme-active
+  button[style*="background-color: rgb(255, 255, 255)"] {
+  background: var(--soft) !important;
+  background-color: var(--soft) !important;
+  color: var(--text) !important;
+}
+
+/* ---------------------------------------------------------
+   SHARED ADMIN HEADER
+--------------------------------------------------------- */
+
+html[data-theme="dark"] body.admin-theme-active .admin-section-header,
+body[data-theme="dark"].admin-theme-active .admin-section-header {
+  color: var(--text);
+}
+
+@media (max-width: 700px) {
+  .admin-section-header {
+    margin-bottom: 16px !important;
+  }
+}

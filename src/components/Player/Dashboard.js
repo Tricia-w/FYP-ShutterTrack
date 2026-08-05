@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
+import { calculateFitnessSummary } from '../../utils/fitnessScore'
+import { calculateMatchStats } from '../../utils/matchStats'
 import SkillRadarChart from '../Layout/SkillRadarChart'
 import ExpensePieChart from '../Layout/ExpensesPie'
 import styles from '../Layout/Pages.module.css'
@@ -158,6 +160,48 @@ const formatNotificationTime = value => {
   })
 }
 
+
+const getNotificationRoute = notification => {
+  const rawUrl = String(notification?.action_url || '').trim()
+  const type = String(notification?.type || '').trim().toLowerCase()
+
+  // This app uses routes such as /players, /performance and /fitness.
+  // Older notification triggers stored /player/... routes, so normalise them.
+  if (rawUrl) {
+    const withoutOrigin = rawUrl.replace(/^https?:\/\/[^/]+/i, '')
+    const normalised = withoutOrigin.replace(/^\/player(?=\/|$)/i, '')
+
+    if (normalised) {
+      return normalised.startsWith('/') ? normalised : `/${normalised}`
+    }
+  }
+
+  if (
+    [
+      'coach_request_received',
+      'coach_request_accepted',
+      'coach_request_declined',
+      'coach_request_rejected',
+      'coach_removed_player',
+    ].includes(type)
+  ) {
+    return '/players?tab=coach'
+  }
+
+  if (
+    [
+      'partner_request_received',
+      'partner_request_accepted',
+      'partner_request_rejected',
+      'partner_request_declined',
+    ].includes(type)
+  ) {
+    return '/players?tab=partner'
+  }
+
+  return ''
+}
+
 export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -168,6 +212,8 @@ export default function Dashboard() {
   const [setup, setSetup] = useState(null)
   const [matches, setMatches] = useState([])
   const [skills, setSkills] = useState(DEFAULT_SKILLS)
+  const [coachSkills, setCoachSkills] = useState([])
+  const [coachFeedback, setCoachFeedback] = useState('')
   const [expenses, setExpenses] = useState([])
   const [lastMonthExpenses, setLastMonthExpenses] = useState([])
   const [fitnessScore, setFitnessScore] = useState(0)
@@ -381,9 +427,13 @@ export default function Dashboard() {
           setupRes,
           expenseRes,
           lastExpenseRes,
-          fitnessRes,
+          fitnessTestsRes,
+          fitnessRecoveryRes,
+          fitnessInjuriesRes,
           scheduleRes,
-          trainingScheduleRes,
+          trainingLogsRes,
+          coachAssignmentRes,
+          coachSkillAssessmentRes,
         ] = await Promise.all([
           supabase
             .from('app_users')
@@ -422,14 +472,26 @@ export default function Dashboard() {
             .select('*')
             .eq('user_id', authUser.id)
             .order('test_date', { ascending: false })
-            .order('created_at', { ascending: false })
-            .limit(1),
+            .order('created_at', { ascending: false }),
+
+          supabase
+            .from('fitness_recovery_logs')
+            .select('*')
+            .eq('user_id', authUser.id)
+            .order('log_date', { ascending: false })
+            .order('created_at', { ascending: false }),
+
+          supabase
+            .from('fitness_injuries')
+            .select('*')
+            .eq('user_id', authUser.id)
+            .order('injury_date', { ascending: false })
+            .order('created_at', { ascending: false }),
 
           supabase
             .from('player_schedule')
             .select('*')
             .eq('user_id', authUser.id)
-            .gte('event_date', today)
             .order('event_date', { ascending: true })
             .order('event_time', { ascending: true }),
 
@@ -437,19 +499,43 @@ export default function Dashboard() {
             .from('fitness_training_logs')
             .select('*')
             .eq('user_id', authUser.id)
-            .gte('training_date', today)
-            .order('training_date', { ascending: true })
-            .limit(10),
+            .order('training_date', { ascending: true }),
+
+          supabase
+            .from('coach_training_session_players')
+            .select('session_id, attendance_status')
+            .eq('player_user_id', authUser.id),
+
+          supabase
+            .from('coach_player_assessments')
+            .select('*')
+            .eq('player_user_id', authUser.id)
+            .order('updated_at', { ascending: false })
+            .limit(1),
         ])
 
-        if (appUserRes.error) throw appUserRes.error
-        if (profileRes.error) throw profileRes.error
-        if (setupRes.error) throw setupRes.error
-        if (expenseRes.error) throw expenseRes.error
-        if (lastExpenseRes.error) throw lastExpenseRes.error
-        if (fitnessRes.error) throw fitnessRes.error
-        if (scheduleRes.error) throw scheduleRes.error
-        if (trainingScheduleRes.error) throw trainingScheduleRes.error
+        const requestError = [
+          appUserRes.error,
+          profileRes.error,
+          setupRes.error,
+          expenseRes.error,
+          lastExpenseRes.error,
+          fitnessTestsRes.error,
+          fitnessRecoveryRes.error,
+          fitnessInjuriesRes.error,
+          scheduleRes.error,
+          trainingLogsRes.error,
+          coachAssignmentRes.error,
+        ].find(Boolean)
+
+        if (requestError) throw requestError
+
+        if (coachSkillAssessmentRes.error) {
+          console.error(
+            'Coach skill assessment load error:',
+            coachSkillAssessmentRes.error
+          )
+        }
 
         let currentProfile = profileRes.data
 
@@ -479,8 +565,7 @@ export default function Dashboard() {
               .select('*')
               .eq('player_id', currentProfile.id)
               .order('match_date', { ascending: false })
-              .order('created_at', { ascending: false })
-              .limit(20),
+              .order('created_at', { ascending: false }),
 
             supabase
               .from('player_skill_ratings')
@@ -510,30 +595,62 @@ export default function Dashboard() {
         setMatches(matchRows)
         setExpenses(expenseRes.data || [])
         setLastMonthExpenses(lastExpenseRes.data || [])
-        const latestFitness = fitnessRes.data?.[0] || null
 
-        setHasFitnessData(Boolean(latestFitness))
-        setFitnessScore(Number(latestFitness?.score ?? 0))
+        const attendanceBySession = new Map(
+          (coachAssignmentRes.data || []).map(item => [
+            String(item.session_id),
+            item.attendance_status || 'scheduled',
+          ])
+        )
 
-        const scheduleRows = (scheduleRes.data || []).map(item => ({
-          id: `schedule-${item.id}`,
-          date: item.event_date,
-          time: item.event_time || '',
-          title: item.title || item.schedule_type || 'Schedule',
-          type: item.schedule_type || item.title || 'Schedule',
-          location: item.location || '',
-          source: 'schedule',
+        const fitnessScheduleRows = (scheduleRes.data || []).map(item => ({
+          ...item,
+          attendance_status: item.coach_session_id
+            ? attendanceBySession.get(String(item.coach_session_id)) ||
+              item.attendance_status ||
+              'scheduled'
+            : item.attendance_status || 'scheduled',
         }))
 
-        const trainingRows = (trainingScheduleRes.data || []).map(item => ({
-          id: `training-${item.id}`,
-          date: item.training_date,
-          time: item.start_time || item.training_time || '',
-          title: item.activity || (item.intensity === 'Rest' ? 'Rest Day' : 'Training Log'),
-          type: item.intensity === 'Rest' ? 'Rest Day' : 'Training Log',
-          location: [item.duration, item.focus].filter(Boolean).join(' · '),
-          source: 'training_log',
-        }))
+        const fitnessSummary = calculateFitnessSummary({
+          tests: fitnessTestsRes.data || [],
+          sessions: trainingLogsRes.data || [],
+          recoveryLogs: fitnessRecoveryRes.data || [],
+          injuries: fitnessInjuriesRes.data || [],
+          scheduleList: fitnessScheduleRows,
+        })
+
+        setHasFitnessData(fitnessSummary.hasFitnessData)
+        setFitnessScore(fitnessSummary.fitnessScore)
+
+        const scheduleRows = (scheduleRes.data || [])
+          .filter(item => item.event_date && item.event_date >= today)
+          .map(item => ({
+            id: `schedule-${item.id}`,
+            date: item.event_date,
+            time: item.event_time || '',
+            title: item.title || item.schedule_type || 'Schedule',
+            type: item.schedule_type || item.title || 'Schedule',
+            location: item.location || '',
+            source: 'schedule',
+          }))
+
+        const trainingRows = (trainingLogsRes.data || [])
+          .filter(item => item.training_date && item.training_date >= today)
+          .map(item => ({
+            id: `training-${item.id}`,
+            date: item.training_date,
+            time: item.start_time || item.training_time || '',
+            title:
+              item.activity ||
+              (item.intensity === 'Rest' ? 'Rest Day' : 'Training Log'),
+            type:
+              item.intensity === 'Rest' ? 'Rest Day' : 'Training Log',
+            location: [item.duration, item.focus]
+              .filter(Boolean)
+              .join(' · '),
+            source: 'training_log',
+          }))
 
         const mergedSchedule = [...scheduleRows, ...trainingRows]
           .filter(item => item.date)
@@ -562,6 +679,30 @@ export default function Dashboard() {
         } else {
           setSkills(DEFAULT_SKILLS)
         }
+
+        const latestCoachAssessment =
+          coachSkillAssessmentRes.data?.[0] || null
+
+        if (latestCoachAssessment) {
+          setCoachSkills(
+            SKILL_COLUMNS.map(skill => ({
+              name: skill.name,
+              val: Number(
+                latestCoachAssessment[skill.column] ?? 0
+              ),
+            })).filter(skill => skill.val > 0)
+          )
+
+          setCoachFeedback(
+            latestCoachAssessment.performance_comment ||
+              latestCoachAssessment.skill_comment ||
+              latestCoachAssessment.feedback ||
+              ''
+          )
+        } else {
+          setCoachSkills([])
+          setCoachFeedback('')
+        }
       } catch (error) {
         console.error('Dashboard load error:', error)
       } finally {
@@ -583,18 +724,10 @@ export default function Dashboard() {
   const clubText = profile?.club || profile?.state || 'No club set'
   const unreadCount = notifications.filter(n => !n.is_read).length
 
-  const stats = useMemo(() => {
-    const wins = matches.filter(match => match.result === 'Win').length
-    const losses = matches.filter(match => match.result === 'Loss').length
-    const winRate = matches.length ? Math.round((wins / matches.length) * 100) : 0
-
-    return {
-      totalMatches: matches.length,
-      wins,
-      losses,
-      winRate,
-    }
-  }, [matches])
+  const stats = useMemo(
+    () => calculateMatchStats(matches),
+    [matches]
+  )
 
   const currentMonthSpend = useMemo(
     () => expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0),
@@ -829,18 +962,22 @@ export default function Dashboard() {
                     <div
                       key={n.id}
                       onClick={async () => {
+                        const targetRoute = getNotificationRoute(n)
+
                         await markNotificationRead(n.id)
                         setShowNotifications(false)
 
-                        if (n.action_url) {
-                          navigate(n.action_url)
+                        if (targetRoute) {
+                          navigate(targetRoute)
                         }
                       }}
                       style={{
                         position: 'relative',
                         padding: '14px 44px 14px 14px',
                         borderRadius: 16,
-                        cursor: 'pointer',
+                        cursor: getNotificationRoute(n)
+                          ? 'pointer'
+                          : 'default',
                         marginBottom: 12,
                         background: getNotificationBg(n.type),
                         border: `1px solid ${getNotificationBorder(n.type)}`,
@@ -1232,7 +1369,7 @@ export default function Dashboard() {
           ) : (
             matches.slice(0, 3).map(match => {
               const opponent = getOpponentName(match)
-              const win = match.result === 'Win'
+              const win = String(match.result || '').trim().toLowerCase() === 'win'
 
               return (
                 <div key={match.id} className={styles.listRow}>
@@ -1311,7 +1448,7 @@ export default function Dashboard() {
                   display: 'inline-block',
                 }}
               />
-              Strong ≥75
+              Player strong ≥75
             </span>
 
             <span
@@ -1332,13 +1469,77 @@ export default function Dashboard() {
                   display: 'inline-block',
                 }}
               />
-              Needs work
+              Player needs work
             </span>
+
+            {coachSkills.length > 0 && (
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  color: '#8892A4',
+                }}
+              >
+                <span
+                  style={{
+                    width: 12,
+                    height: 3,
+                    borderRadius: 999,
+                    background: '#7C3AED',
+                    display: 'inline-block',
+                  }}
+                />
+                Coach assessment
+              </span>
+            )}
           </div>
 
           <div className={styles.chartWrap}>
-            <SkillRadarChart skills={skills} />
+            <SkillRadarChart
+              skills={skills}
+              coachSkills={coachSkills}
+            />
           </div>
+
+          {coachFeedback && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '11px 13px',
+                borderRadius: 12,
+                background:
+                  'color-mix(in srgb, #7C3AED 8%, var(--card, #FFFFFF))',
+                border:
+                  '1px solid color-mix(in srgb, #7C3AED 20%, var(--line, #EEF1F8))',
+              }}
+            >
+              <div
+                style={{
+                  marginBottom: 5,
+                  color: '#7C3AED',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.6,
+                }}
+              >
+                Coach feedback
+              </div>
+
+              <div
+                style={{
+                  color: 'var(--text, #0D1B3E)',
+                  fontSize: 12,
+                  lineHeight: 1.55,
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {coachFeedback}
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: 14 }}>
             <button

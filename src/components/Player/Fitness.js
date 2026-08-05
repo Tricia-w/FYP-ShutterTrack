@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import NotificationBell from '../Notifications/NotificationBell'
 import { supabase } from '../../lib/supabaseClient'
+import { calculateFitnessSummary } from '../../utils/fitnessScore'
 import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
@@ -184,35 +185,6 @@ const parseMinutes = value => {
   return Number.isFinite(numeric) ? numeric : 0
 }
 
-const getTrainingMinutes = session => {
-  const savedMinutes = parseMinutes(session?.duration)
-  if (savedMinutes > 0) return savedMinutes
-
-  if (!session?.startTime || !session?.endTime) return 0
-
-  const [startHour, startMinute] = String(session.startTime)
-    .split(':')
-    .map(Number)
-  const [endHour, endMinute] = String(session.endTime)
-    .split(':')
-    .map(Number)
-
-  if (
-    [startHour, startMinute, endHour, endMinute].some(Number.isNaN)
-  ) {
-    return 0
-  }
-
-  let total =
-    endHour * 60 +
-    endMinute -
-    (startHour * 60 + startMinute)
-
-  if (total < 0) total += 24 * 60
-
-  return total
-}
-
 function fmtDate(d) {
   if (!d) return '-'
   try {
@@ -294,16 +266,43 @@ function calculateDuration(start, end) {
 }
 
 
-function getThisWeekDates() {
-  const today = new Date()
-  const day = today.getDay()
+function calculateEndTime(startTime, durationValue) {
+  const durationMinutes = parseMinutes(durationValue)
 
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today)
-    d.setDate(today.getDate() - day + i)
-    return d.toISOString().split('T')[0]
-  })
+  if (!startTime || durationMinutes <= 0) return ''
+
+  const [hour, minute] = String(startTime)
+    .slice(0, 5)
+    .split(':')
+    .map(Number)
+
+  if (
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return ''
+  }
+
+  const totalMinutes =
+    (hour * 60 + minute + durationMinutes) % (24 * 60)
+
+  const endHour = Math.floor(totalMinutes / 60)
+  const endMinute = totalMinutes % 60
+
+  return `${String(endHour).padStart(2, '0')}:${String(
+    endMinute
+  ).padStart(2, '0')}`
 }
+
+
+function extractVenueFromNotes(notes = '') {
+  const match = String(notes).match(
+    /(?:^|\n)Venue:\s*(.+?)(?:\n|$)/i
+  )
+
+  return match?.[1]?.trim() || ''
+}
+
 
 function getBadgeClass(color) {
   if (color === 'red') return styles.badgeRed
@@ -326,6 +325,7 @@ const emptySchedule = (date = todayISO()) => ({
   date,
   time: '',
   endTime: '',
+  duration: '',
   type: 'Training',
   activity: '',
   focus: 'Stamina',
@@ -372,12 +372,12 @@ function rowToTraining(row) {
     duration: row.duration || '',
     focus: row.focus || 'Stamina',
     notes: row.notes || '',
+    venue: extractVenueFromNotes(row.notes),
     coachSessionId: row.coach_session_id || null,
     color: 'blue',
     source: 'training_log',
     type: 'Completed Training',
     title: row.activity || 'Completed Training',
-    venue: '',
     time: fmtTimeRange(row.start_time, row.end_time),
     dotColor: SCHEDULE_COLORS['Completed Training'],
   }
@@ -668,7 +668,34 @@ function InjuryBodyMap({ injuries }) {
 
     if (lower.includes('neck')) return { cx: 60, cy: 31, color: '#EF4444' }
     if (lower.includes('back')) return { cx: 60, cy: 66, color: '#EF4444' }
-    if (lower.includes('chest')) return { cx: 60, cy: 53, color: '#EF4444' }
+
+    if (
+      lower.includes('left') &&
+      lower.includes('upper') &&
+      lower.includes('chest')
+    ) {
+      return { cx: 54, cy: 46, color: '#EF4444' }
+    }
+
+    if (
+      lower.includes('right') &&
+      lower.includes('upper') &&
+      lower.includes('chest')
+    ) {
+      return { cx: 66, cy: 46, color: '#EF4444' }
+    }
+
+    if (lower.includes('left') && lower.includes('chest')) {
+      return { cx: 52, cy: 55, color: '#EF4444' }
+    }
+
+    if (lower.includes('right') && lower.includes('chest')) {
+      return { cx: 68, cy: 55, color: '#EF4444' }
+    }
+
+    if (lower.includes('chest')) {
+      return { cx: 60, cy: 53, color: '#EF4444' }
+    }
     if (lower.includes('right') && lower.includes('waist')) {
       return { cx: 70, cy: 88, color: '#EF4444' }
     }
@@ -682,28 +709,28 @@ function InjuryBodyMap({ injuries }) {
     }
 
     if (lower.includes('right') && lower.includes('hip')) {
-      return { cx: 68, cy: 98, color: '#F59E0B' }
+      return { cx: 68, cy: 94, color: '#F59E0B' }
     }
 
     if (lower.includes('left') && lower.includes('hip')) {
-      return { cx: 52, cy: 98, color: '#F59E0B' }
+      return { cx: 52, cy: 94, color: '#F59E0B' }
     }
 
     if (lower.includes('hip')) {
-      return { cx: 60, cy: 98, color: '#F59E0B' }
+      return { cx: 60, cy: 94, color: '#F59E0B' }
     }
 
     if (lower.includes('right') && lower.includes('shoulder')) return { cx: 82, cy: 48, color: '#1A5FFF' }
     if (lower.includes('left') && lower.includes('shoulder')) return { cx: 38, cy: 48, color: '#1A5FFF' }
 
-    if (lower.includes('right') && lower.includes('knee')) return { cx: 70, cy: 124, color: '#F59E0B' }
-    if (lower.includes('left') && lower.includes('knee')) return { cx: 50, cy: 124, color: '#F59E0B' }
+    if (lower.includes('right') && lower.includes('knee')) return { cx: 70, cy: 122, color: '#F59E0B' }
+    if (lower.includes('left') && lower.includes('knee')) return { cx: 50, cy: 122, color: '#F59E0B' }
 
     if (lower.includes('right') && lower.includes('ankle')) return { cx: 72, cy: 150, color: '#EF4444' }
     if (lower.includes('left') && lower.includes('ankle')) return { cx: 48, cy: 150, color: '#EF4444' }
 
     if (lower.includes('shoulder')) return { cx: 82, cy: 48, color: '#1A5FFF' }
-    if (lower.includes('knee')) return { cx: 70, cy: 124, color: '#F59E0B' }
+    if (lower.includes('knee')) return { cx: 60, cy: 122, color: '#F59E0B' }
     if (lower.includes('ankle')) return { cx: 72, cy: 150, color: '#EF4444' }
     if (lower.includes('foot')) return { cx: 82, cy: 154, color: '#EF4444' }
     if (lower.includes('calf') || lower.includes('shin')) return { cx: 72, cy: 138, color: '#EF4444' }
@@ -716,9 +743,51 @@ function InjuryBodyMap({ injuries }) {
   }
 
   return (
-    <div style={{ width: 118, height: 170, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-      <svg viewBox="0 0 120 170" width="110" height="160">
-        <g fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <div
+      style={{
+        position: 'relative',
+        width: 118,
+        height: 170,
+        flexShrink: 0,
+      }}
+    >
+      <img
+        src="/humanbody.png"
+        alt="Human body injury map"
+        draggable="false"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          objectPosition: 'center',
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}
+      />
+
+      <svg
+        viewBox="0 0 120 170"
+        width="118"
+        height="170"
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+        }}
+      >
+        {/* Keep the original body coordinate layer, but hide its lines. */}
+        <g
+          fill="none"
+          stroke="transparent"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <circle cx="60" cy="15" r="10" />
           <path d="M54 25 L54 33" />
           <path d="M66 25 L66 33" />
@@ -727,7 +796,7 @@ function InjuryBodyMap({ injuries }) {
           <path d="M74 36 C77 52, 78 72, 75 91" />
           <path d="M45 91 C50 97, 55 100, 60 100" />
           <path d="M75 91 C70 97, 65 100, 60 100" />
-          <path d="M60 35 L60 100" opacity="0.45" />
+          <path d="M60 35 L60 100" />
           <path d="M45 38 C34 50, 29 72, 25 96" />
           <path d="M75 38 C86 50, 91 72, 95 96" />
           <path d="M54 100 C51 116, 48 132, 45 152" />
@@ -753,10 +822,21 @@ function InjuryBodyMap({ injuries }) {
                       : '#EF4444',
                 }
               : getDot(injury.name)
+
           return (
             <g key={injury.id}>
-              <circle cx={dot.cx} cy={dot.cy} r="7" fill="white" />
-              <circle cx={dot.cx} cy={dot.cy} r="5" fill={dot.color} />
+              <circle
+                cx={dot.cx}
+                cy={dot.cy}
+                r="7"
+                fill="var(--card, #FFFFFF)"
+              />
+              <circle
+                cx={dot.cx}
+                cy={dot.cy}
+                r="5"
+                fill={dot.color}
+              />
             </g>
           )
         })}
@@ -810,6 +890,41 @@ function FormActions({ onSave, onClose, onDelete, saving }) {
 }
 
 function TrainingModal({ title, form, onChange, onSave, onClose, onDelete, saving }) {
+  const handleTimeChange = (field, value) => {
+    onChange(field, value)
+
+    if (field === 'startTime' && form.duration) {
+      const nextEndTime = calculateEndTime(
+        value,
+        form.duration
+      )
+
+      if (nextEndTime) {
+        onChange('endTime', nextEndTime)
+      }
+    }
+
+    if (field === 'endTime' && form.startTime) {
+      onChange(
+        'duration',
+        calculateDuration(form.startTime, value)
+      )
+    }
+  }
+
+  const handleDurationChange = value => {
+    onChange('duration', value)
+
+    const nextEndTime = calculateEndTime(
+      form.startTime,
+      value
+    )
+
+    if (nextEndTime) {
+      onChange('endTime', nextEndTime)
+    }
+  }
+
   return (
     <ModalShell title={title} onClose={onClose}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -834,12 +949,26 @@ function TrainingModal({ title, form, onChange, onSave, onClose, onDelete, savin
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Start time</label>
-          <input className={styles.formInput} type="time" value={form.startTime} onChange={e => onChange('startTime', e.target.value)} />
+          <input
+            className={styles.formInput}
+            type="time"
+            value={form.startTime}
+            onChange={e =>
+              handleTimeChange('startTime', e.target.value)
+            }
+          />
         </div>
 
         <div className={styles.formRow}>
           <label className={styles.formLabel}>End time</label>
-          <input className={styles.formInput} type="time" value={form.endTime} onChange={e => onChange('endTime', e.target.value)} />
+          <input
+            className={styles.formInput}
+            type="time"
+            value={form.endTime}
+            onChange={e =>
+              handleTimeChange('endTime', e.target.value)
+            }
+          />
         </div>
       </div>
 
@@ -854,13 +983,33 @@ function TrainingModal({ title, form, onChange, onSave, onClose, onDelete, savin
       </div>
 
       <div className={styles.formRow}>
-        <label className={styles.formLabel}>Duration (automatically calculated)</label>
+        <label className={styles.formLabel}>
+          Duration
+        </label>
         <input
           className={styles.formInput}
-          value={calculateDuration(form.startTime, form.endTime) || 'Select start and end time'}
-          readOnly
-          style={{ background: '#F8FAFC', color: calculateDuration(form.startTime, form.endTime) ? '#0D1B3E' : '#8892A4' }}
+          value={
+            form.duration ||
+            calculateDuration(
+              form.startTime,
+              form.endTime
+            )
+          }
+          onChange={event =>
+            handleDurationChange(event.target.value)
+          }
+          placeholder="e.g. 2h, 1h 30min or 45min"
         />
+        <div
+          style={{
+            marginTop: 5,
+            fontSize: 10,
+            color: '#8892A4',
+          }}
+        >
+          Entering a duration automatically updates the end time.
+          Changing the end time recalculates the duration.
+        </div>
       </div>
 
       <div className={styles.formRow}>
@@ -966,6 +1115,249 @@ function RecoveryModal({ title, form, onChange, onSave, onClose, onDelete, savin
 }
 
 
+
+function getBodyPointFromName(name = '') {
+  const lower = String(name || '')
+    .toLowerCase()
+    .trim()
+
+  if (!lower) return null
+
+  const isLeft = /\bleft\b/.test(lower)
+  const isRight = /\bright\b/.test(lower)
+
+  const sideX = isLeft ? 50 : isRight ? 70 : 60
+  const sideLabel = isLeft
+    ? 'Left'
+    : isRight
+      ? 'Right'
+      : ''
+
+  if (
+    lower.includes('head') ||
+    lower.includes('forehead')
+  ) {
+    return {
+      x: 60,
+      y: 16,
+      label: 'Head',
+    }
+  }
+
+  if (lower.includes('neck')) {
+    return {
+      x: sideX,
+      y: 31,
+      label: sideLabel
+        ? `${sideLabel} neck`
+        : 'Neck',
+    }
+  }
+
+  if (lower.includes('shoulder')) {
+    return {
+      x: isLeft ? 42 : isRight ? 78 : 60,
+      y: 43,
+      label: sideLabel
+        ? `${sideLabel} shoulder`
+        : 'Shoulder',
+    }
+  }
+
+  if (
+    lower.includes('upper chest') ||
+    lower.includes('chest') ||
+    lower.includes('pectoral')
+  ) {
+    return {
+      x: isLeft ? 52 : isRight ? 68 : 60,
+      y: 50,
+      label: sideLabel
+        ? `${sideLabel} upper chest`
+        : 'Upper chest',
+    }
+  }
+
+  if (
+    lower.includes('upper arm') ||
+    lower.includes('bicep') ||
+    lower.includes('tricep') ||
+    (
+      lower.includes('arm') &&
+      !lower.includes('forearm')
+    )
+  ) {
+    return {
+      x: isLeft ? 37 : isRight ? 83 : 60,
+      y: 63,
+      label: sideLabel
+        ? `${sideLabel} upper arm`
+        : 'Upper arm',
+    }
+  }
+
+  if (
+    lower.includes('elbow')
+  ) {
+    return {
+      x: isLeft ? 31 : isRight ? 89 : 60,
+      y: 78,
+      label: sideLabel
+        ? `${sideLabel} elbow`
+        : 'Elbow',
+    }
+  }
+
+  if (
+    lower.includes('forearm')
+  ) {
+    return {
+      x: isLeft ? 29 : isRight ? 91 : 60,
+      y: 88,
+      label: sideLabel
+        ? `${sideLabel} forearm`
+        : 'Forearm',
+    }
+  }
+
+  if (
+    lower.includes('wrist') ||
+    lower.includes('hand') ||
+    lower.includes('palm') ||
+    lower.includes('finger')
+  ) {
+    return {
+      x: isLeft ? 27 : isRight ? 93 : 60,
+      y: 98,
+      label: sideLabel
+        ? `${sideLabel} wrist`
+        : 'Wrist',
+    }
+  }
+
+  if (
+    lower.includes('ribs') ||
+    lower.includes('rib')
+  ) {
+    return {
+      x: isLeft ? 51 : isRight ? 69 : 60,
+      y: 67,
+      label: sideLabel
+        ? `${sideLabel} ribs`
+        : 'Ribs',
+    }
+  }
+
+  if (
+    lower.includes('waist') ||
+    lower.includes('abdomen') ||
+    lower.includes('stomach')
+  ) {
+    return {
+      x: sideX,
+      y: 86,
+      label: sideLabel
+        ? `${sideLabel} waist`
+        : 'Waist',
+    }
+  }
+
+  if (
+    lower.includes('back')
+  ) {
+    return {
+      x: sideX,
+      y: lower.includes('lower') ? 86 : 66,
+      label: sideLabel
+        ? `${sideLabel} back`
+        : lower.includes('lower')
+          ? 'Lower back'
+          : 'Back',
+    }
+  }
+
+  if (
+    lower.includes('hip') ||
+    lower.includes('groin')
+  ) {
+    return {
+      x: sideX,
+      y: 94,
+      label: sideLabel
+        ? `${sideLabel} hip`
+        : 'Hip',
+    }
+  }
+
+  if (
+    lower.includes('thigh') ||
+    lower.includes('hamstring') ||
+    lower.includes('quadricep') ||
+    lower.includes('quad')
+  ) {
+    return {
+      x: sideX,
+      y: 106,
+      label: sideLabel
+        ? `${sideLabel} thigh`
+        : 'Thigh',
+    }
+  }
+
+  if (lower.includes('knee')) {
+    return {
+      x: sideX,
+      y: 122,
+      label: sideLabel
+        ? `${sideLabel} knee`
+        : 'Knee',
+    }
+  }
+
+  if (
+    lower.includes('calf') ||
+    lower.includes('shin') ||
+    lower.includes('lower leg')
+  ) {
+    return {
+      x: sideX,
+      y: 140,
+      label: sideLabel
+        ? `${sideLabel} calf`
+        : 'Calf',
+    }
+  }
+
+  if (
+    lower.includes('ankle')
+  ) {
+    return {
+      x: sideX,
+      y: 153,
+      label: sideLabel
+        ? `${sideLabel} ankle`
+        : 'Ankle',
+    }
+  }
+
+  if (
+    lower.includes('foot') ||
+    lower.includes('heel') ||
+    lower.includes('toe')
+  ) {
+    return {
+      x: sideX,
+      y: 160,
+      label: sideLabel
+        ? `${sideLabel} foot`
+        : 'Foot',
+    }
+  }
+
+  return null
+}
+
+
 function getTappedBodyLabel(x, y) {
   const px = Number(x)
   const py = Number(y)
@@ -987,6 +1379,8 @@ function getTappedBodyLabel(x, y) {
   if (py <= 48) {
     if (px < 48) return 'Left shoulder'
     if (px > 72) return 'Right shoulder'
+    if (px < 60) return 'Left upper chest'
+    if (px > 60) return 'Right upper chest'
     return 'Upper chest'
   }
 
@@ -1002,21 +1396,21 @@ function getTappedBodyLabel(x, y) {
     return side ? `${side} waist` : 'Waist'
   }
 
-  if (py <= 105) {
+  if (py <= 98) {
     if (px < 32) return 'Left wrist'
     if (px > 88) return 'Right wrist'
     return side ? `${side} hip` : 'Hip'
   }
 
-  if (py <= 125) {
+  if (py <= 114) {
     return side ? `${side} thigh` : 'Thigh'
   }
 
-  if (py <= 140) {
+  if (py <= 130) {
     return side ? `${side} knee` : 'Knee'
   }
 
-  if (py <= 152) {
+  if (py <= 150) {
     return side ? `${side} calf` : 'Calf'
   }
 
@@ -1080,9 +1474,21 @@ function InjuryModal({
           className={styles.formInput}
           placeholder="e.g. Left wrist pain or right hip strain"
           value={form.name}
-          onChange={event =>
-            onChange('name', event.target.value)
-          }
+          onChange={event => {
+            const value = event.target.value
+            const detectedPoint =
+              getBodyPointFromName(value)
+
+            onChange('name', value)
+
+            if (detectedPoint) {
+              onChange('bodyX', detectedPoint.x)
+              onChange('bodyY', detectedPoint.y)
+            } else if (!value.trim()) {
+              onChange('bodyX', null)
+              onChange('bodyY', null)
+            }
+          }}
         />
         <div
           style={{
@@ -1091,9 +1497,9 @@ function InjuryModal({
             color: 'var(--text-muted, #8892A4)',
           }}
         >
-          You may type the body part, tap the body diagram,
-          or use both. Tapping automatically suggests a body-part name
-          when the description is empty.
+          Type a recognised body part to place the dot automatically,
+          tap the body diagram, or use both. Tapping suggests a body-part
+          name when the description is empty.
         </div>
       </div>
 
@@ -1171,58 +1577,90 @@ function InjuryModal({
             background: 'var(--soft, #F7F9FF)',
           }}
         >
-          <svg
-            viewBox="0 0 120 170"
-            width="180"
-            height="255"
-            onClick={handleBodyTap}
-            style={{ cursor: 'crosshair' }}
-            aria-label="Tap the body to select the injury location"
+          <div
+            style={{
+              position: 'relative',
+              width: 180,
+              height: 255,
+              flexShrink: 0,
+            }}
           >
-            <g
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            {/* Visible body picture. */}
+            <img
+              src="/humanbody.png"
+              alt="Tap the human body to select the injury location"
+              draggable="false"
               style={{
-                color: 'var(--text-muted, #94A3B8)',
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                objectPosition: 'center',
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+            />
+
+            {/* Existing 120 × 170 body coordinate layer stays unchanged. */}
+            <svg
+              viewBox="0 0 120 170"
+              width="180"
+              height="255"
+              onClick={handleBodyTap}
+              role="button"
+              tabIndex={0}
+              aria-label="Tap the body to select the injury location"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                cursor: 'crosshair',
               }}
             >
-              <circle cx="60" cy="15" r="10" />
-              <path d="M54 25 L54 33" />
-              <path d="M66 25 L66 33" />
-              <path d="M45 35 C50 31, 70 31, 75 35" />
-              <path d="M46 36 C43 52, 42 72, 45 91" />
-              <path d="M74 36 C77 52, 78 72, 75 91" />
-              <path d="M45 91 C50 97, 55 100, 60 100" />
-              <path d="M75 91 C70 97, 65 100, 60 100" />
-              <path d="M60 35 L60 100" opacity="0.45" />
-              <path d="M45 38 C34 50, 29 72, 25 96" />
-              <path d="M75 38 C86 50, 91 72, 95 96" />
-              <path d="M54 100 C51 116, 48 132, 45 152" />
-              <path d="M45 152 L36 154" />
-              <path d="M66 100 C69 116, 72 132, 75 152" />
-              <path d="M75 152 L84 154" />
-            </g>
+              <g
+                fill="none"
+                stroke="transparent"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="60" cy="15" r="10" />
+                <path d="M54 25 L54 33" />
+                <path d="M66 25 L66 33" />
+                <path d="M45 35 C50 31, 70 31, 75 35" />
+                <path d="M46 36 C43 52, 42 72, 45 91" />
+                <path d="M74 36 C77 52, 78 72, 75 91" />
+                <path d="M45 91 C50 97, 55 100, 60 100" />
+                <path d="M75 91 C70 97, 65 100, 60 100" />
+                <path d="M60 35 L60 100" />
+                <path d="M45 38 C34 50, 29 72, 25 96" />
+                <path d="M75 38 C86 50, 91 72, 95 96" />
+                <path d="M54 100 C51 116, 48 132, 45 152" />
+                <path d="M45 152 L36 154" />
+                <path d="M66 100 C69 116, 72 132, 75 152" />
+                <path d="M75 152 L84 154" />
+              </g>
 
-            {hasBodyPoint && (
-              <>
-                <circle
-                  cx={Number(form.bodyX)}
-                  cy={Number(form.bodyY)}
-                  r="8"
-                  fill="var(--card, #FFFFFF)"
-                />
-                <circle
-                  cx={Number(form.bodyX)}
-                  cy={Number(form.bodyY)}
-                  r="5.5"
-                  fill="#EF4444"
-                />
-              </>
-            )}
-          </svg>
+              {hasBodyPoint && (
+                <>
+                  <circle
+                    cx={Number(form.bodyX)}
+                    cy={Number(form.bodyY)}
+                    r="8"
+                    fill="var(--card, #FFFFFF)"
+                  />
+                  <circle
+                    cx={Number(form.bodyX)}
+                    cy={Number(form.bodyY)}
+                    r="5.5"
+                    fill="#EF4444"
+                  />
+                </>
+              )}
+            </svg>
+          </div>
         </div>
 
         <div
@@ -1316,6 +1754,41 @@ function ScheduleModal({
           ? 'This rest day will appear in your calendar. No training history record will be created.'
           : 'This is a planned session. After the end time, choose Completed to add it automatically to Training Log, or Missed if you did not attend.'
 
+  const handleTimeChange = (field, value) => {
+    onChange(field, value)
+
+    if (field === 'time' && form.duration) {
+      const nextEndTime = calculateEndTime(
+        value,
+        form.duration
+      )
+
+      if (nextEndTime) {
+        onChange('endTime', nextEndTime)
+      }
+    }
+
+    if (field === 'endTime' && form.time) {
+      onChange(
+        'duration',
+        calculateDuration(form.time, value)
+      )
+    }
+  }
+
+  const handleDurationChange = value => {
+    onChange('duration', value)
+
+    const nextEndTime = calculateEndTime(
+      form.time,
+      value
+    )
+
+    if (nextEndTime) {
+      onChange('endTime', nextEndTime)
+    }
+  }
+
   return (
     <ModalShell title={title} onClose={onClose}>
       <div
@@ -1377,7 +1850,7 @@ function ScheduleModal({
                 type="time"
                 value={form.time}
                 onChange={event =>
-                  onChange('time', event.target.value)
+                  handleTimeChange('time', event.target.value)
                 }
               />
             </div>
@@ -1389,7 +1862,7 @@ function ScheduleModal({
                 type="time"
                 value={form.endTime}
                 onChange={event =>
-                  onChange('endTime', event.target.value)
+                  handleTimeChange('endTime', event.target.value)
                 }
               />
             </div>
@@ -1446,11 +1919,26 @@ function ScheduleModal({
             <input
               className={styles.formInput}
               value={
-                calculateDuration(form.time, form.endTime) ||
-                'Select start and end time'
+                form.duration ||
+                calculateDuration(
+                  form.time,
+                  form.endTime
+                )
               }
-              readOnly
+              onChange={event =>
+                handleDurationChange(event.target.value)
+              }
+              placeholder="e.g. 2h, 1h 30min or 45min"
             />
+            <div
+              style={{
+                marginTop: 5,
+                fontSize: 10,
+                color: '#8892A4',
+              }}
+            >
+              Enter a duration to calculate the end time automatically.
+            </div>
           </div>
         </>
       )}
@@ -2002,379 +2490,14 @@ function FitnessComparisonRow({
 
 
 
-const getFitnessNotificationMeta = item => {
-  const title = String(item?.title || '').toLowerCase()
-  const sourceType = String(item?.source_type || '').toLowerCase()
-
-  if (
-    sourceType.includes('training') ||
-    title.includes('training') ||
-    title.includes('session')
-  ) {
-    return {
-      icon: 'training',
-      background: '#E8EFFE',
-      color: '#1A5FFF',
-    }
-  }
-
-  if (
-    sourceType.includes('coach') ||
-    title.includes('coach') ||
-    title.includes('progress')
-  ) {
-    return {
-      icon: 'coach',
-      background: '#EDE9FE',
-      color: '#7C3AED',
-    }
-  }
-
-  return {
-    icon: 'bell',
-    background: '#FEF3C7',
-    color: '#F59E0B',
-  }
-}
-
-
 const FITNESS_NOTIFICATION_TYPES = [
   'coach_fitness_assessment',
   'coach_fitness_feedback',
   'coach_progress',
   'coach_training',
   'coach_training_cancelled',
+  'coach_relationship_removed',
 ]
-
-function PageNotificationBell({ userId }) {
-  const navigate = useNavigate()
-  const [items, setItems] = useState([])
-  const [open, setOpen] = useState(false)
-
-  const loadNotifications = useCallback(async () => {
-    if (!userId) return
-
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .in('source_type', FITNESS_NOTIFICATION_TYPES)
-      .order('created_at', { ascending: false })
-      .limit(8)
-
-    if (error) {
-      console.error('Page notification load error:', error)
-      return
-    }
-
-    setItems(data || [])
-  }, [userId])
-
-  useEffect(() => {
-    loadNotifications()
-  }, [loadNotifications])
-
-  const unread = items.filter(item => !item.is_read).length
-
-  const markAllRead = async event => {
-    event.stopPropagation()
-
-    if (!userId || items.length === 0) return
-
-    setItems(current =>
-      current.map(item => ({ ...item, is_read: true }))
-    )
-
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', userId)
-      .in('source_type', FITNESS_NOTIFICATION_TYPES)
-
-    if (error) {
-      console.error('Mark page notifications read error:', error)
-      loadNotifications()
-    }
-  }
-
-  const clearNotifications = async event => {
-    event.stopPropagation()
-
-    if (!userId || items.length === 0) return
-
-    setItems([])
-
-    const { error } = await supabase
-      .from('notifications')
-      .delete()
-      .eq('user_id', userId)
-      .in('source_type', FITNESS_NOTIFICATION_TYPES)
-
-    if (error) {
-      console.error('Clear page notifications error:', error)
-      loadNotifications()
-    }
-  }
-
-  const openNotification = async item => {
-    setItems(current =>
-      current.map(row =>
-        row.id === item.id ? { ...row, is_read: true } : row
-      )
-    )
-
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', item.id)
-      .eq('user_id', userId)
-
-    setOpen(false)
-
-    if (item.action_url) {
-      navigate(item.action_url)
-    }
-  }
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <button
-        type="button"
-        onClick={event => {
-          event.stopPropagation()
-          setOpen(current => !current)
-          loadNotifications()
-        }}
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: 12,
-          border: '1px solid var(--line, #E2E8F0)',
-          background: 'var(--card, #FFFFFF)',
-          color: 'var(--text, #0D1B3E)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          padding: 0,
-          flexShrink: 0,
-        }}
-        title="Page notifications"
-      >
-        <span
-          aria-hidden="true"
-          style={{
-            display: 'block',
-            fontSize: 18,
-            lineHeight: 1,
-          }}
-        >
-          🔔
-        </span>
-
-        {unread > 0 && (
-          <span
-            style={{
-              position: 'absolute',
-              top: -5,
-              right: -5,
-              minWidth: 18,
-              height: 18,
-              borderRadius: 999,
-              padding: '0 5px',
-              display: 'grid',
-              placeItems: 'center',
-              background: '#EF4444',
-              color: '#FFFFFF',
-              fontSize: 9,
-              fontWeight: 800,
-            }}
-          >
-            {unread}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 50,
-            right: 0,
-            width: 330,
-            maxHeight: 360,
-            overflowY: 'auto',
-            padding: 10,
-            borderRadius: 16,
-            border: '1px solid var(--line, #EEF1F8)',
-            background: 'var(--card, #FFFFFF)',
-            boxShadow: '0 18px 45px rgba(13, 27, 62, 0.16)',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              marginBottom: 9,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 800,
-                color: 'var(--text, #0D1B3E)',
-              }}
-            >
-              Fitness notifications
-            </div>
-
-            {items.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={markAllRead}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: '#1A5FFF',
-                    cursor: 'pointer',
-                    padding: 0,
-                    fontSize: 11,
-                    fontWeight: 800,
-                  }}
-                >
-                  Mark read
-                </button>
-
-                <button
-                  type="button"
-                  onClick={clearNotifications}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: '#EF4444',
-                    cursor: 'pointer',
-                    padding: 0,
-                    fontSize: 11,
-                    fontWeight: 800,
-                  }}
-                >
-                  Clear
-                </button>
-              </div>
-            )}
-          </div>
-
-          {items.length === 0 ? (
-            <div
-              style={{
-                padding: 20,
-                textAlign: 'center',
-                color: 'var(--text-muted, #8892A4)',
-                fontSize: 12,
-              }}
-            >
-              No notifications for this page.
-            </div>
-          ) : (
-            items.map(item => {
-              const meta = getFitnessNotificationMeta(item)
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => openNotification(item)}
-                  style={{
-                    width: '100%',
-                    border: 'none',
-                    borderRadius: 12,
-                    padding: '10px 11px',
-                    marginBottom: 7,
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    background: item.is_read
-                      ? 'var(--soft, #F6F8FF)'
-                      : 'color-mix(in srgb, #1A5FFF 9%, var(--card, #FFFFFF))',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 5,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: 8,
-                        background: meta.background,
-                        color: meta.color,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <FitnessIcon
-                        type={meta.icon}
-                        color={meta.color}
-                        size={14}
-                      />
-                    </span>
-
-                    <span
-                      style={{
-                        minWidth: 0,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: 'var(--text, #0D1B3E)',
-                      }}
-                    >
-                      {item.title}
-                    </span>
-
-                    {!item.is_read && (
-                      <span
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: 999,
-                          background: '#1A5FFF',
-                          marginLeft: 'auto',
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      paddingLeft: 34,
-                      fontSize: 11,
-                      lineHeight: 1.45,
-                      color: 'var(--text-muted, #8892A4)',
-                    }}
-                  >
-                    {item.message}
-                  </div>
-                </button>
-              )
-            })
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 
 function DeleteConfirmationModal({
   title,
@@ -2504,7 +2627,10 @@ export default function Fitness() {
   const [draftPersonalNote, setDraftPersonalNote] = useState('')
 
   const [selectedDate, setSelectedDate] = useState(null)
-  const [filter, setFilter] = useState({ focus: 'All' })
+  const [filter, setFilter] = useState({
+    status: 'All',
+    search: '',
+  })
 
   const [showSchedule, setShowSchedule] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState(null)
@@ -2568,9 +2694,22 @@ export default function Fitness() {
 
           supabase
             .from('coach_training_session_players')
-            .select(
-              'session_id, attendance_status, completed_at'
-            )
+            .select(`
+              session_id,
+              player_focus,
+              attendance_status,
+              completed_at,
+              coach_training_sessions (
+                id,
+                session_date,
+                start_time,
+                end_time,
+                venue,
+                session_type,
+                group_notes,
+                coach_user_id
+              )
+            `)
             .eq('player_user_id', user.id),
 
           supabase
@@ -2608,32 +2747,75 @@ export default function Fitness() {
 
         setHasCoach(activeCoachRelationship)
 
-        const attendanceBySession = new Map(
+        const coachSessionById = new Map(
           (coachAssignmentRes.data || []).map(item => [
             String(item.session_id),
             {
+              playerFocus: item.player_focus || '',
               attendanceStatus:
                 item.attendance_status || 'scheduled',
               completedAt: item.completed_at || null,
+              session:
+                item.coach_training_sessions || null,
             },
           ])
         )
 
         setScheduleList(
           (scheduleRes.data || []).map(row => {
-            const attendance = row.coach_session_id
-              ? attendanceBySession.get(
+            const coachLink = row.coach_session_id
+              ? coachSessionById.get(
                   String(row.coach_session_id)
                 )
               : null
 
+            const linkedSession = coachLink?.session || null
+
             return rowToSchedule({
               ...row,
+              event_date:
+                linkedSession?.session_date ||
+                row.event_date,
+              event_time:
+                linkedSession?.start_time ||
+                row.event_time,
+              title:
+                linkedSession?.session_type ||
+                row.title,
+              location:
+                linkedSession?.venue ||
+                row.location,
+              schedule_type:
+                row.schedule_type ||
+                'Training',
+              notes: linkedSession
+                ? encodeScheduleNotes({
+                    notes: [
+                      linkedSession.group_notes || '',
+                      coachLink?.playerFocus
+                        ? `Individual focus: ${coachLink.playerFocus}`
+                        : '',
+                    ]
+                      .filter(Boolean)
+                      .join('\n'),
+                    endTime:
+                      linkedSession.end_time || '',
+                    focus:
+                      coachLink?.playerFocus ||
+                      linkedSession.session_type ||
+                      'Training',
+                    activity:
+                      linkedSession.session_type ||
+                      row.title ||
+                      'Training',
+                    status: 'scheduled',
+                  })
+                : row.notes,
               attendance_status:
-                attendance?.attendanceStatus ||
+                coachLink?.attendanceStatus ||
                 'scheduled',
               completed_at:
-                attendance?.completedAt || null,
+                coachLink?.completedAt || null,
             })
           })
         )
@@ -2711,6 +2893,16 @@ export default function Fitness() {
         },
         () => setRefreshKey(current => current + 1)
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'coach_player_relationships',
+          filter: `player_user_id=eq.${userId}`,
+        },
+        () => setRefreshKey(current => current + 1)
+      )
       .subscribe()
 
     return () => {
@@ -2729,98 +2921,29 @@ export default function Fitness() {
     return data.user.id
   }
 
-  const latestRecovery = useMemo(() => {
-    return [...recoveryLogs].sort((a, b) => a.date.localeCompare(b.date)).at(-1) || null
-  }, [recoveryLogs])
+  const fitnessSummary = useMemo(
+    () =>
+      calculateFitnessSummary({
+        tests,
+        sessions,
+        recoveryLogs,
+        injuries,
+        scheduleList,
+      }),
+    [tests, sessions, recoveryLogs, injuries, scheduleList]
+  )
 
-  const weeklyMinutes = useMemo(() => {
-    const weekDates = new Set(getThisWeekDates())
+  const {
+    fitnessScore,
+    indicators,
+    latestRecovery,
+    weeklyMinutes,
+    weeklyHours,
+    activeInjuries,
+    recoveryScore,
+  } = fitnessSummary
 
-    const completedTrainingLogs = sessions
-      .filter(session =>
-        weekDates.has(toKey(session.date))
-      )
-      .map(session => ({
-        key:
-          session.coachSessionId
-            ? `coach-${session.coachSessionId}`
-            : `training-${session.id}`,
-        minutes: getTrainingMinutes(session),
-      }))
-
-    const completedSchedules = scheduleList
-      .filter(item => {
-        const status = String(
-          item.attendanceStatus ||
-          item.attendance_status ||
-          item.status ||
-          ''
-        ).toLowerCase()
-
-        return (
-          status === 'completed' &&
-          weekDates.has(toKey(item.date))
-        )
-      })
-      .map(item => ({
-        key:
-          item.coachSessionId || item.coach_session_id
-            ? `coach-${
-                item.coachSessionId ||
-                item.coach_session_id
-              }`
-            : `schedule-${item.id}`,
-        minutes: getTrainingMinutes({
-          duration: item.duration,
-          startTime: item.time || item.startTime,
-          endTime: item.endTime,
-        }),
-      }))
-
-    const uniqueRecords = new Map()
-
-    ;[
-      ...completedTrainingLogs,
-      ...completedSchedules,
-    ].forEach(record => {
-      const previous = uniqueRecords.get(record.key) || 0
-      uniqueRecords.set(
-        record.key,
-        Math.max(previous, record.minutes)
-      )
-    })
-
-    return [...uniqueRecords.values()].reduce(
-      (sum, minutes) => sum + minutes,
-      0
-    )
-  }, [sessions, scheduleList])
-
-  const weeklyHours = Number((weeklyMinutes / 60).toFixed(1))
-  const activeInjuries = injuries.filter(i => i.status !== 'Recovered').length
-
-  const indicators = useMemo(() => {
-    const latestScore = indicator => tests.find(t => t.indicator === indicator)?.score ?? null
-
-    const recoveryBase = latestRecovery
-      ? clamp(100 - latestRecovery.tiredness * 8 - latestRecovery.muscleAche * 5 + Math.min(8, latestRecovery.sleep) - activeInjuries * 5)
-      : 50
-
-    return [
-      { name: 'Stamina', val: Math.round(latestScore('Stamina') ?? (sessions.length ? clamp(50 + Math.min(22, weeklyMinutes / 25)) : 50)) },
-      { name: 'Speed', val: Math.round(latestScore('Speed') ?? 50) },
-      { name: 'Strength', val: Math.round(latestScore('Strength') ?? 50) },
-      { name: 'Flexibility', val: Math.round(latestScore('Flexibility') ?? 50), low: (latestScore('Flexibility') ?? 50) < 65 },
-      { name: 'Recovery', val: Math.round(recoveryBase), low: recoveryBase < 65 },
-    ]
-  }, [tests, sessions.length, weeklyMinutes, latestRecovery, activeInjuries])
-
-  const fitnessScore = Math.round(indicators.reduce((sum, i) => sum + i.val, 0) / indicators.length)
   const hasRecoveryData = Boolean(latestRecovery)
-
-  const recoveryScore = hasRecoveryData
-    ? indicators.find(i => i.name === 'Recovery')?.val || 0
-    : 0
 
   const recoveryStatus = !hasRecoveryData
     ? 'Not Set'
@@ -2868,6 +2991,7 @@ export default function Fitness() {
         ) ||
         '-',
       focus: item.focus || item.type || 'Training',
+      venue: item.venue || '',
       status:
         item.scheduleStatus === 'missed'
           ? 'Missed'
@@ -2892,6 +3016,7 @@ export default function Fitness() {
         'Completed training',
       duration: item.duration || '-',
       focus: item.focus || item.type || 'Training',
+      venue: item.venue || '',
       status: 'Completed',
       original: item,
     }))
@@ -2920,14 +3045,61 @@ export default function Fitness() {
     })
   }, [scheduleList, sessions])
 
+
   const tableSessions = useMemo(() => {
+    const searchText = filter.search.trim().toLowerCase()
+
     return trainingLogItems.filter(item => {
+      const status = String(item.status || 'Scheduled').toLowerCase()
+
+      const matchesStatus =
+        filter.status === 'All' ||
+        status === filter.status.toLowerCase()
+
+      const itemDate = item.date
+        ? new Date(`${item.date}T00:00:00`)
+        : null
+
+      const searchableText = [
+        item.activity,
+        item.focus,
+        item.venue,
+        item.status,
+        item.date,
+        itemDate &&
+          Number.isFinite(itemDate.getTime())
+          ? itemDate.toLocaleDateString('en-MY', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            })
+          : '',
+        itemDate &&
+          Number.isFinite(itemDate.getTime())
+          ? itemDate.toLocaleDateString('en-MY', {
+              month: 'short',
+              year: 'numeric',
+            })
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+
+      const matchesSearch =
+        !searchText ||
+        searchableText.includes(searchText)
+
       return (
-        filter.focus === 'All' ||
-        item.focus === filter.focus
+        matchesStatus &&
+        matchesSearch
       )
     })
-  }, [trainingLogItems, filter.focus])
+  }, [
+    trainingLogItems,
+    filter.status,
+    filter.search,
+  ])
 
   const calendarItems = useMemo(() => {
     return [
@@ -2956,6 +3128,11 @@ export default function Fitness() {
       date: row.date,
       time: row.time ? row.time.slice(0, 5) : '',
       endTime: row.endTime ? row.endTime.slice(0, 5) : '',
+      duration:
+        calculateDuration(
+          row.time ? row.time.slice(0, 5) : '',
+          row.endTime ? row.endTime.slice(0, 5) : ''
+        ),
       type: row.type || 'Training',
       activity: row.activity || row.title || '',
       focus: row.focus || 'Stamina',
@@ -3356,11 +3533,11 @@ export default function Fitness() {
     }
   }
 
-  const openAddTraining = date => {
-    setCompletingSchedule(null)
-    setTrainingForm(emptyTraining(date || todayISO()))
-    setShowTraining(true)
-  }
+//  const openAddTraining = date => {
+  //  setCompletingSchedule(null)
+  //  setTrainingForm(emptyTraining(date || todayISO()))
+  //  setShowTraining(true)
+ // }
 
   const openEditTraining = row => {
     setCompletingSchedule(null)
@@ -3370,7 +3547,12 @@ export default function Fitness() {
       startTime: row.startTime || '',
       endTime: row.endTime || '',
       activity: row.activity || '',
-      duration: row.duration || '',
+      duration:
+        row.duration ||
+        calculateDuration(
+          row.startTime || '',
+          row.endTime || ''
+        ),
       focus: row.focus || 'Stamina',
       notes: row.notes || '',
     })
@@ -3988,7 +4170,12 @@ export default function Fitness() {
               + Log Injury
             </button>
 
-            <PageNotificationBell userId={userId} />
+            <NotificationBell
+              supabase={supabase}
+              userId={userId}
+              title="Fitness notifications"
+              sourceTypes={FITNESS_NOTIFICATION_TYPES}
+            />
           </div>
         </div>
       </div>
@@ -4539,16 +4726,70 @@ export default function Fitness() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <select className={styles.formSelect} value={filter.focus} onChange={e => setFilter(f => ({ ...f, focus: e.target.value }))}>
-              <option>All</option>
-              <option>Stamina</option>
-              <option>Speed</option>
-              <option>Strength</option>
-              <option>Flexibility</option>
-              <option>Recovery</option>
-              <option>Matches</option>
+          <div
+            className="fitness-training-filters"
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'minmax(260px, 1fr) minmax(140px, 180px) auto',
+              gap: 8,
+              marginBottom: 10,
+              alignItems: 'center',
+            }}
+          >
+            <input
+              className={styles.formInput}
+              value={filter.search}
+              onChange={event =>
+                setFilter(current => ({
+                  ...current,
+                  search: event.target.value,
+                }))
+              }
+              placeholder="Search training, focus, location or month"
+            />
+
+            <select
+              className={styles.formSelect}
+              value={filter.status}
+              onChange={event =>
+                setFilter(current => ({
+                  ...current,
+                  status: event.target.value,
+                }))
+              }
+            >
+              <option value="All">All status</option>
+              <option value="scheduled">Upcoming</option>
+              <option value="completed">Completed</option>
+              <option value="missed">Missed</option>
+              <option value="absent">Absent</option>
             </select>
+
+            {(filter.search ||
+              filter.status !== 'All') && (
+              <button
+                type="button"
+                onClick={() =>
+                  setFilter({
+                    status: 'All',
+                    search: '',
+                  })
+                }
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#1A5FFF',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '8px 4px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Clear
+              </button>
+            )}
           </div>
 
           <div
@@ -4560,7 +4801,7 @@ export default function Fitness() {
             style={{
               display: 'grid',
               gridTemplateColumns:
-                '70px 125px minmax(170px, 1fr) 90px 100px 100px 24px',
+                '66px 118px minmax(125px, 1.35fr) 70px minmax(90px, 0.9fr) 82px',
               gap: 10,
               padding: '0 10px 8px',
               color: '#8892A4',
@@ -4576,7 +4817,6 @@ export default function Fitness() {
             <div>Duration</div>
             <div>Focus</div>
             <div>Status</div>
-            <div />
           </div>
 
           {tableSessions.length === 0 && (
@@ -4595,11 +4835,13 @@ export default function Fitness() {
             <div
               className="fitness-training-body"
               style={{
+                width: '100%',
                 maxHeight: 430,
-                overflowY: 'auto',
-                overflowX: 'hidden',
-                paddingRight: 5,
-                scrollbarGutter: 'stable',
+                overflowY:
+                  tableSessions.length > 7
+                    ? 'auto'
+                    : 'visible',
+                overflowX: 'visible',
               }}
             >
               {tableSessions.map(t => {
@@ -4613,17 +4855,25 @@ export default function Fitness() {
                     key={t.id}
                     className={`${styles.listRow} fitness-training-row`}
                     onClick={() => {
-                      if (t.sourceType === 'schedule') {
+                      if (
+                        t.sourceType === 'schedule' &&
+                        t.original?.source !== 'coach_training'
+                      ) {
                         openEditSchedule(t.original)
-                      } else {
+                      } else if (t.sourceType === 'training') {
                         openEditTraining(t.original)
                       }
                     }}
                     style={{
-                      cursor: 'pointer',
+                      cursor:
+                        t.sourceType === 'schedule' &&
+                        t.original?.source === 'coach_training'
+                          ? 'default'
+                          : 'pointer',
+                      width: '100%',
                       display: 'grid',
                       gridTemplateColumns:
-                        '70px 125px minmax(170px, 1fr) 90px 100px 100px 24px',
+                        '66px 118px minmax(125px, 1.35fr) 70px minmax(90px, 0.9fr) 82px',
                       gap: 10,
                       alignItems: 'center',
                       minWidth: 0,
@@ -4714,11 +4964,13 @@ export default function Fitness() {
                     <div
                       style={{
                         minWidth: 0,
+                        maxWidth: '100%',
                         fontSize: 12,
                         color: 'var(--text, #0D1B3E)',
                         fontWeight: 600,
-                        lineHeight: 1.2,
+                        lineHeight: 1.25,
                         overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
                       }}
                     >
                       {t.focus || '-'}
@@ -4727,10 +4979,13 @@ export default function Fitness() {
                     <div
                       style={{
                         minWidth: 0,
-                        fontSize: 12,
+                        maxWidth: '100%',
+                        fontSize: 11,
                         fontWeight: 700,
                         textAlign: 'left',
-                        whiteSpace: 'nowrap',
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        lineHeight: 1.2,
                         color:
                           statusLower === 'completed'
                             ? '#10B981'
@@ -4745,7 +5000,6 @@ export default function Fitness() {
                           statusText.slice(1).toLowerCase()}
                     </div>
 
-                    {pencilIcon}
                   </div>
                 )
               })}
@@ -4848,7 +5102,16 @@ export default function Fitness() {
             </div>
 
             <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 170,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                }}
+              >
                 {injuries.length === 0 && <div style={{ padding: '18px 0', color: '#8892A4', fontSize: 12 }}>No injury records yet.</div>}
 
                 {injuries.slice(0, 3).map(injury => (
@@ -4882,7 +5145,22 @@ export default function Fitness() {
 
           .fitness-training-table-wrap {
             width: 100%;
+            min-width: 0;
             direction: ltr;
+            overflow: visible;
+          }
+
+          .fitness-training-header,
+          .fitness-training-body,
+          .fitness-training-row {
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+          }
+
+          .fitness-training-body {
+            padding-right: 0 !important;
+            scrollbar-gutter: auto !important;
           }
 
           @media (max-width: 900px) {
@@ -4890,9 +5168,18 @@ export default function Fitness() {
             .fitness-mobile-three-column {
               grid-template-columns: 1fr !important;
             }
+
+            .fitness-training-filters {
+              grid-template-columns:
+                repeat(2, minmax(0, 1fr)) !important;
+            }
           }
 
           @media (max-width: 640px) {
+            .fitness-training-filters {
+              grid-template-columns: 1fr !important;
+            }
+
             .fitness-mobile-metrics {
               display: grid !important;
               grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -4932,8 +5219,8 @@ export default function Fitness() {
 
             .fitness-training-header,
             .fitness-training-body {
-              width: 760px;
-              min-width: 760px;
+              width: 700px;
+              min-width: 700px;
             }
 
             .fitness-training-body {
@@ -4942,8 +5229,8 @@ export default function Fitness() {
             }
 
             .fitness-training-row {
-              width: 100%;
-              min-width: 760px;
+              width: 700px;
+              min-width: 700px;
             }
 
             .fitness-training-header > :nth-child(6),
