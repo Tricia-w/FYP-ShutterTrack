@@ -1841,6 +1841,7 @@ export default function Players() {
         clubsResult,
         acceptedMembershipsResult,
         playerMatchesResult,
+        directoryAccountsResult,
       ] = await Promise.all([
         supabase
           .from("public_players")
@@ -1895,6 +1896,7 @@ export default function Players() {
           .select("id, player_id, match_date, result, created_at")
           .order("match_date", { ascending: false })
           .order("created_at", { ascending: false }),
+        supabase.rpc("get_directory_visible_accounts"),
       ]);
 
       if (publicPlayerResult.error) {
@@ -1983,6 +1985,19 @@ export default function Players() {
           playerMatchesResult.error,
         );
       }
+
+      if (directoryAccountsResult.error) {
+        console.error(
+          "Failed to load visible directory accounts:",
+          directoryAccountsResult.error,
+        );
+      }
+
+      const visibleDirectoryUserIds = new Set(
+        (directoryAccountsResult.data || [])
+          .map((row) => row?.user_id && String(row.user_id))
+          .filter(Boolean),
+      );
 
       const matchesByProfileId = new Map();
 
@@ -2171,7 +2186,16 @@ export default function Players() {
       const registeredPlayers = allRegisteredProfiles
         .filter((player) => {
           if (user && player.user_id === user.id) return false;
-          return player.profile_public !== false;
+          if (player.profile_public === false) return false;
+
+          if (
+            player.user_id &&
+            !visibleDirectoryUserIds.has(String(player.user_id))
+          ) {
+            return false;
+          }
+
+          return true;
         })
         .map((player) => {
           const rating =
@@ -2335,6 +2359,13 @@ export default function Players() {
             .toLowerCase();
 
           if (!name) return false;
+
+          if (
+            publicUserId &&
+            !visibleDirectoryUserIds.has(publicUserId)
+          ) {
+            return false;
+          }
 
           // Registered player_profiles is always the source of truth.
           // Block legacy duplicates even when the registered profile is private.
@@ -2514,7 +2545,19 @@ export default function Players() {
       );
 
       const formattedCoaches = (coachResult.data || [])
-        .filter((coach) => !user || coach.user_id !== user.id)
+        .filter((coach) => {
+          if (user && coach.user_id === user.id) return false;
+          if (coach.profile_public === false) return false;
+
+          if (
+            coach.user_id &&
+            !visibleDirectoryUserIds.has(String(coach.user_id))
+          ) {
+            return false;
+          }
+
+          return true;
+        })
         .map((coach) => {
           const relationship = coachRelationshipData.find(
             (item) => item.coach_user_id === coach.user_id,
@@ -2681,6 +2724,24 @@ export default function Players() {
           filter: currentUserId
             ? `player_user_id=eq.${currentUserId}`
             : undefined,
+        },
+        () => fetchData(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "coach_profiles",
+        },
+        () => fetchData(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "app_users",
         },
         () => fetchData(),
       )
@@ -3144,16 +3205,12 @@ export default function Players() {
       return;
     }
 
-    const { error } = await supabase.from("coach_player_relationships").upsert(
+    const { error } = await supabase.rpc(
+      "request_coach_with_notification",
       {
-        player_user_id: user.id,
-        coach_user_id: coach.userId,
-        status: "pending",
-        requested_by: "player",
-        message: message.trim() || null,
-        responded_at: null,
+        target_coach_user_id: coach.userId,
+        request_message: message.trim() || null,
       },
-      { onConflict: "player_user_id,coach_user_id" },
     );
 
     if (error) {

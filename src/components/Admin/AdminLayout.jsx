@@ -5,7 +5,9 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import styles from "../Layout/Layout.module.css";
+import styles from "./AdminLayout.module.css";
+import AdminNotificationBell from "../Notifications/AdminNotificationBell";
+import { AdminHeaderBellContext } from "./AdminShared";
 
 const getStoredAdminName = () => {
   if (typeof window === "undefined") {
@@ -34,12 +36,7 @@ export default function AdminLayout({
   pendingReportCount = 0,
   children,
 }) {
-  const {
-    user,
-    profile,
-    logout,
-  } = useAuth();
-
+  const { user, profile, logout } = useAuth();
   const navigate = useNavigate();
 
   const fallbackName = useMemo(() => {
@@ -80,10 +77,7 @@ export default function AdminLayout({
       const cleanName = nextName.trim();
 
       setAdminDisplayName(cleanName);
-      localStorage.setItem(
-        "adminDisplayName",
-        cleanName
-      );
+      localStorage.setItem("adminDisplayName", cleanName);
     };
 
     window.addEventListener(
@@ -161,22 +155,15 @@ export default function AdminLayout({
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        minHeight: "100vh",
-        background:
-          "var(--bg, #F6F8FF)",
-      }}
-    >
+    <div className={styles.adminApp}>
       <aside className={styles.sidebar}>
         <div className={styles.sidebarLogo}>
           <div className={styles.logoMark}>
             <svg
               viewBox="0 0 20 20"
               fill="none"
-              width="20"
-              height="20"
+              width="18"
+              height="18"
             >
               <circle
                 cx="10"
@@ -219,52 +206,23 @@ export default function AdminLayout({
             <button
               key={item.key}
               type="button"
-              onClick={() =>
-                setActivePage(item.key)
-              }
+              onClick={() => setActivePage(item.key)}
               className={`${styles.navItem} ${
                 activePage === item.key
                   ? styles.active
                   : ""
               }`}
-              style={{
-                width: "100%",
-                border: "none",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
             >
-              <span
-                style={{
-                  width: 18,
-                  display: "inline-flex",
-                  justifyContent: "center",
-                  fontWeight: 800,
-                }}
-              >
+              <span className={styles.navIcon}>
                 {item.icon}
               </span>
 
-              <span style={{ flex: 1 }}>
+              <span className={styles.navText}>
                 {item.label}
               </span>
 
               {item.count > 0 && (
-                <span
-                  style={{
-                    minWidth: 21,
-                    height: 21,
-                    padding: "0 6px",
-                    borderRadius: 20,
-                    background: "#FEE2E2",
-                    color: "#DC2626",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 10,
-                    fontWeight: 800,
-                  }}
-                >
+                <span className={styles.navCount}>
                   {item.count}
                 </span>
               )}
@@ -272,43 +230,48 @@ export default function AdminLayout({
           ))}
         </nav>
 
-        <div className={styles.sidebarUser}>
-          <div className={styles.userAv}>
-            {initials}
+        <div className={styles.sidebarBottom}>
+          <div className={styles.sidebarUser}>
+            <div className={styles.userAv}>
+              {initials}
+            </div>
+
+            <div className={styles.userText}>
+              <div
+                className={styles.userName}
+                title={adminDisplayName}
+              >
+                {adminDisplayName}
+              </div>
+
+              <div className={styles.userRole}>
+                Administrator
+              </div>
+            </div>
           </div>
 
-          <div style={{ minWidth: 0 }}>
-            <div
-              className={styles.userName}
-              title={adminDisplayName}
-              style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
+          <div className={styles.sidebarLogout}>
+            <button
+              type="button"
+              className={styles.logoutBtn}
+              onClick={handleLogout}
             >
-              {adminDisplayName}
-            </div>
-
-            <div className={styles.userRole}>
-              Administrator
-            </div>
+              Log out
+            </button>
           </div>
-        </div>
-
-        <div className={styles.sidebarLogout}>
-          <button
-            type="button"
-            className={styles.logoutBtn}
-            onClick={handleLogout}
-          >
-            Log out
-          </button>
         </div>
       </aside>
 
       <main className={styles.main}>
-        {children}
+        <AdminHeaderBellContext.Provider
+          value={
+            <AdminNotificationBell
+              setActivePage={setActivePage}
+            />
+          }
+        >
+          {children}
+        </AdminHeaderBellContext.Provider>
       </main>
     </div>
   );

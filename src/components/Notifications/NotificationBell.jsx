@@ -161,11 +161,81 @@ export default function NotificationBell({
 }) {
   const navigate = useNavigate();
   const wrapRef = useRef(null);
+  const notificationSoundRef = useRef(null);
+  const soundEnabledRef = useRef(true);
   const [resolvedUserId, setResolvedUserId] = useState(userId);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [partnerRequests, setPartnerRequests] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const sound = new Audio(
+      "/shuttletrack-notification-tink.mp3"
+    );
+
+    sound.volume = 0.4;
+    sound.preload = "auto";
+
+    notificationSoundRef.current = sound;
+
+    return () => {
+      sound.pause();
+      notificationSoundRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      const sound = notificationSoundRef.current;
+      if (!sound) return;
+
+      const originalVolume = sound.volume;
+
+      sound.volume = 0;
+      sound.currentTime = 0;
+
+      sound
+        .play()
+        .then(() => {
+          sound.pause();
+          sound.currentTime = 0;
+          sound.volume = originalVolume || 0.4;
+        })
+        .catch(() => {});
+
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("keydown", unlockAudio);
+    };
+
+    document.addEventListener("click", unlockAudio);
+    document.addEventListener("touchstart", unlockAudio);
+    document.addEventListener("keydown", unlockAudio);
+
+    return () => {
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("keydown", unlockAudio);
+    };
+  }, []);
+
+  const playNotificationSound = useCallback(() => {
+    if (!soundEnabledRef.current) return;
+
+    const sound = notificationSoundRef.current;
+    if (!sound) return;
+
+    sound.currentTime = 0;
+    sound.volume = 0.4;
+
+    sound.play().catch(error => {
+      console.log(
+        "Notification sound was blocked by the browser:",
+        error
+      );
+    });
+  }, []);
 
   useEffect(() => {
     setResolvedUserId(userId || null);
@@ -184,6 +254,55 @@ export default function NotificationBell({
     setResolvedUserId(user.id);
     return user.id;
   }, [resolvedUserId, supabase]);
+
+  useEffect(() => {
+    if (localOnly) return undefined;
+
+    let active = true;
+
+    const loadSoundSetting = async () => {
+      const uid = await resolveUserId();
+      if (!active || !uid) return;
+
+      const { data, error } = await supabase
+        .from("user_settings")
+        .select("notification_sound_enabled")
+        .eq("user_id", uid)
+        .maybeSingle();
+
+      if (error) {
+        console.error(
+          "Notification sound setting load error:",
+          error
+        );
+        return;
+      }
+
+      soundEnabledRef.current =
+        data?.notification_sound_enabled !== false;
+    };
+
+    const handleSoundSettingUpdated = event => {
+      soundEnabledRef.current =
+        event?.detail?.enabled !== false;
+    };
+
+    loadSoundSetting();
+
+    window.addEventListener(
+      "notification-sound-updated",
+      handleSoundSettingUpdated
+    );
+
+    return () => {
+      active = false;
+
+      window.removeEventListener(
+        "notification-sound-updated",
+        handleSoundSettingUpdated
+      );
+    };
+  }, [localOnly, resolveUserId, supabase]);
 
   const loadNotifications = useCallback(async () => {
     if (localOnly) {
@@ -290,7 +409,36 @@ export default function NotificationBell({
             table: "notifications",
             filter: `user_id=eq.${uid}`,
           },
-          () => loadNotifications(),
+          payload => {
+            const newItem = payload?.new;
+            const isInsert = payload?.eventType === "INSERT";
+
+            const matchesCurrentView =
+              mode === "players"
+                ? isPlayerDirectoryNotification(newItem)
+                : Array.isArray(sourceTypes) &&
+                    sourceTypes.length > 0
+                  ? sourceTypes
+                      .map(normalise)
+                      .some(type => {
+                        const sourceType = normalise(
+                          newItem?.source_type
+                        );
+                        const itemType = normalise(newItem?.type);
+
+                        return (
+                          type === sourceType ||
+                          type === itemType
+                        );
+                      })
+                  : true;
+
+            if (isInsert && newItem && matchesCurrentView) {
+              playNotificationSound();
+            }
+
+            loadNotifications();
+          },
         );
 
       if (includePartnerRequests) {
@@ -302,7 +450,11 @@ export default function NotificationBell({
             table: "player_partner_requests",
             filter: `recipient_user_id=eq.${uid}`,
           },
-          () => {
+          payload => {
+            if (payload?.eventType === "INSERT") {
+              playNotificationSound();
+            }
+
             loadNotifications();
             onPartnerChanged?.();
           },
@@ -323,8 +475,11 @@ export default function NotificationBell({
     includePartnerRequests,
     loadNotifications,
     localOnly,
+    mode,
     onPartnerChanged,
+    playNotificationSound,
     resolveUserId,
+    sourceTypes,
     supabase,
   ]);
 

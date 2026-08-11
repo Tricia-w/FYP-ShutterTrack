@@ -1,5 +1,15 @@
-import React, { useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+} from "react";
 import "./AdminTheme.css";
+
+/*
+AdminLayout provides the notification bell through this context.
+This keeps the bell inside the shared Admin SectionHeader.
+*/
+export const AdminHeaderBellContext = createContext(null);
 
 export const ROLE_META = {
   Admin: { color: "#7C3AED", bg: "#EDE9FE" },
@@ -39,7 +49,11 @@ export const buttonBase = {
   fontSize: 12,
 };
 
-export function Avatar({ name = "", role = "Player", size = 36 }) {
+export function Avatar({
+  name = "",
+  role = "Player",
+  size = 36,
+}) {
   const initials =
     name
       .split(" ")
@@ -49,7 +63,8 @@ export function Avatar({ name = "", role = "Player", size = 36 }) {
       .toUpperCase()
       .slice(0, 2) || "US";
 
-  const meta = ROLE_META[role] || ROLE_META.Player;
+  const meta =
+    ROLE_META[role] || ROLE_META.Player;
 
   return (
     <div
@@ -72,7 +87,10 @@ export function Avatar({ name = "", role = "Player", size = 36 }) {
   );
 }
 
-export function Badge({ value, type = "status" }) {
+export function Badge({
+  value,
+  type = "status",
+}) {
   const meta =
     type === "role"
       ? ROLE_META[value] || ROLE_META.Player
@@ -100,7 +118,12 @@ export function Badge({ value, type = "status" }) {
   );
 }
 
-export function Modal({ title, onClose, children, maxWidth = 500 }) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  maxWidth = 500,
+}) {
   return (
     <div
       onClick={onClose}
@@ -116,24 +139,32 @@ export function Modal({ title, onClose, children, maxWidth = 500 }) {
       }}
     >
       <div
-        onClick={(event) => event.stopPropagation()}
+        onClick={(event) =>
+          event.stopPropagation()
+        }
         style={{
           width: "100%",
           maxWidth,
           maxHeight: "90vh",
           overflowY: "auto",
-          background: "var(--card, #FFFFFF)",
-          color: "var(--text, #0D1B3E)",
-          border: "1px solid var(--line, #EEF1F8)",
+          background:
+            "var(--card, #FFFFFF)",
+          color:
+            "var(--text, #0D1B3E)",
+          border:
+            "1px solid var(--line, #EEF1F8)",
           borderRadius: 20,
           padding: 26,
-          boxShadow: "0 18px 55px rgba(0, 0, 0, 0.32)",
+          boxShadow:
+            "0 18px 55px rgba(0, 0, 0, 0.32)",
+          boxSizing: "border-box",
         }}
       >
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             alignItems: "center",
             gap: 16,
             marginBottom: 22,
@@ -143,7 +174,8 @@ export function Modal({ title, onClose, children, maxWidth = 500 }) {
             style={{
               fontSize: 18,
               fontWeight: 800,
-              color: "var(--text, #0D1B3E)",
+              color:
+                "var(--text, #0D1B3E)",
             }}
           >
             {title}
@@ -156,8 +188,10 @@ export function Modal({ title, onClose, children, maxWidth = 500 }) {
               ...buttonBase,
               width: 34,
               height: 34,
-              background: "var(--soft, #EEF1F8)",
-              color: "var(--text-muted, #8892A4)",
+              background:
+                "var(--soft, #EEF1F8)",
+              color:
+                "var(--text-muted, #8892A4)",
             }}
           >
             ✕
@@ -170,22 +204,31 @@ export function Modal({ title, onClose, children, maxWidth = 500 }) {
   );
 }
 
-export function Field({ label, children }) {
+export function Field({
+  label,
+  children,
+}) {
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div
+      style={{
+        marginBottom: 14,
+      }}
+    >
       <label
         style={{
           display: "block",
           marginBottom: 6,
           fontSize: 11,
           fontWeight: 800,
-          color: "var(--text-muted, #8892A4)",
+          color:
+            "var(--text-muted, #8892A4)",
           textTransform: "uppercase",
           letterSpacing: "0.5px",
         }}
       >
         {label}
       </label>
+
       {children}
     </div>
   );
@@ -197,11 +240,20 @@ export function SectionHeader({
   action,
   children,
 }) {
+  const adminHeaderBell =
+    useContext(
+      AdminHeaderBellContext,
+    );
+
   useEffect(() => {
-    document.body.classList.add("admin-theme-active");
+    document.body.classList.add(
+      "admin-theme-active",
+    );
 
     return () => {
-      document.body.classList.remove("admin-theme-active");
+      document.body.classList.remove(
+        "admin-theme-active",
+      );
     };
   }, []);
 
@@ -209,21 +261,30 @@ export function SectionHeader({
     <div
       className="admin-section-header"
       style={{
+        width: "100%",
         display: "flex",
-        justifyContent: "space-between",
+        justifyContent:
+          "space-between",
         alignItems: "flex-start",
         gap: 16,
         marginBottom: 22,
-        flexWrap: "wrap",
+        boxSizing: "border-box",
       }}
     >
-      <div>
+      {/* LEFT SIDE */}
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
         <div
           style={{
             fontSize: 24,
             fontWeight: 800,
             lineHeight: 1.2,
-            color: "var(--text, #0D1B3E)",
+            color:
+              "var(--text, #0D1B3E)",
           }}
         >
           {title}
@@ -234,7 +295,8 @@ export function SectionHeader({
             style={{
               fontSize: 13,
               lineHeight: 1.5,
-              color: "var(--text-muted, #8892A4)",
+              color:
+                "var(--text-muted, #8892A4)",
               marginTop: 4,
             }}
           >
@@ -243,17 +305,24 @@ export function SectionHeader({
         )}
       </div>
 
-      {(action || children) && (
+      {/* RIGHT SIDE */}
+      {(action ||
+        children ||
+        adminHeaderBell) && (
         <div
           style={{
+            marginLeft: "auto",
             display: "flex",
             alignItems: "center",
+            justifyContent:
+              "flex-end",
             gap: 10,
-            flexWrap: "wrap",
+            flexShrink: 0,
           }}
         >
           {action}
           {children}
+          {adminHeaderBell}
         </div>
       )}
     </div>
@@ -273,10 +342,13 @@ export function SummaryCard({
         background: dark
           ? "linear-gradient(135deg,#172B55,#203B70)"
           : "var(--card, #FFFFFF)",
-        border: "1px solid var(--line, transparent)",
+        border:
+          "1px solid var(--line, transparent)",
         borderRadius: 16,
         padding: "20px 22px",
-        boxShadow: "0 5px 18px rgba(0, 0, 0, 0.08)",
+        boxShadow:
+          "0 5px 18px rgba(0, 0, 0, 0.08)",
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -284,7 +356,9 @@ export function SummaryCard({
           fontSize: 30,
           lineHeight: 1,
           fontWeight: 800,
-          color: dark ? "#FFFFFF" : color,
+          color: dark
+            ? "#FFFFFF"
+            : color,
         }}
       >
         {value}
@@ -320,16 +394,24 @@ export function SummaryCard({
   );
 }
 
-export function TableCard({ children }) {
+export function TableCard({
+  children,
+}) {
   return (
     <div
       style={{
-        background: "var(--card, #FFFFFF)",
-        color: "var(--text, #0D1B3E)",
-        border: "1px solid var(--line, transparent)",
+        width: "100%",
+        background:
+          "var(--card, #FFFFFF)",
+        color:
+          "var(--text, #0D1B3E)",
+        border:
+          "1px solid var(--line, transparent)",
         borderRadius: 16,
-        boxShadow: "0 5px 18px rgba(0, 0, 0, 0.08)",
+        boxShadow:
+          "0 5px 18px rgba(0, 0, 0, 0.08)",
         overflowX: "auto",
+        boxSizing: "border-box",
       }}
     >
       {children}
@@ -337,13 +419,16 @@ export function TableCard({ children }) {
   );
 }
 
-export function EmptyState({ text }) {
+export function EmptyState({
+  text,
+}) {
   return (
     <div
       style={{
         padding: 42,
         textAlign: "center",
-        color: "var(--text-muted, #8892A4)",
+        color:
+          "var(--text-muted, #8892A4)",
         fontSize: 13,
       }}
     >

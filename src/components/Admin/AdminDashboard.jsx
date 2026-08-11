@@ -14,6 +14,16 @@ function normalizeStatus(status) {
   return String(status || "").trim().toLowerCase();
 }
 
+function normalizeAccountStatus(user) {
+  return String(
+    user?.accountStatus ||
+      user?.account_status ||
+      "active"
+  )
+    .trim()
+    .toLowerCase();
+}
+
 function parseJoinedMonth(value) {
   if (!value || typeof value !== "string") {
     return null;
@@ -141,30 +151,40 @@ export default function AdminDashboard({
     };
   }, [users, coaches, reports]);
 
-  const roleChartData = useMemo(
-    () => [
-      {
-        label: "Players",
-        value: statistics.playerCount,
-        color: "#1A5FFF",
-      },
-      {
-        label: "Coaches",
-        value: statistics.coachCount,
-        color: "#0891B2",
-      },
-      {
-        label: "Admins",
-        value: statistics.adminCount,
-        color: "#7C3AED",
-      },
-    ],
-    [
-      statistics.playerCount,
-      statistics.coachCount,
-      statistics.adminCount,
-    ]
-  );
+  const roleChartData = useMemo(() => {
+    const buildRoleRow = (role, label, activeColor) => {
+      const roleUsers = users.filter(
+        (item) => normalizeRole(item.role) === role
+      );
+
+      const active = roleUsers.filter(
+        (item) => normalizeAccountStatus(item) === "active"
+      ).length;
+
+      const suspended = roleUsers.filter(
+        (item) => normalizeAccountStatus(item) === "suspended"
+      ).length;
+
+      const disabled = roleUsers.filter(
+        (item) => normalizeAccountStatus(item) === "disabled"
+      ).length;
+
+      return {
+        label,
+        value: roleUsers.length,
+        active,
+        suspended,
+        disabled,
+        activeColor,
+      };
+    };
+
+    return [
+      buildRoleRow("player", "Players", "#1A5FFF"),
+      buildRoleRow("coach", "Coaches", "#0891B2"),
+      buildRoleRow("admin", "Admins", "#7C3AED"),
+    ];
+  }, [users]);
 
   const registrationTrend = useMemo(() => {
     const now = new Date();
@@ -182,7 +202,7 @@ export default function AdminDashboard({
         1
       );
 
-      const count = users.filter((user) => {
+      const monthUsers = users.filter((user) => {
         const createdDate = getUserCreatedDate(user);
 
         return (
@@ -190,11 +210,26 @@ export default function AdminDashboard({
           createdDate >= monthStart &&
           createdDate < nextMonthStart
         );
-      }).length;
+      });
+
+      const players = monthUsers.filter(
+        (user) => normalizeRole(user.role) === "player"
+      ).length;
+
+      const coaches = monthUsers.filter(
+        (user) => normalizeRole(user.role) === "coach"
+      ).length;
+
+      const admins = monthUsers.filter(
+        (user) => normalizeRole(user.role) === "admin"
+      ).length;
 
       return {
         label: formatMonth(monthStart),
-        count,
+        count: monthUsers.length,
+        players,
+        coaches,
+        admins,
       };
     });
   }, [users]);
@@ -306,7 +341,44 @@ export default function AdminDashboard({
               marginBottom: 22,
             }}
           >
-            Number of registered users by account role
+            Number of registered users by role and account status
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 14,
+              flexWrap: "wrap",
+              marginBottom: 18,
+              fontSize: 10,
+              color: "var(--text-muted, #8892A4)",
+            }}
+          >
+            {[
+              { label: "Active", color: "#1A5FFF" },
+              { label: "Suspended", color: "#DC2626" },
+              { label: "Disabled", color: "#9CA3AF" },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span
+                  style={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: 999,
+                    background: item.color,
+                    display: "inline-block",
+                  }}
+                />
+                {item.label}
+              </div>
+            ))}
           </div>
 
           <div
@@ -317,13 +389,14 @@ export default function AdminDashboard({
             }}
           >
             {roleChartData.map((item) => {
-              const percentage =
-                item.value === 0
-                  ? 0
-                  : Math.max(
-                      (item.value / maxRoleCount) * 100,
-                      5
-                    );
+              const activeWidth =
+                (item.active / maxRoleCount) * 100;
+
+              const suspendedWidth =
+                (item.suspended / maxRoleCount) * 100;
+
+              const disabledWidth =
+                (item.disabled / maxRoleCount) * 100;
 
               return (
                 <div key={item.label}>
@@ -335,15 +408,39 @@ export default function AdminDashboard({
                       marginBottom: 8,
                     }}
                   >
-                    <span
+                    <div
                       style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "var(--text-soft, #334155)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
-                      {item.label}
-                    </span>
+                      <span
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "var(--text-soft, #334155)",
+                        }}
+                      >
+                        {item.label}
+                      </span>
+
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "var(--text-muted, #8892A4)",
+                        }}
+                      >
+                        {item.active} active
+                        {item.suspended > 0
+                          ? ` · ${item.suspended} suspended`
+                          : ""}
+                        {item.disabled > 0
+                          ? ` · ${item.disabled} disabled`
+                          : ""}
+                      </span>
+                    </div>
 
                     <span
                       style={{
@@ -357,23 +454,48 @@ export default function AdminDashboard({
                   </div>
 
                   <div
+                    title={`${item.label}: ${item.active} active, ${item.suspended} suspended, ${item.disabled} disabled`}
                     style={{
                       width: "100%",
                       height: 10,
                       borderRadius: 999,
                       background: "var(--line, #EEF1F7)",
                       overflow: "hidden",
+                      display: "flex",
                     }}
                   >
-                    <div
-                      style={{
-                        width: `${percentage}%`,
-                        height: "100%",
-                        borderRadius: 999,
-                        background: item.color,
-                        transition: "width 0.3s ease",
-                      }}
-                    />
+                    {item.active > 0 && (
+                      <div
+                        style={{
+                          width: `${activeWidth}%`,
+                          height: "100%",
+                          background: item.activeColor,
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    )}
+
+                    {item.suspended > 0 && (
+                      <div
+                        style={{
+                          width: `${suspendedWidth}%`,
+                          height: "100%",
+                          background: "#DC2626",
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    )}
+
+                    {item.disabled > 0 && (
+                      <div
+                        style={{
+                          width: `${disabledWidth}%`,
+                          height: "100%",
+                          background: "#9CA3AF",
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               );
@@ -412,8 +534,45 @@ export default function AdminDashboard({
 
           <div
             style={{
+              display: "flex",
+              gap: 14,
+              flexWrap: "wrap",
+              marginTop: 14,
+              fontSize: 10,
+              color: "var(--text-muted, #8892A4)",
+            }}
+          >
+            {[
+              { label: "Players", color: "#1A5FFF" },
+              { label: "Coaches", color: "#0891B2" },
+              { label: "Admins", color: "#7C3AED" },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span
+                  style={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: 999,
+                    background: item.color,
+                    display: "inline-block",
+                  }}
+                />
+                {item.label}
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
               height: 220,
-              marginTop: 24,
+              marginTop: 12,
               display: "flex",
               alignItems: "flex-end",
               gap: 12,
@@ -428,6 +587,21 @@ export default function AdminDashboard({
                       (item.count / maxRegistrationCount) * 145,
                       14
                     );
+
+              const playerHeight =
+                item.count > 0
+                  ? (item.players / item.count) * 100
+                  : 0;
+
+              const coachHeight =
+                item.count > 0
+                  ? (item.coaches / item.count) * 100
+                  : 0;
+
+              const adminHeight =
+                item.count > 0
+                  ? (item.admins / item.count) * 100
+                  : 0;
 
               return (
                 <div
@@ -454,22 +628,53 @@ export default function AdminDashboard({
                   </div>
 
                   <div
-                    title={`${item.count} registration${
-                      item.count === 1 ? "" : "s"
-                    } in ${item.label}`}
+                    title={`${item.label}: ${item.players} player${
+                      item.players === 1 ? "" : "s"
+                    }, ${item.coaches} coach${
+                      item.coaches === 1 ? "" : "es"
+                    }, ${item.admins} admin${
+                      item.admins === 1 ? "" : "s"
+                    }`}
                     style={{
                       width: "65%",
                       maxWidth: 46,
                       minWidth: 16,
                       height: barHeight,
                       borderRadius: "9px 9px 3px 3px",
-                      background:
-                        item.count === 0
-                          ? "var(--line, #E5EAF4)"
-                          : "#1A5FFF",
+                      background: "var(--line, #E5EAF4)",
+                      overflow: "hidden",
+                      display: "flex",
+                      flexDirection: "column-reverse",
                       transition: "height 0.3s ease",
                     }}
-                  />
+                  >
+                    {item.players > 0 && (
+                      <div
+                        style={{
+                          height: `${playerHeight}%`,
+                          background: "#1A5FFF",
+                        }}
+                      />
+                    )}
+
+                    {item.coaches > 0 && (
+                      <div
+                        style={{
+                          height: `${coachHeight}%`,
+                          background: "#0891B2",
+                        }}
+                      />
+                    )}
+
+                    {item.admins > 0 && (
+                      <div
+                        style={{
+                          height: `${adminHeight}%`,
+                          background: "#7C3AED",
+                        }}
+                      />
+                    )}
+                  </div>
 
                   <div
                     style={{

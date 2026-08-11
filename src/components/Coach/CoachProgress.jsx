@@ -9,6 +9,7 @@ import {
   CoachPageHeader,
   LevelBadge,
 } from './CoachShared'
+import CoachNotificationBell from "../Notifications/CoachNotificationBell";
 
 const DEFAULT_SCORE = 50
 
@@ -975,6 +976,113 @@ export default function CoachProgress() {
           ? current
           : normalizedStudents[0]?.id || null
       )
+
+      /*
+       * Create one coach progress reminder per due player per day.
+       * The reminder is only created when the coach has enabled
+       * coach_progress_reminder in user_settings.
+       */
+      try {
+        const today = new Date().toISOString().slice(0, 10)
+        const todayStart = `${today}T00:00:00.000Z`
+
+        const { data: reminderSettings, error: reminderSettingsError } =
+          await supabase
+            .from('user_settings')
+            .select('coach_progress_reminder')
+            .eq('user_id', user.id)
+            .maybeSingle()
+
+        if (reminderSettingsError) {
+          console.error(
+            'Load progress reminder setting error:',
+            reminderSettingsError
+          )
+        }
+
+        const remindersEnabled =
+          reminderSettings?.coach_progress_reminder !== false
+
+        if (remindersEnabled) {
+          const dueStudents = normalizedStudents.filter(student => {
+            const reviewDate = String(
+              student.progress?.next_review_date || ''
+            ).slice(0, 10)
+
+            return reviewDate && reviewDate <= today
+          })
+
+          if (dueStudents.length > 0) {
+            const {
+              data: existingReminders,
+              error: existingReminderError,
+            } = await supabase
+              .from('notifications')
+              .select('id, message')
+              .eq('user_id', user.id)
+              .eq('source_type', 'coach_progress_reminder')
+              .gte('created_at', todayStart)
+
+            if (existingReminderError) {
+              console.error(
+                'Load existing progress reminders error:',
+                existingReminderError
+              )
+            } else {
+              const existingMessages = new Set(
+                (existingReminders || []).map(item =>
+                  String(item.message || '')
+                )
+              )
+
+              const remindersToInsert = dueStudents
+                .map(student => {
+                  const reviewDate = String(
+                    student.progress?.next_review_date || ''
+                  ).slice(0, 10)
+
+                  const message =
+                    reviewDate < today
+                      ? `${student.name}'s progress review was due on ${formatDate(reviewDate)}.`
+                      : `${student.name}'s progress review is due today.`
+
+                  return {
+                    user_id: user.id,
+                    title: 'Player progress review reminder',
+                    message,
+                    type: 'warning',
+                    source_type: 'coach_progress_reminder',
+                    action_url: '/coach/progress',
+                    is_read: false,
+                  }
+                })
+                .filter(
+                  reminder =>
+                    !existingMessages.has(reminder.message)
+                )
+
+              if (remindersToInsert.length > 0) {
+                const { error: reminderInsertError } =
+                  await supabase
+                    .from('notifications')
+                    .insert(remindersToInsert)
+
+                if (reminderInsertError) {
+                  console.error(
+                    'Create progress reminders error:',
+                    reminderInsertError
+                  )
+                }
+              }
+            }
+          }
+        }
+      } catch (reminderError) {
+        console.error(
+          'Progress reminder generation error:',
+          reminderError
+        )
+      }
     } catch (loadError) {
       console.error('Coach progress load error:', loadError)
       setError(
@@ -1194,9 +1302,18 @@ export default function CoachProgress() {
       <CoachPageHeader
         title="Player Progress"
         subtitle="View synced performance and fitness data for your accepted students"
-      />
+      
+        rightAction={
+          <CoachNotificationBell
+            supabase={supabase}
+            mode="progress"
+            title="Progress notifications"
+          />
+        }/>
 
-      <div className={styles.g4} style={{ marginBottom: 16 }}>
+      
+      
+<div className={styles.g4} style={{ marginBottom: 16 }}>
         {[
           {
             label: 'My students',

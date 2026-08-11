@@ -6,6 +6,7 @@ import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
 import { Avatar, CoachPageHeader } from './CoachShared'
+import CoachNotificationBell from "../Notifications/CoachNotificationBell";
 
 const PERFORMANCE_FIELDS = ['smash', 'defense', 'footwork', 'drop_shot', 'net_play', 'serve']
 const FITNESS_FIELDS = ['stamina', 'speed', 'strength', 'flexibility', 'recovery']
@@ -569,10 +570,19 @@ export default function CoachDashboard() {
       <CoachPageHeader
         title="Coach Dashboard"
         subtitle="Manage your players, sessions and track progress"
-      />
+      
+        rightAction={
+          <CoachNotificationBell
+            supabase={supabase}
+            mode="all"
+            title="Notifications"
+          />
+        }/>
 
 
-      <div
+      
+      
+<div
         className={styles.card}
         style={{
           marginBottom: 16,

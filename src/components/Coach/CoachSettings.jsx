@@ -50,6 +50,7 @@ export default function CoachSettings() {
     playerRequestReminder: true,
     sessionReminder: true,
     progressReminder: true,
+    soundEnabled: true,
     profilePublic: true,
     acceptingPlayers: true,
   })
@@ -112,7 +113,9 @@ export default function CoachSettings() {
 
           supabase
             .from('coach_profiles')
-            .select('display_name, phone, accepting_players, updated_at')
+            .select(
+              'display_name, phone, accepting_players, profile_public, updated_at'
+            )
             .eq('user_id', user.id)
             .maybeSingle(),
 
@@ -182,9 +185,17 @@ export default function CoachSettings() {
             true
           ),
 
-          profilePublic: readBool(
-            savedSettings?.coach_profile_public,
+          soundEnabled: readBool(
+            savedSettings?.notification_sound_enabled,
             true
+          ),
+
+          profilePublic: readBool(
+            coachProfile?.profile_public,
+            readBool(
+              savedSettings?.coach_profile_public,
+              true
+            )
           ),
 
           acceptingPlayers: readBool(
@@ -362,6 +373,7 @@ export default function CoachSettings() {
     playerRequestReminder: 'coach_player_request_reminder',
     sessionReminder: 'coach_session_reminder',
     progressReminder: 'coach_progress_reminder',
+    soundEnabled: 'notification_sound_enabled',
     profilePublic: 'coach_profile_public',
   }
 
@@ -401,6 +413,53 @@ export default function CoachSettings() {
           )
 
         if (error) throw error
+      } else if (key === 'profilePublic') {
+        const [
+          coachProfileSave,
+          userSettingsSave,
+        ] = await Promise.all([
+          supabase
+            .from('coach_profiles')
+            .upsert(
+              {
+                user_id: authUser.id,
+                display_name: form.name.trim() || 'Coach',
+                profile_public: nextValue,
+                updated_at: now,
+              },
+              { onConflict: 'user_id' }
+            ),
+
+          supabase
+            .from('user_settings')
+            .upsert(
+              {
+                user_id: authUser.id,
+                coach_profile_public: nextValue,
+                updated_at: now,
+              },
+              { onConflict: 'user_id' }
+            ),
+        ])
+
+        if (coachProfileSave.error) {
+          throw coachProfileSave.error
+        }
+
+        if (userSettingsSave.error) {
+          throw userSettingsSave.error
+        }
+
+        window.dispatchEvent(
+          new CustomEvent(
+            'coach-profile-visibility-updated',
+            {
+              detail: {
+                profile_public: nextValue,
+              },
+            }
+          )
+        )
       } else {
         const column = SETTINGS_COLUMN_MAP[key]
 
@@ -418,6 +477,16 @@ export default function CoachSettings() {
           )
 
         if (error) throw error
+      }
+
+      if (key === 'soundEnabled') {
+        window.dispatchEvent(
+          new CustomEvent('notification-sound-updated', {
+            detail: {
+              enabled: nextValue,
+            },
+          })
+        )
       }
 
       setLastUpdated(new Date(now).toLocaleString('en-MY'))
@@ -1028,6 +1097,14 @@ export default function CoachSettings() {
               checked={settings.progressReminder}
               onChange={() =>
                 toggle('progressReminder')
+              }
+            />
+
+            <SettingLine
+              label="Notification sound"
+              checked={settings.soundEnabled}
+              onChange={() =>
+                toggle('soundEnabled')
               }
             />
 

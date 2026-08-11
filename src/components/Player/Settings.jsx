@@ -146,6 +146,7 @@ export default function Settings() {
     expenseLogAfterReminder: true,
     expenseBudgetAlert: true,
 
+    soundEnabled: true,
     profilePublic: true,
   })
 
@@ -348,6 +349,11 @@ export default function Settings() {
         true
       ),
       expenseBudgetAlert: readBool(userSettings?.expense_budget_alert, true),
+
+      soundEnabled: readBool(
+        userSettings?.notification_sound_enabled,
+        true
+      ),
 
       profilePublic: readBool(userSettings?.profile_public, true),
     }
@@ -726,6 +732,7 @@ export default function Settings() {
     fitnessLogAfterReminder: 'fitness_log_after_reminder',
     expenseLogAfterReminder: 'expense_log_after_reminder',
     expenseBudgetAlert: 'expense_budget_alert',
+    soundEnabled: 'notification_sound_enabled',
     profilePublic: 'profile_public',
   }
 
@@ -767,6 +774,16 @@ export default function Settings() {
         )
 
       if (error) throw error
+
+      if (key === 'soundEnabled') {
+        window.dispatchEvent(
+          new CustomEvent('notification-sound-updated', {
+            detail: {
+              enabled: nextValue,
+            },
+          })
+        )
+      }
 
       setLastUpdated(new Date(now).toLocaleString())
       setAutoSaveStatus('Saved automatically')
@@ -1635,6 +1652,12 @@ export default function Settings() {
               label="Coach note reminders"
               checked={settings.coachNoteReminder}
               onChange={() => toggle('coachNoteReminder')}
+            />
+
+            <SettingLine
+              label="Notification sound"
+              checked={settings.soundEnabled}
+              onChange={() => toggle('soundEnabled')}
             />
 
             <SettingLine

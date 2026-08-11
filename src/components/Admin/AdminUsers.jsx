@@ -26,6 +26,13 @@ const ACTIVITY_COLORS = {
   "Never active": { color: "#6B7280", background: "#F3F4F6" },
 };
 
+const SECURITY_COLORS = {
+  "Reverify required": {
+    color: "#B45309",
+    background: "#FEF3C7",
+  },
+};
+
 function StatusPill({ value, colours }) {
   const meta = colours[value] || {
     color: "#6B7280",
@@ -71,6 +78,8 @@ export default function AdminUsers({
   const [formError, setFormError] = useState("");
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [showRemoveConfirmation, setShowRemoveConfirmation] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const counts = useMemo(
     () => ({
@@ -112,6 +121,7 @@ export default function AdminUsers({
     });
     setFormError("");
     setShowConfirmation(false);
+    setShowRemoveConfirmation(false);
     setSuccessMessage("");
   };
 
@@ -120,6 +130,7 @@ export default function AdminUsers({
     setSelected(null);
     setFormError("");
     setShowConfirmation(false);
+    setShowRemoveConfirmation(false);
   };
 
   const requestSaveConfirmation = () => {
@@ -154,6 +165,60 @@ export default function AdminUsers({
 
     setFormError("");
     setShowConfirmation(true);
+  };
+
+  const requestRemoveUser = () => {
+    if (!selected) return;
+
+    if (selected.userId === currentAdminId) {
+      setFormError("You cannot remove your own administrator account.");
+      return;
+    }
+
+    if (selected.accountStatus !== "Disabled") {
+      setFormError("Disable this account first before removing the user.");
+      return;
+    }
+
+    setFormError("");
+    setShowRemoveConfirmation(true);
+  };
+
+  const removeUser = async () => {
+    if (!selected) return;
+
+    if (selected.userId === currentAdminId) {
+      setFormError("You cannot remove your own administrator account.");
+      return;
+    }
+
+    if (selected.accountStatus !== "Disabled") {
+      setFormError("Disable this account first before removing the user.");
+      return;
+    }
+
+    setRemoving(true);
+    setFormError("");
+
+    const removedName = selected.name;
+
+    const { error } = await supabase.rpc("admin_remove_app_user", {
+      p_user_id: selected.userId,
+    });
+
+    if (error) {
+      console.error("admin_remove_app_user error:", error);
+      setFormError(error.message || "Unable to remove this user.");
+      setRemoving(false);
+      return;
+    }
+
+    await refreshUsers();
+
+    setRemoving(false);
+    setShowRemoveConfirmation(false);
+    setSelected(null);
+    setSuccessMessage(`${removedName} was removed from User Management.`);
   };
 
   const saveChanges = async () => {
@@ -273,9 +338,11 @@ export default function AdminUsers({
         }}
       >
         Activity becomes <strong>Inactive</strong> when
-        last_seen_at is older than 30 days. This does not block
-        login. Only the separate account status Suspended or
-        Disabled blocks access.
+        last_seen_at is older than 30 days. The account itself
+        remains <strong>Active</strong>. For player accounts,
+        ShuttleTrack will show <strong>Reverify required</strong>
+        and require email verification the next time the player
+        logs in.
       </div>
 
       <TableCard>
@@ -347,7 +414,7 @@ export default function AdminUsers({
         <table
           style={{
             width: "100%",
-            minWidth: 1050,
+            minWidth: 1180,
             borderCollapse: "collapse",
           }}
         >
@@ -363,6 +430,7 @@ export default function AdminUsers({
                 "Role",
                 "Account",
                 "Activity",
+                "Security",
                 "Last seen",
                 "Joined",
                 "Setup",
@@ -388,7 +456,7 @@ export default function AdminUsers({
           <tbody>
             {visibleUsers.length === 0 ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <EmptyState text="No registered users found." />
                 </td>
               </tr>
@@ -480,6 +548,26 @@ export default function AdminUsers({
                       value={account.activityStatus}
                       colours={ACTIVITY_COLORS}
                     />
+                  </td>
+
+                  <td style={{ padding: "13px 16px" }}>
+                    {account.role === "Player" &&
+                    account.accountStatus === "Active" &&
+                    account.activityStatus === "Inactive" ? (
+                      <StatusPill
+                        value="Reverify required"
+                        colours={SECURITY_COLORS}
+                      />
+                    ) : (
+                      <span
+                        style={{
+                          color: "#A0A8B8",
+                          fontSize: 11,
+                        }}
+                      >
+                        —
+                      </span>
+                    )}
                   </td>
 
                   <td
@@ -603,6 +691,27 @@ export default function AdminUsers({
             </Field>
           </div>
 
+          {selected.role === "Player" &&
+            selected.accountStatus === "Active" &&
+            selected.activityStatus === "Inactive" && (
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: 12,
+                  borderRadius: 10,
+                  background: "#FEF3C7",
+                  color: "#92400E",
+                  fontSize: 11,
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>Reverify required.</strong> This player has
+                been inactive for more than 30 days. Their account
+                remains Active, but they must verify their email
+                the next time they log in.
+              </div>
+            )}
+
           <div
             style={{
               marginBottom: 18,
@@ -656,16 +765,35 @@ export default function AdminUsers({
               Cancel
             </button>
 
+            {selected.userId !== currentAdminId &&
+              selected.accountStatus === "Disabled" && (
+                <button
+                  type="button"
+                  disabled={saving || removing}
+                  onClick={requestRemoveUser}
+                  style={{
+                    ...buttonBase,
+                    padding: "10px 18px",
+                    border: "1px solid #FCA5A5",
+                    background: "#FEF2F2",
+                    color: "#DC2626",
+                    marginRight: "auto",
+                  }}
+                >
+                  Remove user
+                </button>
+              )}
+
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || removing}
               onClick={requestSaveConfirmation}
               style={{
                 ...buttonBase,
                 padding: "10px 18px",
                 background: "#1A5FFF",
                 color: "#fff",
-                opacity: saving ? 0.65 : 1,
+                opacity: saving || removing ? 0.65 : 1,
               }}
             >
               Review changes
@@ -842,6 +970,120 @@ export default function AdminUsers({
               }}
             >
               {saving ? "Saving..." : "Confirm changes"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {selected && showRemoveConfirmation && (
+        <Modal
+          title="Remove user"
+          onClose={() => !removing && setShowRemoveConfirmation(false)}
+          maxWidth={500}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 18,
+              padding: 14,
+              borderRadius: 12,
+              background: "#FEF2F2",
+              border: "1px solid #FECACA",
+            }}
+          >
+            <Avatar name={selected.name} role={selected.role} />
+            <div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#0D1B3E",
+                }}
+              >
+                {selected.name}
+              </div>
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: 11,
+                  color: "#8892A4",
+                }}
+              >
+                {selected.email}
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginBottom: 18,
+              padding: 14,
+              borderRadius: 12,
+              background: "#FFF7ED",
+              color: "#9A3412",
+              fontSize: 12,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Are you sure you want to remove this user?</strong>
+            <br />
+            The account is already disabled. Removing it will hide the user
+            from User Management, but historical ShuttleTrack records will be
+            kept.
+          </div>
+
+          {formError && (
+            <div
+              style={{
+                marginBottom: 14,
+                padding: 12,
+                borderRadius: 10,
+                background: "#FEF2F2",
+                color: "#B91C1C",
+                fontSize: 12,
+              }}
+            >
+              {formError}
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              disabled={removing}
+              onClick={() => setShowRemoveConfirmation(false)}
+              style={{
+                ...buttonBase,
+                padding: "10px 18px",
+                border: "1px solid #DDE3EF",
+                background: "#fff",
+                color: "#6B7280",
+              }}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              disabled={removing}
+              onClick={removeUser}
+              style={{
+                ...buttonBase,
+                padding: "10px 18px",
+                background: "#DC2626",
+                color: "#fff",
+                opacity: removing ? 0.65 : 1,
+              }}
+            >
+              {removing ? "Removing..." : "Yes, remove user"}
             </button>
           </div>
         </Modal>

@@ -6,6 +6,7 @@ import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
 import { CoachPageHeader } from './CoachShared'
+import CoachNotificationBell from "../Notifications/CoachNotificationBell";
 
 const SESSION_TYPES = [
   'Footwork Drills',
@@ -1115,9 +1116,18 @@ export default function CoachSessions() {
       <CoachPageHeader
         title="Training Sessions"
         subtitle="Schedule individual or group sessions for your accepted students"
-      />
+      
+        rightAction={
+          <CoachNotificationBell
+            supabase={supabase}
+            mode="sessions"
+            title="Session notifications"
+          />
+        }/>
 
-      <div className={styles.g4} style={{ marginBottom: 16 }}>
+      
+      
+<div className={styles.g4} style={{ marginBottom: 16 }}>
         {[
           {
             label: 'My students',

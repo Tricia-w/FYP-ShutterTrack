@@ -10,6 +10,7 @@ import {
   CoachPageHeader,
   LevelBadge,
 } from './CoachShared'
+import CoachNotificationBell from "../Notifications/CoachNotificationBell";
 
 const DEFAULT_SKILL = 50
 
@@ -1220,6 +1221,7 @@ export default function CoachPlayers() {
         skillsResult,
         relationshipsResult,
         matchesResult,
+        directoryAccountsResult,
       ] = await Promise.all([
         supabase
           .from('player_profiles')
@@ -1245,6 +1247,8 @@ export default function CoachPlayers() {
           .select('*')
           .order('match_date', { ascending: false })
           .order('created_at', { ascending: false }),
+
+        supabase.rpc('get_directory_visible_accounts'),
       ])
 
       if (profilesResult.error) throw profilesResult.error
@@ -1252,6 +1256,22 @@ export default function CoachPlayers() {
       if (skillsResult.error) throw skillsResult.error
       if (relationshipsResult.error) throw relationshipsResult.error
       if (matchesResult.error) throw matchesResult.error
+      if (directoryAccountsResult.error) {
+        throw directoryAccountsResult.error
+      }
+
+      /*
+       * Directory visibility:
+       * Active     -> visible
+       * Suspended  -> visible
+       * Disabled   -> hidden
+       * Removed    -> hidden
+       */
+      const visibleDirectoryUserIds = new Set(
+        (directoryAccountsResult.data || [])
+          .map(row => row?.user_id && String(row.user_id))
+          .filter(Boolean)
+      )
 
       const relationshipMap = new Map(
         (relationshipsResult.data || []).map(row => [
@@ -1325,6 +1345,18 @@ export default function CoachPlayers() {
           const playerId = getPlayerId(profile)
           if (!playerId || playerId === user.id) return false
 
+          /*
+           * Account-level visibility always wins.
+           * Disabled/removed players must disappear even if they
+           * previously had a relationship with this coach.
+           */
+          if (
+            profile.user_id &&
+            !visibleDirectoryUserIds.has(String(profile.user_id))
+          ) {
+            return false
+          }
+
           const relationship = relationshipMap.get(playerId)
           const relationshipStatus =
             getRelationshipStatus(relationship)
@@ -1371,6 +1403,13 @@ export default function CoachPlayers() {
             .toLowerCase()
 
           if (!name) return false
+
+          if (
+            linkedUserId &&
+            !visibleDirectoryUserIds.has(String(linkedUserId))
+          ) {
+            return false
+          }
 
           if (
             linkedUserId &&
@@ -1471,6 +1510,15 @@ export default function CoachPlayers() {
           schema: 'public',
           table: 'coach_player_relationships',
           filter: `coach_user_id=eq.${user.id}`,
+        },
+        () => loadData()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'app_users',
         },
         () => loadData()
       )
@@ -1962,9 +2010,18 @@ export default function CoachPlayers() {
       <CoachPageHeader
         title="My Players"
         subtitle="Manage your players and write progress notes"
-      />
+      
+        rightAction={
+          <CoachNotificationBell
+            supabase={supabase}
+            mode="players"
+            title="Player notifications"
+          />
+        }/>
 
-      <div
+      
+      
+<div
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
