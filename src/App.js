@@ -23,6 +23,7 @@ import Login from './components/Welcome/Login'
 import Register from './components/Welcome/Register'
 import ResetPassword from './components/Welcome/ResetPassword'
 import EmailVerified from './components/Welcome/EmailVerified'
+import VerifyReturningUser from './components/Welcome/VerifyReturningUser'
 
 import AuthCallback from './components/Welcome/AuthCallback'
 import AdminDashboard from './components/Admin/Admin'
@@ -84,6 +85,10 @@ function getSetupCompleted(profile) {
 }
 
 function getUserRedirectPath(profile, isAdmin) {
+  if (profile?.requires_reverification === true) {
+    return '/verify-returning-user'
+  }
+
   const role = getUserRole(profile, isAdmin)
 
   if (role === 'admin') return '/admin'
@@ -114,12 +119,21 @@ function getUserRedirectPath(profile, isAdmin) {
 }
 
 function PrivateRoute({ children }) {
-  const { user, loading } = useAuth()
+  const { user, profile, loading } = useAuth()
 
   if (loading) return <LoadingScreen />
 
   if (!user) {
     return <Navigate to="/login" replace />
+  }
+
+  if (profile?.requires_reverification === true) {
+    return (
+      <Navigate
+        to="/verify-returning-user"
+        replace
+      />
+    )
   }
 
   return children
@@ -344,6 +358,11 @@ function App() {
         <Route
           path="/email-verified"
           element={<EmailVerified />}
+        />
+
+        <Route
+          path="/verify-returning-user"
+          element={<VerifyReturningUser />}
         />
 
         {/* Player setup */}

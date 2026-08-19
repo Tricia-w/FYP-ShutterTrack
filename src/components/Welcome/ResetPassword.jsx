@@ -126,21 +126,11 @@ export default function ResetPassword() {
   useEffect(() => {
     let active = true
 
-    async function checkRecoverySession() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      if (!active) return
-
-      if (session) {
-        setValidRecovery(true)
+    const timeoutId = window.setTimeout(() => {
+      if (active) {
+        setCheckingLink(false)
       }
-
-      setCheckingLink(false)
-    }
-
-    checkRecoverySession()
+    }, 2000)
 
     const {
       data: { subscription },
@@ -154,12 +144,15 @@ export default function ResetPassword() {
         ) {
           setValidRecovery(true)
           setCheckingLink(false)
+
+          window.clearTimeout(timeoutId)
         }
       },
     )
 
     return () => {
       active = false
+      window.clearTimeout(timeoutId)
       subscription.unsubscribe()
     }
   }, [])
@@ -368,7 +361,7 @@ export default function ResetPassword() {
         <button
           type="button"
           onClick={() =>
-            navigate('/forgot-password')
+            navigate('/login')
           }
           style={{
             width: '100%',
@@ -382,7 +375,7 @@ export default function ResetPassword() {
             cursor: 'pointer',
           }}
         >
-          Request New Reset Link
+          Return to Login
         </button>
       </>,
     )

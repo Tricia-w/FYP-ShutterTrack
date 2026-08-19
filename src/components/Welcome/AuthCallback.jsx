@@ -39,7 +39,18 @@ export default function AuthCallback() {
           await supabase
             .from('app_users')
             .select(
-              'user_id, email, full_name, username, role, setup_completed',
+              `
+                user_id,
+                email,
+                full_name,
+                username,
+                role,
+                setup_completed,
+                account_status,
+                removed_at,
+                has_player_access,
+                has_coach_access
+              `,
             )
             .eq('user_id', user.id)
             .maybeSingle()
@@ -89,9 +100,25 @@ export default function AuthCallback() {
                 role: safeRole,
                 setup_completed:
                   safeRole === 'coach',
+                account_status: 'active',
+                has_player_access:
+                  safeRole === 'player',
+                has_coach_access:
+                  safeRole === 'coach',
               })
               .select(
-                'user_id, email, full_name, username, role, setup_completed',
+                `
+                  user_id,
+                  email,
+                  full_name,
+                  username,
+                  role,
+                  setup_completed,
+                  account_status,
+                  removed_at,
+                  has_player_access,
+                  has_coach_access
+                `,
               )
               .single()
 
@@ -109,27 +136,181 @@ export default function AuthCallback() {
           return
         }
 
+        const accountStatus = String(
+          appUser.account_status || 'active',
+        ).toLowerCase()
+
+        if (appUser.removed_at) {
+          const blockedMessage =
+            'This ShuttleTrack account is no longer available.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            blockedMessage,
+          )
+
+          await supabase.auth.signOut()
+
+          if (active) {
+            navigate('/login', { replace: true })
+          }
+
+          return
+        }
+
+        if (accountStatus === 'disabled') {
+          const blockedMessage =
+            'Your ShuttleTrack account has been disabled by an administrator. You cannot access your account at this time.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            blockedMessage,
+          )
+
+          await supabase.auth.signOut()
+
+          if (active) {
+            navigate('/login', { replace: true })
+          }
+
+          return
+        }
+
+        if (accountStatus === 'suspended') {
+          const blockedMessage =
+            'Your ShuttleTrack account is currently suspended.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            blockedMessage,
+          )
+
+          await supabase.auth.signOut()
+
+          if (active) {
+            navigate('/login', { replace: true })
+          }
+
+          return
+        }
+
+        if (accountStatus !== 'active') {
+          const blockedMessage =
+            'Your ShuttleTrack account is not currently active. You cannot access your account at this time.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            blockedMessage,
+          )
+
+          await supabase.auth.signOut()
+
+          if (active) {
+            navigate('/login', { replace: true })
+          }
+
+          return
+        }
+
         setMessage('Login successful. Redirecting...')
 
         if (appUser.role === 'admin') {
+          localStorage.setItem('activeRole', 'admin')
           navigate('/admin', { replace: true })
           return
         }
 
-        if (appUser.role === 'coach') {
+        const hasPlayer =
+          appUser.has_player_access === true ||
+          appUser.role === 'player'
+
+        const hasCoach =
+          appUser.has_coach_access === true ||
+          appUser.role === 'coach'
+
+        const savedMode =
+          localStorage.getItem('activeRole')
+
+        if (
+          savedMode === 'coach' &&
+          hasCoach
+        ) {
+          localStorage.setItem('activeRole', 'coach')
           navigate('/coach', { replace: true })
           return
         }
 
         if (
-          appUser.role === 'player' &&
-          appUser.setup_completed !== true
+          savedMode === 'player' &&
+          hasPlayer
         ) {
-          navigate('/setup', { replace: true })
+          localStorage.setItem('activeRole', 'player')
+
+          navigate(
+            appUser.setup_completed === true
+              ? '/dashboard'
+              : '/setup',
+            { replace: true },
+          )
+
           return
         }
 
-        navigate('/dashboard', { replace: true })
+        if (hasPlayer && hasCoach) {
+          const primaryRole =
+            appUser.role === 'coach'
+              ? 'coach'
+              : 'player'
+
+          localStorage.setItem(
+            'activeRole',
+            primaryRole,
+          )
+
+          navigate(
+            primaryRole === 'coach'
+              ? '/coach'
+              : appUser.setup_completed === true
+                ? '/dashboard'
+                : '/setup',
+            { replace: true },
+          )
+
+          return
+        }
+
+        if (hasCoach) {
+          localStorage.setItem('activeRole', 'coach')
+          navigate('/coach', { replace: true })
+          return
+        }
+
+        if (hasPlayer) {
+          localStorage.setItem('activeRole', 'player')
+
+          navigate(
+            appUser.setup_completed === true
+              ? '/dashboard'
+              : '/setup',
+            { replace: true },
+          )
+
+          return
+        }
+
+        const noRoleMessage =
+          'This account does not have Player or Coach access.'
+
+        sessionStorage.setItem(
+          'shuttleLoginBlockedMessage',
+          noRoleMessage,
+        )
+
+        await supabase.auth.signOut()
+
+        if (active) {
+          navigate('/login', { replace: true })
+        }
       } catch (error) {
         console.error('Google callback error:', error)
 

@@ -355,7 +355,14 @@ export default function Register() {
       await supabase
         .from('app_users')
         .select(
-          'user_id, role, has_player_access, has_coach_access',
+          `
+            user_id,
+            role,
+            has_player_access,
+            has_coach_access,
+            account_status,
+            removed_at
+          `,
         )
         .eq('user_id', existingUser.id)
         .maybeSingle()
@@ -363,9 +370,56 @@ export default function Register() {
     if (appUserError) throw appUserError
 
     if (!appUser) {
+      localStorage.removeItem('shuttleAddingRole')
+      await supabase.auth.signOut()
+
       throw new Error(
         'The Auth account exists, but its ShuttleTrack account record is missing.',
       )
+    }
+
+    const accountStatus = String(
+      appUser.account_status || 'active',
+    ).toLowerCase()
+
+    if (appUser.removed_at) {
+      localStorage.removeItem('shuttleAddingRole')
+      await supabase.auth.signOut()
+
+      setError(
+        'This ShuttleTrack account is no longer available.',
+      )
+      return
+    }
+
+    if (accountStatus === 'disabled') {
+      localStorage.removeItem('shuttleAddingRole')
+      await supabase.auth.signOut()
+
+      setError(
+        'Your ShuttleTrack account has been disabled by an administrator. You cannot add another role at this time.',
+      )
+      return
+    }
+
+    if (accountStatus === 'suspended') {
+      localStorage.removeItem('shuttleAddingRole')
+      await supabase.auth.signOut()
+
+      setError(
+        'Your ShuttleTrack account is currently suspended. You cannot add another role at this time.',
+      )
+      return
+    }
+
+    if (accountStatus !== 'active') {
+      localStorage.removeItem('shuttleAddingRole')
+      await supabase.auth.signOut()
+
+      setError(
+        'Your ShuttleTrack account is not currently active. You cannot add another role at this time.',
+      )
+      return
     }
 
     const alreadyHasAccess =

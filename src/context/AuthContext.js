@@ -9,6 +9,27 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
+const RETURNING_REVERIFY_DAYS = 30
+
+function needsReturningReverification(appUser) {
+  if (!appUser?.last_seen_at) return false
+
+  const isPlayerAccount =
+    appUser.has_player_access === true ||
+    String(appUser.role || '').toLowerCase() === 'player'
+
+  if (!isPlayerAccount) return false
+
+  const lastSeenMs = new Date(appUser.last_seen_at).getTime()
+  if (!Number.isFinite(lastSeenMs)) return false
+
+  const inactiveMs = Date.now() - lastSeenMs
+  const thresholdMs =
+    RETURNING_REVERIFY_DAYS * 24 * 60 * 60 * 1000
+
+  return inactiveMs >= thresholdMs
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -102,6 +123,7 @@ export function AuthProvider({ children }) {
               has_player_access,
               has_coach_access,
               account_status,
+              removed_at,
               last_seen_at,
               created_at,
               updated_at
@@ -121,11 +143,72 @@ export function AuthProvider({ children }) {
           return null
         }
 
-        if (appUser.account_status !== 'active') {
+        const accountStatus = String(
+          appUser.account_status || 'active'
+        ).toLowerCase()
+
+        if (appUser.removed_at) {
           const message =
-            appUser.account_status === 'suspended'
-              ? 'This account has been suspended by an administrator.'
-              : 'This account has been disabled.'
+            'This ShuttleTrack account is no longer available.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            message
+          )
+
+          setAuthError(message)
+          setProfile(null)
+
+          await supabase.auth.signOut()
+
+          setUser(null)
+          return null
+        }
+
+        if (accountStatus === 'disabled') {
+          const message =
+            'Your ShuttleTrack account has been disabled by an administrator. You cannot access your account at this time.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            message
+          )
+
+          setAuthError(message)
+          setProfile(null)
+
+          await supabase.auth.signOut()
+
+          setUser(null)
+          return null
+        }
+
+        if (accountStatus === 'suspended') {
+          const message =
+            'Your ShuttleTrack account is currently suspended.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            message
+          )
+
+          setAuthError(message)
+          setProfile(null)
+
+          await supabase.auth.signOut()
+
+          setUser(null)
+          return null
+        }
+
+        if (accountStatus !== 'active') {
+          const message =
+            'Your ShuttleTrack account is not currently active. You cannot access your account at this time.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            message
+          )
 
           setAuthError(message)
           setProfile(null)
@@ -143,6 +226,9 @@ export function AuthProvider({ children }) {
 
         const combinedProfile = {
           ...appUser,
+
+          requires_reverification:
+            needsReturningReverification(appUser),
 
           display_name:
             roleProfile?.display_name ||
@@ -194,9 +280,15 @@ export function AuthProvider({ children }) {
           error.message.includes('ACCOUNT_BLOCKED') ||
           error.message.includes('account has been')
         ) {
-          setAuthError(
+          const message =
             'This account is no longer active.'
+
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            message
           )
+
+          setAuthError(message)
 
           await supabase.auth.signOut()
 
@@ -224,13 +316,45 @@ export function AuthProvider({ children }) {
 
   /*
    * Initial authentication loading.
+   *
+   * Important:
+   * - getSession() restores the current browser session.
+   * - onAuthStateChange() loads app_users only for auth events
+   *   that actually require a profile refresh.
+   * - TOKEN_REFRESHED is ignored for profile loading so a token
+   *   refresh does not trigger another app_users query.
+   *
+   * This keeps refresh/login behaviour the same while reducing
+   * duplicate Supabase requests.
    */
   useEffect(() => {
     let mounted = true
+    let profileLoadTimer = null
 
     async function initAuth() {
       try {
         setLoading(true)
+
+        const sessionOnly =
+          localStorage.getItem('shuttleSessionOnly') === 'true'
+
+        const browserSessionActive =
+          sessionStorage.getItem('shuttleBrowserSession') === 'true'
+
+        /*
+         * If Remember me was OFF, the session should only survive
+         * for the current browser session. sessionStorage is cleared
+         * when that browser session ends, so a restored Supabase
+         * session must be signed out here before protected routes load.
+         */
+        if (sessionOnly && !browserSessionActive) {
+          await supabase.auth.signOut({
+            scope: 'local',
+          })
+
+          localStorage.removeItem('activeRole')
+          localStorage.removeItem('shuttleSessionOnly')
+        }
 
         const {
           data: { session },
@@ -250,23 +374,21 @@ export function AuthProvider({ children }) {
 
         setUser(currentUser)
 
-        if (currentUser) {
-          const loadedProfile =
-            await loadAppUser(currentUser)
-
-          if (loadedProfile) {
-            await touchLastSeen(currentUser)
-          }
-        } else {
+        if (!currentUser) {
           setProfile(null)
+          setLoading(false)
         }
+
+        /*
+         * Do not call loadAppUser() here.
+         * INITIAL_SESSION from onAuthStateChange will load it.
+         */
       } catch (error) {
         console.error('Auth init failed:', error)
 
-        setUser(null)
-        setProfile(null)
-      } finally {
         if (mounted) {
+          setUser(null)
+          setProfile(null)
           setLoading(false)
         }
       }
@@ -277,29 +399,69 @@ export function AuthProvider({ children }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         const currentUser = session?.user || null
 
-        setUser(currentUser)
-
-        if (!currentUser) {
-          setProfile(null)
-          setLoading(false)
+        /*
+         * Token refreshes do not change the ShuttleTrack profile,
+         * so do not query app_users again.
+         */
+        if (event === 'TOKEN_REFRESHED') {
+          if (mounted) {
+            setUser(currentUser)
+          }
           return
         }
 
-        setLoading(true)
+        /*
+         * Signed out / session removed.
+         */
+        if (!currentUser) {
+          if (mounted) {
+            setUser(null)
+            setProfile(null)
+            setLoading(false)
+          }
+          return
+        }
 
         /*
-         * Let the Supabase auth callback finish before
-         * making additional Supabase queries.
+         * Only these events need to reload the application profile.
          */
-        window.setTimeout(async () => {
+        if (
+          event !== 'INITIAL_SESSION' &&
+          event !== 'SIGNED_IN' &&
+          event !== 'USER_UPDATED'
+        ) {
+          if (mounted) {
+            setUser(currentUser)
+          }
+          return
+        }
+
+        if (mounted) {
+          setUser(currentUser)
+          setLoading(true)
+        }
+
+        /*
+         * If Supabase emits another profile-loading auth event
+         * immediately, cancel the previous queued load. This avoids
+         * duplicate app_users queries during startup.
+         */
+        if (profileLoadTimer) {
+          window.clearTimeout(profileLoadTimer)
+        }
+
+        profileLoadTimer = window.setTimeout(async () => {
           try {
             const loadedProfile =
               await loadAppUser(currentUser)
 
-            if (loadedProfile) {
+            if (
+              loadedProfile &&
+              !loadedProfile.requires_reverification
+            ) {
               await touchLastSeen(currentUser)
             }
           } catch (error) {
@@ -308,9 +470,13 @@ export function AuthProvider({ children }) {
               error
             )
 
-            setProfile(null)
+            if (mounted) {
+              setProfile(null)
+            }
           } finally {
-            setLoading(false)
+            if (mounted) {
+              setLoading(false)
+            }
           }
         }, 0)
       }
@@ -318,6 +484,11 @@ export function AuthProvider({ children }) {
 
     return () => {
       mounted = false
+
+      if (profileLoadTimer) {
+        window.clearTimeout(profileLoadTimer)
+      }
+
       subscription.unsubscribe()
     }
   }, [loadAppUser, touchLastSeen])
@@ -335,7 +506,10 @@ export function AuthProvider({ children }) {
       const loadedProfile =
         await loadAppUser(currentUser)
 
-      if (loadedProfile) {
+      if (
+        loadedProfile &&
+        !loadedProfile.requires_reverification
+      ) {
         await touchLastSeen(currentUser)
       }
     }

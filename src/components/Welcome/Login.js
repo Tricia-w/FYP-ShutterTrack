@@ -37,6 +37,34 @@ function getFriendlyLoginError(error) {
   return 'Unable to log in. Please try again.'
 }
 
+const RETURNING_REVERIFY_DAYS = 30
+
+function needsReturningReverification(lastSeenAt) {
+  if (!lastSeenAt) return false
+
+  const lastSeenMs = new Date(lastSeenAt).getTime()
+  if (!Number.isFinite(lastSeenMs)) return false
+
+  const inactiveMs = Date.now() - lastSeenMs
+  const thresholdMs =
+    RETURNING_REVERIFY_DAYS * 24 * 60 * 60 * 1000
+
+  return inactiveMs >= thresholdMs
+}
+
+async function sendReturningVerificationEmail(email) {
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: false,
+      emailRedirectTo:
+        `${window.location.origin}/verify-returning-user`,
+    },
+  })
+
+  if (error) throw error
+}
+
 function EyeIcon({ visible }) {
   if (visible) {
     return (
@@ -93,6 +121,16 @@ export default function Login() {
   useEffect(() => {
     localStorage.removeItem('shuttleAddingRole')
 
+    // Recover an account-status message after Supabase signOut/auth routing
+    // causes the Login component to remount.
+    const blockedMessage =
+      sessionStorage.getItem('shuttleLoginBlockedMessage')
+
+    if (blockedMessage) {
+      setError(blockedMessage)
+      sessionStorage.removeItem('shuttleLoginBlockedMessage')
+    }
+
     async function checkBrowserSession() {
       const sessionOnly =
         localStorage.getItem('shuttleSessionOnly') === 'true'
@@ -111,6 +149,19 @@ export default function Login() {
 
     checkBrowserSession()
   }, [])
+
+  async function blockLoginWithMessage(message) {
+    // Store it first because signOut may trigger an auth-state redirect/remount.
+    sessionStorage.setItem('shuttleLoginBlockedMessage', message)
+    localStorage.removeItem('activeRole')
+
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      // Also set it immediately for cases where Login does not remount.
+      setError(message)
+    }
+  }
 
   async function handleLogin(event) {
     event.preventDefault()
@@ -160,7 +211,7 @@ export default function Login() {
         await supabase
           .from('app_users')
           .select(
-            'role, setup_completed, account_status, has_player_access, has_coach_access',
+            'role, setup_completed, account_status, has_player_access, has_coach_access, removed_at, last_seen_at',
           )
           .eq('user_id', user.id)
           .maybeSingle()
@@ -175,18 +226,35 @@ export default function Login() {
         return
       }
 
-      if (
-        appUser.account_status &&
-        appUser.account_status !== 'active'
-      ) {
-        await supabase.auth.signOut()
-        setError('This account is not active.')
+      const accountStatus = String(
+        appUser.account_status || 'active',
+      ).toLowerCase()
+
+      if (appUser.removed_at) {
+        await blockLoginWithMessage(
+          'This ShuttleTrack account is no longer available.',
+        )
         return
       }
 
-      if (appUser.role === 'admin') {
-        localStorage.setItem('activeRole', 'admin')
-        navigate('/admin', { replace: true })
+      if (accountStatus === 'disabled') {
+        await blockLoginWithMessage(
+          'Your ShuttleTrack account has been disabled by an administrator. You cannot access your account at this time.',
+        )
+        return
+      }
+
+      if (accountStatus === 'suspended') {
+        await blockLoginWithMessage(
+          'Your ShuttleTrack account is currently suspended.',
+        )
+        return
+      }
+
+      if (accountStatus !== 'active') {
+        await blockLoginWithMessage(
+          'Your ShuttleTrack account is not currently active. You cannot access your account at this time.',
+        )
         return
       }
 
@@ -197,6 +265,46 @@ export default function Login() {
       const hasCoach =
         appUser.has_coach_access === true ||
         appUser.role === 'coach'
+
+      /*
+       * If this player account has been inactive for 30 days or more,
+       * require email verification before normal app access.
+       * The account itself stays ACTIVE.
+       */
+      if (
+        hasPlayer &&
+        needsReturningReverification(appUser.last_seen_at)
+      ) {
+        sessionStorage.setItem(
+          'shuttleReturningEmail',
+          cleanEmail,
+        )
+        sessionStorage.setItem(
+          'shuttleReturningVerificationPending',
+          'true',
+        )
+
+        await supabase.auth.signOut({
+          scope: 'local',
+        })
+
+        await sendReturningVerificationEmail(cleanEmail)
+
+        navigate('/verify-returning-user', {
+          replace: true,
+          state: {
+            email: cleanEmail,
+            emailSent: true,
+          },
+        })
+        return
+      }
+
+      if (appUser.role === 'admin') {
+        localStorage.setItem('activeRole', 'admin')
+        navigate('/admin', { replace: true })
+        return
+      }
 
       localStorage.removeItem('shuttleAddingRole')
 
@@ -331,6 +439,21 @@ export default function Login() {
     setGoogleLoading(true)
 
     try {
+      /*
+       * Make Google login follow the same Remember me rule
+       * as email/password login.
+       */
+      if (rememberMe) {
+        localStorage.setItem('shuttleRememberMe', 'true')
+        localStorage.removeItem('shuttleSessionOnly')
+        sessionStorage.removeItem('shuttleBrowserSession')
+      } else {
+        localStorage.setItem('shuttleRememberMe', 'false')
+        localStorage.removeItem('shuttleRememberedEmail')
+        localStorage.setItem('shuttleSessionOnly', 'true')
+        sessionStorage.setItem('shuttleBrowserSession', 'true')
+      }
+
       const { error: googleError } =
         await supabase.auth.signInWithOAuth({
           provider: 'google',

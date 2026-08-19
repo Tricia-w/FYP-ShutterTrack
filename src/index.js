@@ -5,17 +5,22 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { AuthProvider } from './context/AuthContext';
 
-const savedTheme = localStorage.getItem('shuttleTheme') || 'light';
-document.documentElement.setAttribute('data-theme', savedTheme);
+const savedTheme =
+  localStorage.getItem('shuttleTheme') || 'light';
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+document.documentElement.setAttribute(
+  'data-theme',
+  savedTheme
+);
+
+const root = ReactDOM.createRoot(
+  document.getElementById('root')
+);
 
 root.render(
-  <React.StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
-  </React.StrictMode>
+  <AuthProvider>
+    <App />
+  </AuthProvider>
 );
 
 reportWebVitals();
