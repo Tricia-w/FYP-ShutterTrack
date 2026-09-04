@@ -13,6 +13,7 @@ import Layout from './components/Layout/Layout'
 import Dashboard from './components/Player/Dashboard'
 import Profile from './components/Player/Profile'
 import Performance from './components/Player/Performance'
+import VerifySkill from './components/Player/VerifySkill'
 import Fitness from './components/Player/Fitness'
 import Expenses from './components/Player/Expenses'
 import Players from './components/Player/Players'
@@ -414,6 +415,13 @@ function App() {
                 <Performance />
               </PlayerRoute>
             }
+          />
+
+          {/* Shared logged-in route:
+              both players and coaches can verify skill assessments */}
+          <Route
+            path="/verify-skill/:token"
+            element={<VerifySkill />}
           />
 
           <Route
