@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react'
 import { supabase } from '../lib/supabase'
@@ -35,6 +36,19 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState('')
+
+  // Keep the latest auth values available inside the Supabase
+  // auth listener without re-subscribing every time state changes.
+  const userRef = useRef(null)
+  const profileRef = useRef(null)
+
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+
+  useEffect(() => {
+    profileRef.current = profile
+  }, [profile])
 
   /*
    * Loads the correct role profile:
@@ -421,6 +435,23 @@ export function AuthProvider({ children }) {
             setUser(null)
             setProfile(null)
             setLoading(false)
+          }
+          return
+        }
+
+        /*
+         * Supabase may emit SIGNED_IN again when a browser tab
+         * becomes active. If this is still the same logged-in user
+         * and their profile is already loaded, do not enter the
+         * global loading state or reload the profile.
+         */
+        if (
+          event === 'SIGNED_IN' &&
+          userRef.current?.id === currentUser.id &&
+          profileRef.current
+        ) {
+          if (mounted) {
+            setUser(currentUser)
           }
           return
         }
