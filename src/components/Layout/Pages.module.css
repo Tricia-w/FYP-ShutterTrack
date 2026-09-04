@@ -185,6 +185,293 @@
 }
 
 /* =========================
+   COACH DASHBOARD PAGE
+========================= */
+.dashboardPage .pageSub {
+  font-size: 14px;
+}
+
+.dashboardPage .cardTitle {
+  font-size: 16px !important;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.dashboardPage .metricLbl {
+  font-size: 14px !important;
+  line-height: 1.4;
+}
+
+.dashboardPage .skillLbl,
+.dashboardPage .skillVal {
+  font-size: 14px !important;
+  line-height: 1.45;
+}
+
+.dashboardPage .btnPrimary,
+.dashboardPage .btnOutline,
+.dashboardPage .btnDanger {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboardPage [style*='font-size: 9px'] {
+  font-size: 11px !important;
+}
+
+.dashboardPage [style*='font-size: 10px'] {
+  font-size: 12px !important;
+}
+
+.dashboardPage [style*='font-size: 11px'] {
+  font-size: 14px !important;
+}
+
+.dashboardPage [style*='font-size: 12px'] {
+  font-size: 14px !important;
+}
+
+.dashboardPage [style*='font-size: 13px'] {
+  font-size: 15px !important;
+}
+
+.dashboardPage [style*='font-size: 14px'] {
+  font-size: 16px !important;
+}
+
+/* =========================
+   READABLE COACH / PLAYER PAGES
+========================= */
+.playerReadablePage {
+  font-size: 15px;
+}
+
+.coachReadablePage .pageSub,
+.playerReadablePage .pageSub {
+  font-size: 14px;
+}
+
+.coachReadablePage .cardTitle,
+.playerReadablePage .cardTitle {
+  font-size: 16px !important;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.coachReadablePage .metricLbl,
+.playerReadablePage .metricLbl {
+  font-size: 14px !important;
+  line-height: 1.4;
+}
+
+.playerReadablePage .statLabel,
+.playerReadablePage .statVal,
+.playerReadablePage .skillLbl,
+.playerReadablePage .skillVal {
+  font-size: 14px !important;
+  line-height: 1.45;
+}
+
+.playerReadablePage .listRow {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.playerReadablePage button {
+  font-size: 13px;
+}
+
+.playerReadablePage .badgeGreen,
+.playerReadablePage .badgeRed,
+.playerReadablePage .badgeBlue,
+.playerReadablePage .badgeAmber,
+.playerReadablePage .badgePurple,
+.playerReadablePage .badgeGray,
+.playerReadablePage .badgeNavy {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.playerReadablePage th {
+  font-size: 13px;
+}
+
+.playerReadablePage td {
+  font-size: 14px;
+}
+
+.coachReadablePage .btnPrimary,
+.coachReadablePage .btnOutline,
+.coachReadablePage .btnDanger,
+.coachReadablePage .tab,
+.playerReadablePage .btnPrimary,
+.playerReadablePage .btnOutline,
+.playerReadablePage .btnDanger,
+.playerReadablePage .tab {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.coachReadablePage .formLabel,
+.playerReadablePage .formLabel {
+  font-size: 14px;
+}
+
+.coachReadablePage .formInput,
+.coachReadablePage .formSelect,
+.coachReadablePage textarea,
+.playerReadablePage .formInput,
+.playerReadablePage .formSelect,
+.playerReadablePage textarea {
+  font-size: 14px;
+}
+
+.coachReadablePage [style*='font-size: 9px'],
+.playerReadablePage [style*='font-size: 9px'] {
+  font-size: 11px !important;
+}
+
+.coachReadablePage [style*='font-size: 10px'],
+.playerReadablePage [style*='font-size: 10px'] {
+  font-size: 12px !important;
+}
+
+.coachReadablePage [style*='font-size: 11px'],
+.playerReadablePage [style*='font-size: 11px'] {
+  font-size: 14px !important;
+}
+
+.coachReadablePage [style*='font-size: 12px'],
+.playerReadablePage [style*='font-size: 12px'] {
+  font-size: 14px !important;
+}
+
+.coachReadablePage [style*='font-size: 13px'],
+.playerReadablePage [style*='font-size: 13px'] {
+  font-size: 15px !important;
+}
+
+.coachReadablePage [style*='font-size: 14px'],
+.playerReadablePage [style*='font-size: 14px'] {
+  font-size: 16px !important;
+}
+
+/* =========================
+   TRAINING SESSIONS PAGE
+========================= */
+.sessionsPage .cardTitle {
+  font-size: 16px !important;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.sessionsPage .metricLbl {
+  font-size: 14px !important;
+  line-height: 1.4;
+}
+
+.sessionsPage .listRow > div:nth-child(2) > div {
+  font-size: 14px !important;
+  line-height: 1.45;
+}
+
+.sessionsPage .listRow > div:nth-child(2) > div:first-child,
+.sessionsPage .listRow > div:nth-child(2) > div:first-child > div:first-child {
+  font-size: 16px !important;
+  font-weight: 700;
+}
+
+.sessionsPage .listRow span,
+.sessionsPage .listRow button {
+  font-size: 13px !important;
+}
+
+.sessionsCalendar button > div:first-child {
+  font-size: 13px !important;
+}
+
+.sessionsCalendar button > div:not(:first-child) {
+  font-size: 12px !important;
+}
+
+/* =========================
+   PLAYER PROGRESS PAGE
+========================= */
+.progressPage .pageSub {
+  font-size: 14px;
+}
+
+.progressPage .cardTitle {
+  font-size: 16px !important;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.progressPage .metricLbl {
+  font-size: 14px !important;
+  line-height: 1.4;
+}
+
+.progressPage .statLabel,
+.progressPage .statVal,
+.progressPage .skillLbl,
+.progressPage .skillVal {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.progressPage .badgeGreen,
+.progressPage .badgeRed,
+.progressPage .badgeBlue,
+.progressPage .badgeAmber,
+.progressPage .badgePurple,
+.progressPage .badgeGray,
+.progressPage .badgeNavy {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.progressPage .btnPrimary,
+.progressPage .btnOutline,
+.progressPage .btnDanger {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.progressPage [style*='font-size: 8px'] {
+  font-size: 10px !important;
+}
+
+.progressPage [style*='font-size: 9px'] {
+  font-size: 11px !important;
+}
+
+.progressPage [style*='font-size: 10px'] {
+  font-size: 12px !important;
+}
+
+.progressPage [style*='font-size: 11px'] {
+  font-size: 14px !important;
+}
+
+.progressPage [style*='font-size: 12px'] {
+  font-size: 14px !important;
+}
+
+.progressPage [style*='font-size: 13px'] {
+  font-size: 15px !important;
+}
+
+.progressPage [style*='font-size: 15px'] {
+  font-size: 16px !important;
+}
+
+/* Body copy only; keep the feedback/action-plan titles unchanged. */
+.progressPage .progressBodyText {
+  font-size: 14px !important;
+}
+
+/* =========================
    AVATAR
 ========================= */
 .av {

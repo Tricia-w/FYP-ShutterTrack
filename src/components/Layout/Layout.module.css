@@ -13,13 +13,10 @@
   --amber: #f59e0b;
   --red: #ef4444;
   --purple: #7c3aed;
-
   --bg: #f6f8ff;
   --text: #0d1b3e;
   --sidebar-bg: #0d1b3e;
-
   --sidebar-width: 220px;
-
   --font-display: 'Syne', sans-serif;
   --font-body: 'DM Sans', sans-serif;
 }
@@ -63,16 +60,16 @@
 
 .logoName {
   font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 800;
+  font-size: 19px;
+  font-weight: 700;
   color: #ffffff;
   letter-spacing: -0.3px;
 }
 
 .logoSub {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.4);
-  margin-top: 1px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.48);
+  margin-top: 2px;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
@@ -84,25 +81,25 @@
 }
 
 .navLabel {
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
   letter-spacing: 1px;
   text-transform: uppercase;
   padding: 0 8px;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
 }
 
 .navItem {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 11px;
+  padding: 11px 12px;
   border-radius: 10px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.65);
   border: none;
   background: none;
   width: 100%;
@@ -114,9 +111,15 @@
   font-family: var(--font-body);
 }
 
+.navItem svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
 .navItem:hover {
   background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .navItem.active {
@@ -133,8 +136,8 @@
 }
 
 .userAv {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--blue);
   display: flex;
@@ -147,14 +150,14 @@
 }
 
 .userName {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: #ffffff;
 }
 
 .userRole {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.48);
 }
 
 .sidebarLogout {
@@ -164,18 +167,24 @@
 .logoutBtn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
+  gap: 9px;
+  padding: 10px 12px;
   border-radius: 10px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.5);
   border: none;
   background: none;
   width: 100%;
   transition: all 0.15s;
   font-family: var(--font-body);
+}
+
+.logoutBtn svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
 }
 
 .logoutBtn:hover {
@@ -225,7 +234,7 @@
   min-width: 18px;
   height: 18px;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -246,7 +255,7 @@
 
 .notificationTitle {
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text);
   margin-bottom: 10px;
 }
@@ -277,7 +286,7 @@
 
 .notificationItemTitle {
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text);
 }
 
@@ -327,7 +336,7 @@
   }
 
   .logoName {
-    font-size: 16px;
+    font-size: 17px;
   }
 
   .logoSub {
@@ -357,8 +366,14 @@
     flex: 0 0 auto;
     margin-bottom: 0;
     padding: 9px 12px;
-    font-size: 12px;
+    font-size: 13px;
     text-decoration: none;
+  }
+
+  .navItem svg {
+    width: 18px;
+    height: 18px;
+    flex-basis: 18px;
   }
 
   .sidebarUser,
@@ -389,7 +404,7 @@
   }
 
   .navItem {
-    font-size: 11px;
+    font-size: 12px;
     padding: 8px 10px;
   }
 

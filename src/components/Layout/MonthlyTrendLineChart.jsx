@@ -84,7 +84,9 @@ export default function MonthlyTrendLineChart({ monthly }) {
           },
           y: {
             beginAtZero: true,
+            suggestedMax: 100,
             ticks: {
+              stepSize: 20,
               color: '#8892A4',
               font: {
                 size: 11,
