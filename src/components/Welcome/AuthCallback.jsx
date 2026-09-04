@@ -9,6 +9,11 @@ export default function AuthCallback() {
     'Completing Google authentication...',
   )
 
+  // Follow the same saved theme as Login/Register.
+  const [isDark] = useState(
+    localStorage.getItem('shuttleLoginTheme') === 'dark',
+  )
+
   useEffect(() => {
     let active = true
 
@@ -358,8 +363,9 @@ export default function AuthCallback() {
         justifyContent: 'center',
         padding: 24,
         boxSizing: 'border-box',
-        background:
-          'radial-gradient(circle at 18% 20%, rgba(26,95,255,0.16), transparent 32%), radial-gradient(circle at 82% 80%, rgba(0,196,140,0.10), transparent 30%), #0D1117',
+        background: isDark
+          ? 'radial-gradient(circle at 18% 20%, rgba(26,95,255,0.16), transparent 32%), radial-gradient(circle at 82% 80%, rgba(0,196,140,0.10), transparent 30%), #0D1117'
+          : 'radial-gradient(circle at 18% 18%, rgba(26,95,255,0.13), transparent 30%), radial-gradient(circle at 82% 80%, rgba(52,211,153,0.10), transparent 28%), linear-gradient(135deg, #EEF4FF 0%, #F8FBFF 50%, #ECFBF6 100%)',
       }}
     >
       <div
@@ -369,11 +375,15 @@ export default function AuthCallback() {
           maxWidth: 500,
           padding: '42px 42px 38px',
           borderRadius: 24,
-          background:
-            'linear-gradient(180deg, rgba(24,30,43,0.98), rgba(20,25,36,0.98))',
-          border: '1px solid rgba(74,85,104,0.55)',
-          boxShadow:
-            '0 26px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.015) inset',
+          background: isDark
+            ? 'linear-gradient(180deg, rgba(24,30,43,0.98), rgba(20,25,36,0.98))'
+            : '#FFFFFF',
+          border: isDark
+            ? '1px solid rgba(74,85,104,0.55)'
+            : '1px solid #DDE5F2',
+          boxShadow: isDark
+            ? '0 26px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.015) inset'
+            : '0 26px 70px rgba(30,64,175,0.12), 0 0 0 1px rgba(255,255,255,0.7) inset',
           textAlign: 'center',
           boxSizing: 'border-box',
           position: 'relative',
@@ -422,7 +432,12 @@ export default function AuthCallback() {
                 fill="white"
                 opacity="0.8"
               />
-              <circle cx="10" cy="10" r="2" fill="white" />
+              <circle
+                cx="10"
+                cy="10"
+                r="2"
+                fill="white"
+              />
             </svg>
           </div>
 
@@ -430,7 +445,7 @@ export default function AuthCallback() {
             style={{
               fontSize: 16,
               fontWeight: 700,
-              color: '#FFFFFF',
+              color: isDark ? '#FFFFFF' : '#172033',
             }}
           >
             ShuttleTrack
@@ -443,20 +458,27 @@ export default function AuthCallback() {
             height: 70,
             margin: '0 auto 22px',
             borderRadius: '50%',
-            background: 'rgba(26,95,255,0.08)',
-            border: '1px solid rgba(76,131,255,0.20)',
+            background: isDark
+              ? 'rgba(26,95,255,0.08)'
+              : '#EEF4FF',
+            border: isDark
+              ? '1px solid rgba(76,131,255,0.20)'
+              : '1px solid #CFE0FF',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow:
-              '0 14px 34px rgba(26,95,255,0.12), 0 0 0 8px rgba(26,95,255,0.035)',
+            boxShadow: isDark
+              ? '0 14px 34px rgba(26,95,255,0.12), 0 0 0 8px rgba(26,95,255,0.035)'
+              : '0 14px 34px rgba(26,95,255,0.08), 0 0 0 8px rgba(26,95,255,0.025)',
           }}
         >
           <div
             style={{
               width: 38,
               height: 38,
-              border: '4px solid #2A3448',
+              border: isDark
+                ? '4px solid #2A3448'
+                : '4px solid #D8E2F0',
               borderTopColor: '#1A5FFF',
               borderRadius: '50%',
               animation:
@@ -469,7 +491,7 @@ export default function AuthCallback() {
         <h1
           style={{
             margin: '0 0 9px',
-            color: '#FFFFFF',
+            color: isDark ? '#FFFFFF' : '#172033',
             fontSize: 28,
             fontWeight: 800,
             letterSpacing: '-0.4px',
@@ -482,7 +504,7 @@ export default function AuthCallback() {
           style={{
             maxWidth: 360,
             margin: '0 auto',
-            color: '#8892A4',
+            color: isDark ? '#8892A4' : '#667085',
             fontSize: 13,
             lineHeight: 1.7,
           }}
@@ -495,9 +517,13 @@ export default function AuthCallback() {
             marginTop: 22,
             padding: '11px 14px',
             borderRadius: 12,
-            background: 'rgba(30,37,53,0.72)',
-            border: '1px solid #2A3448',
-            color: '#6F7C90',
+            background: isDark
+              ? 'rgba(30,37,53,0.72)'
+              : '#F7F9FC',
+            border: isDark
+              ? '1px solid #2A3448'
+              : '1px solid #DCE3EE',
+            color: isDark ? '#6F7C90' : '#7A8699',
             fontSize: 11,
             lineHeight: 1.6,
           }}

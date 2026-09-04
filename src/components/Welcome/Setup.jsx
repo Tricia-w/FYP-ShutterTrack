@@ -29,6 +29,11 @@ export default function Setup() {
   const [loadingSetup, setLoadingSetup] = useState(true)
   const [error, setError] = useState('')
 
+  // Same theme preference used by Login / Register.
+  const [isDark, setIsDark] = useState(
+    localStorage.getItem('shuttleLoginTheme') === 'dark',
+  )
+
   const busy = saving || skipping || loadingSetup
 
   useEffect(() => {
@@ -241,12 +246,49 @@ export default function Setup() {
     }
   }
 
+  const screenStyle = {
+    background: isDark
+      ? undefined
+      : 'radial-gradient(circle at 18% 18%, rgba(26,95,255,0.13), transparent 30%), radial-gradient(circle at 82% 80%, rgba(52,211,153,0.10), transparent 28%), linear-gradient(135deg, #EEF4FF 0%, #F8FBFF 50%, #ECFBF6 100%)',
+  }
+
+  const boxStyle = {
+    background: isDark ? undefined : '#FFFFFF',
+    border: isDark ? undefined : '1px solid #DDE5F2',
+    boxShadow: isDark
+      ? undefined
+      : '0 26px 70px rgba(30,64,175,0.12)',
+  }
+
+  const titleStyle = {
+    color: isDark ? undefined : '#172033',
+  }
+
+  const subStyle = {
+    color: isDark ? undefined : '#667085',
+  }
+
+  const labelStyle = {
+    color: isDark ? undefined : '#5F6B7A',
+  }
+
+  const selectStyle = {
+    // Use backgroundColor instead of the background shorthand.
+    // The CSS module uses a background-image for the select arrow,
+    // and `background` was removing that image in light mode.
+    backgroundColor: isDark ? undefined : '#F7F9FC',
+    border: isDark ? undefined : '1.5px solid #DCE3EE',
+    color: isDark ? undefined : '#172033',
+  }
+
   if (loading || loadingSetup) {
     return (
-      <div className={styles.screen}>
-        <div className={styles.box}>
-          <h1 className={styles.title}>Loading account...</h1>
-          <p className={styles.sub}>
+      <div className={styles.screen} style={screenStyle}>
+        <div className={styles.box} style={boxStyle}>
+          <h1 className={styles.title} style={titleStyle}>
+            Loading account...
+          </h1>
+          <p className={styles.sub} style={subStyle}>
             Please wait while ShuttleTrack prepares your setup.
           </p>
         </div>
@@ -255,29 +297,105 @@ export default function Setup() {
   }
 
   return (
-    <div className={styles.screen}>
-      <div className={styles.box}>
-        <div className={styles.logo}>
-          <div className={styles.logoMark}>
-            <svg viewBox="0 0 20 20" fill="none" width="18" height="18">
-              <circle cx="10" cy="10" r="8" stroke="white" strokeWidth="1.5" />
-              <path
-                d="M6 10 Q10 4 14 10 Q10 16 6 10Z"
-                fill="white"
-                opacity="0.8"
-              />
-              <circle cx="10" cy="10" r="2" fill="white" />
-            </svg>
+    <div className={styles.screen} style={screenStyle}>
+      <div className={styles.box} style={boxStyle}>
+        {/* Logo + theme switch. Layout remains the same. */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 14,
+            marginBottom: 24,
+          }}
+        >
+          <div
+            className={styles.logo}
+            style={{ marginBottom: 0 }}
+          >
+            <div className={styles.logoMark}>
+              <svg viewBox="0 0 20 20" fill="none" width="18" height="18">
+                <circle cx="10" cy="10" r="8" stroke="white" strokeWidth="1.5" />
+                <path
+                  d="M6 10 Q10 4 14 10 Q10 16 6 10Z"
+                  fill="white"
+                  opacity="0.8"
+                />
+                <circle cx="10" cy="10" r="2" fill="white" />
+              </svg>
+            </div>
+
+            <span
+              className={styles.logoName}
+              style={{
+                color: isDark ? undefined : '#172033',
+              }}
+            >
+              ShuttleTrack
+            </span>
           </div>
-          <span className={styles.logoName}>ShuttleTrack</span>
+
+          <button
+            type="button"
+            onClick={() => {
+              const next = !isDark
+              setIsDark(next)
+
+              localStorage.setItem(
+                'shuttleLoginTheme',
+                next ? 'dark' : 'light',
+              )
+            }}
+            aria-label={
+              isDark ? 'Switch to light mode' : 'Switch to dark mode'
+            }
+            title={
+              isDark ? 'Switch to light mode' : 'Switch to dark mode'
+            }
+            style={{
+              width: 46,
+              height: 26,
+              borderRadius: 999,
+              border: isDark
+                ? '1px solid #3A455E'
+                : '1px solid #D6DEEA',
+              background: isDark ? '#263047' : '#EEF2F7',
+              padding: 3,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isDark ? 'flex-end' : 'flex-start',
+              transition:
+                'background 0.2s ease, border-color 0.2s ease',
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: isDark ? '#0D1117' : '#FFFFFF',
+                boxShadow: '0 2px 7px rgba(0,0,0,0.18)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 11,
+                lineHeight: 1,
+              }}
+            >
+              {isDark ? '🌙' : '☀️'}
+            </span>
+          </button>
         </div>
 
-        <h1 className={styles.title}>
+        <h1 className={styles.title} style={titleStyle}>
           {location.search.includes('redo=1')
             ? 'Update Player Setup'
             : 'New Player Setup'}
         </h1>
-        <p className={styles.sub}>
+
+        <p className={styles.sub} style={subStyle}>
           Answer a few questions so the system can create your initial player status.
         </p>
 
@@ -287,9 +405,13 @@ export default function Setup() {
               marginBottom: 16,
               padding: '12px 14px',
               borderRadius: 12,
-              background: 'rgba(255, 70, 70, 0.12)',
-              border: '1px solid rgba(255, 70, 70, 0.3)',
-              color: '#ff8a8a',
+              background: isDark
+                ? 'rgba(255, 70, 70, 0.12)'
+                : '#FEF2F2',
+              border: isDark
+                ? '1px solid rgba(255, 70, 70, 0.3)'
+                : '1px solid #FECACA',
+              color: isDark ? '#ff8a8a' : '#DC2626',
               fontSize: 13,
               fontWeight: 600,
             }}
@@ -300,9 +422,13 @@ export default function Setup() {
 
         <div className={styles.grid2}>
           <div>
-            <label className={styles.label}>Preferred Event</label>
+            <label className={styles.label} style={labelStyle}>
+              Preferred Event
+            </label>
+
             <select
               className={styles.select}
+              style={selectStyle}
               value={form.event}
               onChange={set('event')}
               disabled={busy}
@@ -314,9 +440,13 @@ export default function Setup() {
           </div>
 
           <div>
-            <label className={styles.label}>How do you usually play?</label>
+            <label className={styles.label} style={labelStyle}>
+              How do you usually play?
+            </label>
+
             <select
               className={styles.select}
+              style={selectStyle}
               value={form.style}
               onChange={set('style')}
               disabled={busy}
@@ -331,9 +461,13 @@ export default function Setup() {
 
         <div className={styles.grid2}>
           <div>
-            <label className={styles.label}>What is your biggest strength?</label>
+            <label className={styles.label} style={labelStyle}>
+              What is your biggest strength?
+            </label>
+
             <select
               className={styles.select}
+              style={selectStyle}
               value={form.strength}
               onChange={set('strength')}
               disabled={busy}
@@ -347,9 +481,13 @@ export default function Setup() {
           </div>
 
           <div>
-            <label className={styles.label}>What is your current weakness?</label>
+            <label className={styles.label} style={labelStyle}>
+              What is your current weakness?
+            </label>
+
             <select
               className={styles.select}
+              style={selectStyle}
               value={form.weakness}
               onChange={set('weakness')}
               disabled={busy}
@@ -364,9 +502,13 @@ export default function Setup() {
         </div>
 
         <div className={styles.field}>
-          <label className={styles.label}>How is your stamina level?</label>
+          <label className={styles.label} style={labelStyle}>
+            How is your stamina level?
+          </label>
+
           <select
             className={styles.select}
+            style={selectStyle}
             value={form.stamina}
             onChange={set('stamina')}
             disabled={busy}
@@ -378,31 +520,63 @@ export default function Setup() {
         </div>
 
         <div className={styles.field}>
-          <label className={styles.label}>How do you react under pressure?</label>
+          <label className={styles.label} style={labelStyle}>
+            How do you react under pressure?
+          </label>
 
           <div className={styles.pressureBtns}>
-            {PRESSURE_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                disabled={busy}
-                className={`${styles.pressureBtn} ${
-                  form.pressure === option ? styles.pressureActive : ''
-                }`}
-                onClick={() =>
-                  setForm((prev) => ({
-                    ...prev,
-                    pressure: option,
-                  }))
-                }
-              >
-                {option}
-              </button>
-            ))}
+            {PRESSURE_OPTIONS.map((option) => {
+              const active = form.pressure === option
+
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  disabled={busy}
+                  className={`${styles.pressureBtn} ${
+                    active ? styles.pressureActive : ''
+                  }`}
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      pressure: option,
+                    }))
+                  }
+                  style={
+                    isDark
+                      ? undefined
+                      : {
+                          background: active
+                            ? 'rgba(26,95,255,0.08)'
+                            : '#F7F9FC',
+                          border: active
+                            ? '1.5px solid #1A5FFF'
+                            : '1px solid #DCE3EE',
+                          color: active
+                            ? '#1A5FFF'
+                            : '#5F6B7A',
+                        }
+                  }
+                >
+                  {option}
+                </button>
+              )
+            })}
           </div>
         </div>
 
-        <div className={styles.preview}>
+        <div
+          className={styles.preview}
+          style={
+            isDark
+              ? undefined
+              : {
+                  background: '#F4F7FF',
+                  border: '1px solid #DDE6FB',
+                  color: '#667085',
+                }
+          }
+        >
           Result preview: your answers will generate your initial play style,
           strength summary, weakness summary, and default radar status for first-time setup.
         </div>
@@ -437,10 +611,14 @@ export default function Setup() {
             disabled={busy}
             style={{
               flex: 1,
-              border: '1px solid rgba(255, 255, 255, 0.18)',
+              border: isDark
+                ? '1px solid rgba(255, 255, 255, 0.18)'
+                : '1px solid #DCE3EE',
               borderRadius: 14,
-              background: 'rgba(255, 255, 255, 0.08)',
-              color: '#ffffff',
+              background: isDark
+                ? 'rgba(255, 255, 255, 0.08)'
+                : '#F7F9FC',
+              color: isDark ? '#ffffff' : '#172033',
               fontWeight: 700,
               cursor: busy ? 'not-allowed' : 'pointer',
               opacity: busy ? 0.7 : 1,

@@ -118,11 +118,20 @@ export default function Login() {
     localStorage.getItem('shuttleRememberMe') === 'true',
   )
 
+  const [isDark, setIsDark] = useState(
+    localStorage.getItem('shuttleLoginTheme') === 'dark',
+  )
+
+  useEffect(() => {
+    localStorage.setItem(
+      'shuttleLoginTheme',
+      isDark ? 'dark' : 'light',
+    )
+  }, [isDark])
+
   useEffect(() => {
     localStorage.removeItem('shuttleAddingRole')
 
-    // Recover an account-status message after Supabase signOut/auth routing
-    // causes the Login component to remount.
     const blockedMessage =
       sessionStorage.getItem('shuttleLoginBlockedMessage')
 
@@ -138,8 +147,6 @@ export default function Login() {
       const browserSessionActive =
         sessionStorage.getItem('shuttleBrowserSession') === 'true'
 
-      // The user previously logged in without selecting Remember me.
-      // sessionStorage disappears after the browser session is closed.
       if (sessionOnly && !browserSessionActive) {
         await supabase.auth.signOut()
         localStorage.removeItem('activeRole')
@@ -151,14 +158,12 @@ export default function Login() {
   }, [])
 
   async function blockLoginWithMessage(message) {
-    // Store it first because signOut may trigger an auth-state redirect/remount.
     sessionStorage.setItem('shuttleLoginBlockedMessage', message)
     localStorage.removeItem('activeRole')
 
     try {
       await supabase.auth.signOut()
     } finally {
-      // Also set it immediately for cases where Login does not remount.
       setError(message)
     }
   }
@@ -193,8 +198,6 @@ export default function Login() {
         return
       }
 
-      // Never save the password.
-      // Remember me keeps the Supabase session after the browser closes.
       if (rememberMe) {
         localStorage.setItem('shuttleRememberMe', 'true')
         localStorage.setItem('shuttleRememberedEmail', cleanEmail)
@@ -266,11 +269,6 @@ export default function Login() {
         appUser.has_coach_access === true ||
         appUser.role === 'coach'
 
-      /*
-       * If this player account has been inactive for 30 days or more,
-       * require email verification before normal app access.
-       * The account itself stays ACTIVE.
-       */
       if (
         hasPlayer &&
         needsReturningReverification(appUser.last_seen_at)
@@ -439,10 +437,6 @@ export default function Login() {
     setGoogleLoading(true)
 
     try {
-      /*
-       * Make Google login follow the same Remember me rule
-       * as email/password login.
-       */
       if (rememberMe) {
         localStorage.setItem('shuttleRememberMe', 'true')
         localStorage.removeItem('shuttleSessionOnly')
@@ -474,11 +468,13 @@ export default function Login() {
   const inputStyle = {
     width: '100%',
     padding: '14px 16px',
-    background: 'rgba(30,37,53,0.92)',
-    border: '1.5px solid #2A3147',
+    background: isDark ? '#1E2535' : '#F7F9FC',
+    border: isDark
+      ? '1.5px solid #2A3147'
+      : '1.5px solid #DCE3EE',
     borderRadius: 12,
     fontSize: 14,
-    color: '#FFFFFF',
+    color: isDark ? '#FFFFFF' : '#172033',
     outline: 'none',
     boxSizing: 'border-box',
     transition:
@@ -487,6 +483,7 @@ export default function Login() {
 
   return (
     <div
+      className={isDark ? 'login-theme-dark' : 'login-theme-light'}
       style={{
         minHeight: '100vh',
         display: 'flex',
@@ -494,12 +491,86 @@ export default function Login() {
         justifyContent: 'center',
         position: 'relative',
         overflow: 'hidden',
-        background:
-          'radial-gradient(circle at 18% 20%, rgba(26,95,255,0.16), transparent 32%), radial-gradient(circle at 82% 80%, rgba(0,196,140,0.10), transparent 30%), #0D1117',
+        background: isDark
+          ? 'radial-gradient(circle at 18% 20%, rgba(26,95,255,0.16), transparent 32%), radial-gradient(circle at 82% 80%, rgba(0,196,140,0.10), transparent 30%), #0D1117'
+          : 'radial-gradient(circle at 18% 18%, rgba(26,95,255,0.13), transparent 30%), radial-gradient(circle at 82% 80%, rgba(52,211,153,0.10), transparent 28%), linear-gradient(135deg, #EEF4FF 0%, #F8FBFF 50%, #ECFBF6 100%)',
         padding: 24,
         boxSizing: 'border-box',
       }}
     >
+      <div
+        className="shuttletrack-login-shell"
+        style={{
+          width: '100%',
+          maxWidth: 1180,
+          display: 'grid',
+          gridTemplateColumns: '1fr 520px',
+          alignItems: 'center',
+          gap: 72,
+        }}
+      >
+        <section
+          className="shuttletrack-login-intro"
+          style={{
+            padding: '20px 10px 20px 24px',
+          }}
+        >
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 9,
+              padding: '7px 12px',
+              borderRadius: 999,
+              background: isDark
+                ? 'rgba(26,95,255,0.14)'
+                : 'rgba(26,95,255,0.08)',
+              border: isDark
+                ? '1px solid rgba(76,131,255,0.24)'
+                : '1px solid rgba(26,95,255,0.12)',
+              color: '#1A5FFF',
+              fontSize: 12,
+              fontWeight: 700,
+              marginBottom: 18,
+            }}
+          >
+            BADMINTON PERFORMANCE MANAGEMENT
+          </div>
+
+          <h2
+            style={{
+              margin: '0 0 16px',
+              maxWidth: 560,
+              fontSize: 46,
+              lineHeight: 1.08,
+              letterSpacing: '-0.035em',
+              color: isDark ? '#FFFFFF' : '#172033',
+              fontWeight: 800,
+            }}
+          >
+            Train smarter.
+            <br />
+            Track every step.
+            <br />
+            Improve together.
+          </h2>
+
+          <p
+            style={{
+              margin: '0 0 28px',
+              maxWidth: 560,
+              fontSize: 15,
+              lineHeight: 1.75,
+              color: isDark ? '#9AA5B8' : '#667085',
+            }}
+          >
+            ShuttleTrack helps badminton players and coaches manage
+            training, monitor fitness and performance progress, record
+            match results, and stay connected through one central system.
+          </p>
+
+        </section>
+
       <div
         className="shuttletrack-login-card"
         style={{
@@ -507,11 +578,15 @@ export default function Login() {
           maxWidth: 520,
           padding: '44px 44px 38px',
           borderRadius: 24,
-          background:
-            'linear-gradient(180deg, rgba(24,30,43,0.98), rgba(20,25,36,0.98))',
-          border: '1px solid rgba(74,85,104,0.55)',
-          boxShadow:
-            '0 26px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.015) inset',
+          background: isDark
+            ? 'linear-gradient(180deg, rgba(24,30,43,0.98), rgba(20,25,36,0.98))'
+            : '#FFFFFF',
+          border: isDark
+            ? '1px solid rgba(74,85,104,0.55)'
+            : '1px solid #DDE5F2',
+          boxShadow: isDark
+            ? '0 26px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.015) inset'
+            : '0 26px 70px rgba(30,64,175,0.12), 0 0 0 1px rgba(255,255,255,0.7) inset',
           boxSizing: 'border-box',
         }}
       >
@@ -519,10 +594,18 @@ export default function Login() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
+            justifyContent: 'space-between',
+            gap: 14,
             marginBottom: 28,
           }}
         >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
           <div
             style={{
               width: 42,
@@ -530,7 +613,7 @@ export default function Login() {
               background:
                 'linear-gradient(135deg, #1A5FFF, #4C83FF)',
               borderRadius: 12,
-              boxShadow: '0 10px 24px rgba(26,95,255,0.30)',
+              boxShadow: '0 10px 24px rgba(26,95,255,0.24)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -563,18 +646,65 @@ export default function Login() {
             style={{
               fontSize: 16,
               fontWeight: 700,
-              color: '#FFFFFF',
+              color: isDark ? '#FFFFFF' : '#172033',
             }}
           >
             ShuttleTrack
           </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsDark((previous) => !previous)}
+            aria-label={
+              isDark ? 'Switch to light mode' : 'Switch to dark mode'
+            }
+            title={
+              isDark ? 'Switch to light mode' : 'Switch to dark mode'
+            }
+            style={{
+              width: 46,
+              height: 26,
+              borderRadius: 999,
+              border: isDark
+                ? '1px solid #3A455E'
+                : '1px solid #D6DEEA',
+              background: isDark ? '#263047' : '#EEF2F7',
+              padding: 3,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isDark ? 'flex-end' : 'flex-start',
+              transition:
+                'background 0.2s ease, border-color 0.2s ease',
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: isDark ? '#0D1117' : '#FFFFFF',
+                boxShadow: '0 2px 7px rgba(0,0,0,0.18)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 11,
+                lineHeight: 1,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {isDark ? '🌙' : '☀️'}
+            </span>
+          </button>
         </div>
 
         <h1
           style={{
             fontSize: 30,
             fontWeight: 800,
-            color: '#FFFFFF',
+            color: isDark ? '#FFFFFF' : '#172033',
             margin: '0 0 6px',
           }}
         >
@@ -584,18 +714,22 @@ export default function Login() {
         <p
           style={{
             fontSize: 13,
-            color: '#8892A4',
+            color: isDark ? '#8892A4' : '#667085',
             margin: '0 0 28px',
           }}
         >
           Enter your details to continue to ShuttleTrack.
         </p>
 
+
         {error && (
           <div
             style={{
-              background: '#2D1B1B',
-              color: '#F87171',
+              background: isDark ? '#2D1B1B' : '#FEF2F2',
+              color: isDark ? '#F87171' : '#DC2626',
+              border: isDark
+                ? '1px solid #543131'
+                : '1px solid #FECACA',
               padding: '10px 14px',
               borderRadius: 10,
               marginBottom: 16,
@@ -610,8 +744,11 @@ export default function Login() {
         {success && (
           <div
             style={{
-              background: '#10251C',
-              color: '#34D399',
+              background: isDark ? '#10251C' : '#ECFDF5',
+              color: isDark ? '#34D399' : '#047857',
+              border: isDark
+                ? '1px solid #1F4A39'
+                : '1px solid #A7F3D0',
               padding: '10px 14px',
               borderRadius: 10,
               marginBottom: 16,
@@ -671,7 +808,7 @@ export default function Login() {
                 transform: 'translateY(-50%)',
                 background: 'none',
                 border: 'none',
-                color: '#8892A4',
+                color: isDark ? '#8892A4' : '#7A8699',
                 cursor:
                   loading || googleLoading
                     ? 'not-allowed'
@@ -699,7 +836,7 @@ export default function Login() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                color: '#AAB2C0',
+                color: isDark ? '#AAB2C0' : '#5F6B7A',
                 fontSize: 13,
                 cursor:
                   loading || googleLoading
@@ -776,13 +913,33 @@ export default function Login() {
             margin: '14px 0 12px',
           }}
         >
-          <div style={{ flex: 1, height: 1, background: '#2A3147' }} />
-          <span style={{ fontSize: 11, color: '#5F6B82' }}>or continue with</span>
-          <div style={{ flex: 1, height: 1, background: '#2A3147' }} />
+          <div
+            style={{
+              flex: 1,
+              height: 1,
+              background: isDark ? '#2A3147' : '#E2E8F0',
+            }}
+          />
+          <span
+            style={{
+              fontSize: 11,
+              color: isDark ? '#5F6B82' : '#98A2B3',
+            }}
+          >
+            or continue with
+          </span>
+          <div
+            style={{
+              flex: 1,
+              height: 1,
+              background: isDark ? '#2A3147' : '#E2E8F0',
+            }}
+          />
         </div>
 
         <button
           type="button"
+          className="googleLoginButton"
           onClick={handleGoogle}
           disabled={googleLoading || loading}
           style={{
@@ -792,9 +949,11 @@ export default function Login() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 10,
-            background: '#1D2535',
-            color: '#FFFFFF',
-            border: '1.5px solid #2A3448',
+            background: isDark ? '#1D2535' : '#FFFFFF',
+            color: isDark ? '#FFFFFF' : '#172033',
+            border: isDark
+              ? '1.5px solid #2A3448'
+              : '1.5px solid #DCE3EE',
             borderRadius: 12,
             fontSize: 14,
             fontWeight: 600,
@@ -831,7 +990,7 @@ export default function Login() {
 
         <p
           style={{
-            color: '#8892A4',
+            color: isDark ? '#8892A4' : '#667085',
             textAlign: 'center',
             marginTop: 20,
             marginBottom: 0,
@@ -845,7 +1004,7 @@ export default function Login() {
             style={{
               background: 'none',
               border: 'none',
-              color: '#34D399',
+              color: '#10B981',
               cursor: 'pointer',
               fontWeight: 700,
               padding: 0,
@@ -855,9 +1014,31 @@ export default function Login() {
           </button>
         </p>
       </div>
+      </div>
 
       <style>
         {`
+          .login-theme-light .shuttletrack-login-card input::placeholder {
+            color: #98A2B3;
+          }
+
+          .login-theme-dark .shuttletrack-login-card input::placeholder {
+            color: #6F7B90;
+          }
+
+          .shuttletrack-login-card input:focus {
+            border-color: #1A5FFF !important;
+            box-shadow: 0 0 0 4px rgba(26,95,255,0.10);
+          }
+
+          .login-theme-light .shuttletrack-login-card input:focus {
+            background: #FFFFFF !important;
+          }
+
+          .login-theme-dark .shuttletrack-login-card input:focus {
+            background: #20293B !important;
+          }
+
           .loginPressButton {
             width: 100%;
             padding: 14px;
@@ -869,7 +1050,7 @@ export default function Login() {
             font-size: 15px;
             font-weight: 700;
             box-shadow:
-              0 12px 26px rgba(26,95,255,0.28);
+              0 12px 26px rgba(26,95,255,0.22);
             transition:
               background 0.14s ease,
               transform 0.14s ease,
@@ -880,17 +1061,63 @@ export default function Login() {
             background:
               linear-gradient(90deg, #2468FF, #4A82FF);
             box-shadow:
-              0 15px 30px rgba(26,95,255,0.34);
+              0 15px 30px rgba(26,95,255,0.28);
           }
 
           .loginPressButton:active:not(:disabled) {
             transform: translateY(1px);
             background:
-              linear-gradient(180deg, #101A2B, #0C1524);
+              linear-gradient(90deg, #1557EA, #326FEF);
             box-shadow:
-              0 14px 30px rgba(26,95,255,0.42),
-              0 20px 36px rgba(26,95,255,0.28),
-              0 0 0 1px rgba(76,131,255,0.14) inset;
+              0 8px 18px rgba(26,95,255,0.24);
+          }
+
+          .googleLoginButton {
+            transition:
+              background 0.14s ease,
+              border-color 0.14s ease,
+              transform 0.14s ease;
+          }
+
+          .login-theme-light .googleLoginButton:hover:not(:disabled) {
+            background: #F8FAFC !important;
+            border-color: #C7D2E3 !important;
+          }
+
+          .login-theme-dark .googleLoginButton:hover:not(:disabled) {
+            background: #222C3F !important;
+            border-color: #39455E !important;
+          }
+
+          .googleLoginButton:active:not(:disabled) {
+            transform: translateY(1px);
+          }
+
+          @media (max-width: 980px) {
+            .shuttletrack-login-shell {
+              grid-template-columns: 1fr !important;
+              max-width: 620px !important;
+              gap: 28px !important;
+            }
+
+            .shuttletrack-login-intro {
+              padding: 10px 6px 0 !important;
+              text-align: center;
+            }
+
+            .shuttletrack-login-intro h2,
+            .shuttletrack-login-intro p {
+              margin-left: auto !important;
+              margin-right: auto !important;
+            }
+
+          }
+
+          @media (max-width: 640px) {
+            .shuttletrack-login-intro h2 {
+              font-size: 34px !important;
+            }
+
           }
 
           @media (max-width: 560px) {
