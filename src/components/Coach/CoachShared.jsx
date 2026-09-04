@@ -130,12 +130,16 @@ export function CoachPageHeader({
   title,
   subtitle,
   showActions = true,
+  showFindPlayer = true,
   rightAction = null,
 }) {
   const navigate = useNavigate()
 
   return (
-    <div className={styles.pageHead} style={{ overflow: 'visible' }}>
+    <div
+      className={styles.pageHead}
+      style={{ overflow: 'visible' }}
+    >
       <div
         style={{
           display: 'flex',
@@ -146,8 +150,13 @@ export function CoachPageHeader({
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <div className={styles.pageTitle}>{title}</div>
-          <div className={styles.pageSub}>{subtitle}</div>
+          <div className={styles.pageTitle}>
+            {title}
+          </div>
+
+          <div className={styles.pageSub}>
+            {subtitle}
+          </div>
         </div>
 
         {(showActions || rightAction) && (
@@ -164,65 +173,81 @@ export function CoachPageHeader({
           >
             {showActions && (
               <>
-              <button
-                type="button"
-                onClick={() => navigate('/coach/players?find=1')}
-                style={{
-                  height: 34,
-                  minWidth: 104,
-                  padding: '0 16px',
-                  borderRadius: 10,
-                  border: '1px solid #B8C7E6',
-                  background: 'var(--card, #FFFFFF)',
-                  color: 'var(--text, #0D1B3E)',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Find player
-              </button>
+                {showFindPlayer && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        '/coach/players?find=1'
+                      )
+                    }
+                    style={{
+                      height: 34,
+                      minWidth: 104,
+                      padding: '0 16px',
+                      borderRadius: 10,
+                      border:
+                        '1px solid #B8C7E6',
+                      background:
+                        'var(--card, #FFFFFF)',
+                      color:
+                        'var(--text, #0D1B3E)',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Find player
+                  </button>
+                )}
 
-              <button
-                type="button"
-                onClick={() => navigate('/coach/sessions?add=1')}
-                style={{
-                  height: 34,
-                  minWidth: 118,
-                  padding: '0 16px',
-                  borderRadius: 10,
-                  border: '1px solid #1A5FFF',
-                  background: '#1A5FFF',
-                  color: '#FFFFFF',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 7,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: '0 4px 10px rgba(26, 95, 255, 0.16)',
-                }}
-              >
-                <span
-                  aria-hidden="true"
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      '/coach/sessions?add=1'
+                    )
+                  }
                   style={{
-                    color: '#13E38C',
-                    fontSize: 22,
-                    fontWeight: 400,
-                    lineHeight: 1,
-                    marginTop: -1,
+                    height: 34,
+                    minWidth: 118,
+                    padding: '0 16px',
+                    borderRadius: 10,
+                    border:
+                      '1px solid #1A5FFF',
+                    background: '#1A5FFF',
+                    color: '#FFFFFF',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 7,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    boxShadow:
+                      '0 4px 10px rgba(26, 95, 255, 0.16)',
                   }}
                 >
-                  +
-                </span>
-                Add session
-              </button>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      color: '#13E38C',
+                      fontSize: 22,
+                      fontWeight: 400,
+                      lineHeight: 1,
+                      marginTop: -1,
+                    }}
+                  >
+                    +
+                  </span>
+
+                  Add session
+                </button>
               </>
             )}
 

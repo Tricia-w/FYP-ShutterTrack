@@ -7,6 +7,14 @@ import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
 import { CoachPageHeader } from './CoachShared'
 import CoachNotificationBell from "../Notifications/CoachNotificationBell";
+import {
+  connectGoogleCalendar,
+  disconnectGoogleCalendar,
+  createGoogleCalendarEvent,
+  updateGoogleCalendarEvent,
+  deleteGoogleCalendarEvent,
+  ensureGoogleCalendarAccess,
+} from '../../lib/googleCalendar'
 
 const SESSION_TYPES = [
   'Footwork Drills',
@@ -17,6 +25,42 @@ const SESSION_TYPES = [
   'Fitness & Conditioning',
   'Strategy Session',
 ]
+
+const PLAYER_SCHEDULE_META_PREFIX =
+  '__SHUTTLETRACK_TRAINING__:'
+
+const decodePlayerScheduleNotes = value => {
+  const raw = String(value || '')
+
+  if (!raw.startsWith(PLAYER_SCHEDULE_META_PREFIX)) {
+    return {
+      notes: raw,
+      endTime: '',
+      matchType: '',
+      status: 'scheduled',
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(
+      raw.slice(PLAYER_SCHEDULE_META_PREFIX.length)
+    )
+
+    return {
+      notes: parsed?.notes || '',
+      endTime: parsed?.endTime || '',
+      matchType: parsed?.matchType || '',
+      status: parsed?.status || 'scheduled',
+    }
+  } catch {
+    return {
+      notes: raw,
+      endTime: '',
+      matchType: '',
+      status: 'scheduled',
+    }
+  }
+}
 
 const emptyForm = () => ({
   date: '',
@@ -117,6 +161,94 @@ const calculateDuration = (start, end) => {
   if (hours && minutes) return `${hours}h ${minutes}min`
   if (hours) return `${hours}h`
   return `${minutes}min`
+}
+
+
+const timeToMinutes = value => {
+  const raw = String(value || '').slice(0, 5)
+  const match = raw.match(/^(\d{2}):(\d{2})$/)
+
+  if (!match) return null
+
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+
+  if (
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return null
+  }
+
+  return hour * 60 + minute
+}
+
+const timesOverlap = (
+  startA,
+  endA,
+  startB,
+  endB
+) => {
+  const aStart =
+    timeToMinutes(startA)
+  const aEnd =
+    timeToMinutes(endA)
+  const bStart =
+    timeToMinutes(startB)
+  const bEnd =
+    timeToMinutes(endB)
+
+  if (
+    aStart === null ||
+    aEnd === null ||
+    bStart === null ||
+    bEnd === null
+  ) {
+    return false
+  }
+
+  return (
+    aStart < bEnd &&
+    bStart < aEnd
+  )
+}
+
+const formatConflictDate = value => {
+  if (!value) return ''
+
+  return new Date(
+    `${value}T00:00:00`
+  ).toLocaleDateString(
+    'en-MY',
+    {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }
+  )
+}
+
+
+const formatAddedTime = value => {
+  if (!value) return ''
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return date.toLocaleString(
+    'en-MY',
+    {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }
+  )
 }
 
 function SessionIcon({
@@ -238,7 +370,9 @@ export default function CoachSessions() {
 
   const [students, setStudents] = useState([])
   const [sessions, setSessions] = useState([])
+  const [taggedSchedules, setTaggedSchedules] = useState([])
   const [showAddSession, setShowAddSession] = useState(false)
+  const [editingSession, setEditingSession] = useState(null)
   const [sessionForm, setSessionForm] = useState(emptyForm)
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
@@ -251,6 +385,15 @@ export default function CoachSessions() {
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
   const [selectedDate, setSelectedDate] = useState('')
+  const [studentSearch, setStudentSearch] = useState('')
+  const [
+    googleSyncEnabled,
+    setGoogleSyncEnabled,
+  ] = useState(false)
+  const [
+    googleCalendarBusy,
+    setGoogleCalendarBusy,
+  ] = useState(false)
 
   const loadData = useCallback(async () => {
     if (!user?.id) return
@@ -259,7 +402,12 @@ export default function CoachSessions() {
     setError('')
 
     try {
-      const [relationshipRes, sessionRes] = await Promise.all([
+      const [
+        relationshipRes,
+        sessionRes,
+        taggedScheduleRes,
+        googleCalendarSettingRes,
+      ] = await Promise.all([
         supabase
           .from('coach_player_relationships')
           .select('player_user_id')
@@ -281,10 +429,36 @@ export default function CoachSessions() {
           .eq('coach_user_id', user.id)
           .order('session_date', { ascending: true })
           .order('start_time', { ascending: true }),
+
+        supabase
+          .from('player_schedule')
+          .select('*')
+          .eq('tagged_coach_user_id', user.id)
+          .order('event_date', { ascending: true })
+          .order('event_time', { ascending: true }),
+
+        supabase
+          .from('google_calendar_connections')
+          .select('enabled')
+          .eq('user_id', user.id)
+          .maybeSingle(),
       ])
 
       if (relationshipRes.error) throw relationshipRes.error
       if (sessionRes.error) throw sessionRes.error
+      if (taggedScheduleRes.error) {
+        throw taggedScheduleRes.error
+      }
+
+      if (googleCalendarSettingRes.error) {
+        throw googleCalendarSettingRes.error
+      }
+
+      setGoogleSyncEnabled(
+        Boolean(
+          googleCalendarSettingRes.data?.enabled
+        )
+      )
 
       const playerUserIds = [
         ...new Set(
@@ -317,6 +491,43 @@ export default function CoachSessions() {
         }))
       )
 
+      const acceptedPlayerSet = new Set(
+        playerUserIds.map(String)
+      )
+
+      setTaggedSchedules(
+        (taggedScheduleRes.data || [])
+          .filter(row =>
+            acceptedPlayerSet.has(String(row.user_id))
+          )
+          .map(row => {
+            const meta = decodePlayerScheduleNotes(
+              row.notes
+            )
+
+            return {
+              id: `player-schedule-${row.id}`,
+              schedule_id: row.id,
+              session_date: row.event_date,
+              start_time: row.event_time || '',
+              end_time: meta.endTime || '',
+              venue: row.location || '',
+              session_type:
+                row.title ||
+                row.schedule_type ||
+                'Player schedule',
+              schedule_type:
+                row.schedule_type || 'Other',
+              match_type: meta.matchType || '',
+              group_notes: meta.notes || '',
+              player_user_id: row.user_id,
+              schedule_status:
+                meta.status || 'scheduled',
+              is_player_tagged: true,
+            }
+          })
+      )
+
       setSessions(sessionRes.data || [])
     } catch (loadError) {
       console.error('Coach sessions load error:', loadError)
@@ -330,21 +541,55 @@ export default function CoachSessions() {
     loadData()
   }, [loadData])
 
+  const openNewSession = useCallback(
+    date => {
+      setEditingSession(null)
+      setStudentSearch('')
+      setError('')
+      setSessionForm({
+        ...emptyForm(),
+        date: date || selectedDate || '',
+      })
+      setShowAddSession(true)
+    },
+    [selectedDate]
+  )
+
   useEffect(() => {
     if (searchParams.get('add') === '1') {
-      setSessionForm(current => ({
-        ...current,
-        date: current.date || selectedDate || '',
-      }))
-      setShowAddSession(true)
+      openNewSession(selectedDate)
       setSearchParams({}, { replace: true })
     }
-  }, [searchParams, selectedDate, setSearchParams])
+  }, [
+    searchParams,
+    selectedDate,
+    setSearchParams,
+    openNewSession,
+  ])
 
   const studentMap = useMemo(
     () => new Map(students.map(student => [String(student.id), student])),
     [students]
   )
+
+  const filteredStudents = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase()
+
+    if (!query) return students
+
+    return students.filter(student =>
+      [
+        student.name,
+        student.club,
+      ]
+        .filter(Boolean)
+        .some(value =>
+          String(value)
+            .toLowerCase()
+            .includes(query)
+        )
+    )
+  }, [students, studentSearch])
 
   const upcomingSessions = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
@@ -408,6 +653,79 @@ export default function CoachSessions() {
       )
   }, [sessions])
 
+  const openEditSession = session => {
+    if (
+      !session?.id ||
+      session.is_player_tagged
+    ) {
+      return
+    }
+
+    const assignments =
+      session.coach_training_session_players || []
+
+    setEditingSession(session)
+    setStudentSearch('')
+    setError('')
+
+    setSessionForm({
+      date:
+        session.session_date || '',
+      startTime:
+        formatTime(
+          session.start_time
+        ),
+      endTime:
+        formatTime(
+          session.end_time
+        ),
+      duration:
+        calculateDuration(
+          formatTime(
+            session.start_time
+          ),
+          formatTime(
+            session.end_time
+          )
+        ),
+      venue:
+        session.venue || '',
+      type:
+        session.session_type ||
+        SESSION_TYPES[0],
+      players:
+        assignments
+          .map(
+            assignment =>
+              assignment.player_user_id
+          )
+          .filter(Boolean),
+      notes:
+        session.group_notes || '',
+      playerFocus:
+        Object.fromEntries(
+          assignments.map(
+            assignment => [
+              assignment.player_user_id,
+              assignment.player_focus || '',
+            ]
+          )
+        ),
+    })
+
+    setShowAddSession(true)
+  }
+
+  const closeSessionModal = () => {
+    if (saving) return
+
+    setShowAddSession(false)
+    setEditingSession(null)
+    setStudentSearch('')
+    setSessionForm(emptyForm())
+    setError('')
+  }
+
   const toggleSessionPlayer = playerId => {
     setSessionForm(current => {
       const selected = current.players.includes(playerId)
@@ -440,6 +758,151 @@ export default function CoachSessions() {
     }))
   }
 
+  const saveGoogleCalendarPreference =
+    async enabled => {
+      if (!user?.id) {
+        throw new Error(
+          'Please log in first.'
+        )
+      }
+
+      const { error: preferenceError } =
+        await supabase
+          .from(
+            'google_calendar_connections'
+          )
+          .upsert(
+            {
+              user_id: user.id,
+              enabled,
+              updated_at:
+                new Date().toISOString(),
+            },
+            {
+              onConflict: 'user_id',
+            }
+          )
+
+      if (preferenceError) {
+        throw preferenceError
+      }
+    }
+
+  const handleGoogleCalendarToggle =
+    async () => {
+      if (
+        googleCalendarBusy ||
+        !user?.id
+      ) {
+        return
+      }
+
+      setGoogleCalendarBusy(true)
+      setError('')
+
+      try {
+        if (googleSyncEnabled) {
+          await disconnectGoogleCalendar()
+          await saveGoogleCalendarPreference(
+            false
+          )
+
+          setGoogleSyncEnabled(false)
+
+          alert(
+            'Google Calendar disconnected. Existing Google Calendar events were kept.'
+          )
+
+          return
+        }
+
+        await connectGoogleCalendar({
+          prompt: 'consent',
+        })
+
+        await saveGoogleCalendarPreference(
+          true
+        )
+
+        setGoogleSyncEnabled(true)
+
+        alert(
+          'Google Calendar connected. Future coach training sessions will sync automatically.'
+        )
+      } catch (calendarError) {
+        console.error(
+          'Coach Google Calendar connection error:',
+          calendarError
+        )
+
+        setError(
+          calendarError?.message ||
+            'Unable to change Google Calendar connection.'
+        )
+      } finally {
+        setGoogleCalendarBusy(false)
+      }
+    }
+
+  const findScheduleConflict = async () => {
+    const selectedPlayerIds =
+      sessionForm.players.filter(Boolean)
+
+    if (
+      selectedPlayerIds.length === 0 ||
+      !sessionForm.date ||
+      !sessionForm.startTime ||
+      !sessionForm.endTime
+    ) {
+      return null
+    }
+
+    const {
+      data: busyPlayers,
+      error: conflictError,
+    } = await supabase.rpc(
+      'check_coach_session_player_conflicts',
+      {
+        p_player_ids:
+          selectedPlayerIds,
+        p_session_date:
+          sessionForm.date,
+        p_start_time:
+          sessionForm.startTime,
+        p_end_time:
+          sessionForm.endTime,
+        p_ignore_session_id:
+          editingSession?.id || null,
+      }
+    )
+
+    if (conflictError) {
+      throw conflictError
+    }
+
+    const conflictRow =
+      Array.isArray(busyPlayers)
+        ? busyPlayers[0]
+        : null
+
+    if (!conflictRow?.player_user_id) {
+      return null
+    }
+
+    const player =
+      studentMap.get(
+        String(
+          conflictRow.player_user_id
+        )
+      )
+
+    return {
+      playerName:
+        player?.name ||
+        'This player',
+    }
+  }
+
   const handleSave = async () => {
     if (saving) return
 
@@ -460,49 +923,364 @@ export default function CoachSessions() {
     setError('')
 
     try {
-      const { data: session, error: sessionError } = await supabase
-        .from('coach_training_sessions')
-        .insert({
-          coach_user_id: user.id,
-          session_date: sessionForm.date,
-          start_time: sessionForm.startTime,
-          end_time: sessionForm.endTime || null,
-          venue: sessionForm.venue.trim(),
-          session_type: sessionForm.type,
-          group_notes: sessionForm.notes.trim() || null,
-        })
-        .select('*')
-        .single()
+      const conflict =
+        await findScheduleConflict()
 
-      if (sessionError) throw sessionError
-
-      const assignments = sessionForm.players.map(playerUserId => ({
-        session_id: session.id,
-        player_user_id: playerUserId,
-        player_focus:
-          sessionForm.playerFocus[playerUserId]?.trim() || null,
-        attendance_status: 'scheduled',
-        completed_at: null,
-      }))
-
-      const { error: assignmentError } = await supabase
-        .from('coach_training_session_players')
-        .insert(assignments)
-
-      if (assignmentError) {
-        await supabase
-          .from('coach_training_sessions')
-          .delete()
-          .eq('id', session.id)
-        throw assignmentError
+      if (conflict) {
+        setError(
+          `${conflict.playerName} is not available during this time slot because the player already has another activity scheduled.`
+        )
+        return
       }
 
-      setSessionForm(emptyForm())
+      const sessionPayload = {
+        coach_user_id: user.id,
+        session_date:
+          sessionForm.date,
+        start_time:
+          sessionForm.startTime,
+        end_time:
+          sessionForm.endTime || null,
+        venue:
+          sessionForm.venue.trim(),
+        session_type:
+          sessionForm.type,
+        group_notes:
+          sessionForm.notes.trim() ||
+          null,
+      }
+
+      let savedSession = null
+
+      if (editingSession?.id) {
+        const {
+          data: updatedSession,
+          error: sessionError,
+        } = await supabase
+          .from(
+            'coach_training_sessions'
+          )
+          .update(sessionPayload)
+          .eq(
+            'id',
+            editingSession.id
+          )
+          .eq(
+            'coach_user_id',
+            user.id
+          )
+          .select('*')
+          .single()
+
+        if (sessionError) {
+          throw sessionError
+        }
+
+        savedSession =
+          updatedSession
+
+        const existingAssignments =
+          editingSession
+            .coach_training_session_players ||
+          []
+
+        const selectedPlayerIds =
+          new Set(
+            sessionForm.players.map(
+              String
+            )
+          )
+
+        const removedAssignments =
+          existingAssignments.filter(
+            assignment =>
+              !selectedPlayerIds.has(
+                String(
+                  assignment.player_user_id
+                )
+              )
+          )
+
+        if (
+          removedAssignments.length > 0
+        ) {
+          const {
+            error: removeError,
+          } = await supabase
+            .from(
+              'coach_training_session_players'
+            )
+            .delete()
+            .in(
+              'id',
+              removedAssignments.map(
+                assignment =>
+                  assignment.id
+              )
+            )
+
+          if (removeError) {
+            throw removeError
+          }
+        }
+
+        const existingByPlayer =
+          new Map(
+            existingAssignments.map(
+              assignment => [
+                String(
+                  assignment.player_user_id
+                ),
+                assignment,
+              ]
+            )
+          )
+
+        for (
+          const playerUserId
+          of sessionForm.players
+        ) {
+          const existing =
+            existingByPlayer.get(
+              String(playerUserId)
+            )
+
+          const focus =
+            sessionForm.playerFocus[
+              playerUserId
+            ]?.trim() || null
+
+          if (existing?.id) {
+            const {
+              error: focusError,
+            } = await supabase
+              .from(
+                'coach_training_session_players'
+              )
+              .update({
+                player_focus:
+                  focus,
+              })
+              .eq(
+                'id',
+                existing.id
+              )
+
+            if (focusError) {
+              throw focusError
+            }
+          } else {
+            const {
+              error: addError,
+            } = await supabase
+              .from(
+                'coach_training_session_players'
+              )
+              .insert({
+                session_id:
+                  editingSession.id,
+                player_user_id:
+                  playerUserId,
+                player_focus:
+                  focus,
+                attendance_status:
+                  'scheduled',
+                completed_at:
+                  null,
+              })
+
+            if (addError) {
+              throw addError
+            }
+          }
+        }
+      } else {
+        const {
+          data: session,
+          error: sessionError,
+        } = await supabase
+          .from(
+            'coach_training_sessions'
+          )
+          .insert(
+            sessionPayload
+          )
+          .select('*')
+          .single()
+
+        if (sessionError) {
+          throw sessionError
+        }
+
+        savedSession = session
+
+        const assignments =
+          sessionForm.players.map(
+            playerUserId => ({
+              session_id:
+                session.id,
+              player_user_id:
+                playerUserId,
+              player_focus:
+                sessionForm.playerFocus[
+                  playerUserId
+                ]?.trim() || null,
+              attendance_status:
+                'scheduled',
+              completed_at:
+                null,
+            })
+          )
+
+        const {
+          error: assignmentError,
+        } = await supabase
+          .from(
+            'coach_training_session_players'
+          )
+          .insert(assignments)
+
+        if (assignmentError) {
+          await supabase
+            .from(
+              'coach_training_sessions'
+            )
+            .delete()
+            .eq(
+              'id',
+              session.id
+            )
+
+          throw assignmentError
+        }
+      }
+
+      if (googleSyncEnabled) {
+        try {
+          await ensureGoogleCalendarAccess()
+
+          const selectedPlayerNames =
+            sessionForm.players
+              .map(
+                playerId =>
+                  studentMap.get(
+                    String(playerId)
+                  )?.name
+              )
+              .filter(Boolean)
+
+          const googlePayload = {
+            title:
+              `ShuttleTrack · ${sessionForm.type}`,
+            date:
+              sessionForm.date,
+            startTime:
+              sessionForm.startTime,
+            endTime:
+              sessionForm.endTime,
+            venue:
+              sessionForm.venue.trim(),
+            scheduleType:
+              'Coach Training',
+            description: [
+              'ShuttleTrack coach training session',
+              selectedPlayerNames.length
+                ? `Players: ${selectedPlayerNames.join(', ')}`
+                : '',
+              sessionForm.notes.trim(),
+            ]
+              .filter(Boolean)
+              .join('\n'),
+          }
+
+          if (
+            editingSession?.google_event_id
+          ) {
+            await updateGoogleCalendarEvent({
+              eventId:
+                editingSession.google_event_id,
+              ...googlePayload,
+            })
+          } else {
+            const googleEvent =
+              await createGoogleCalendarEvent(
+                googlePayload
+              )
+
+            if (
+              googleEvent?.id &&
+              savedSession?.id
+            ) {
+              const {
+                error: googleIdError,
+              } = await supabase
+                .from(
+                  'coach_training_sessions'
+                )
+                .update({
+                  google_event_id:
+                    googleEvent.id,
+                })
+                .eq(
+                  'id',
+                  savedSession.id
+                )
+                .eq(
+                  'coach_user_id',
+                  user.id
+                )
+
+              if (googleIdError) {
+                console.error(
+                  'Unable to save Google Calendar event ID:',
+                  googleIdError
+                )
+              }
+            }
+          }
+        } catch (calendarError) {
+          console.error(
+            editingSession
+              ? 'Coach Google Calendar update error:'
+              : 'Coach Google Calendar event creation error:',
+            calendarError
+          )
+
+          setError(
+            `${
+              editingSession
+                ? 'Session updated'
+                : 'Session saved'
+            } in ShuttleTrack, but Google Calendar sync failed: ${
+              calendarError?.message ||
+              'Unable to sync the Google Calendar event.'
+            }`
+          )
+        }
+      }
+
+      setSessionForm(
+        emptyForm()
+      )
+      setStudentSearch('')
+      setEditingSession(null)
       setShowAddSession(false)
+
       await loadData()
     } catch (saveError) {
-      console.error('Save training session error:', saveError)
-      setError(saveError.message || 'Unable to save training session.')
+      console.error(
+        editingSession
+          ? 'Update training session error:'
+          : 'Save training session error:',
+        saveError
+      )
+
+      setError(
+        saveError.message ||
+          (editingSession
+            ? 'Unable to update training session.'
+            : 'Unable to save training session.')
+      )
     } finally {
       setSaving(false)
     }
@@ -667,61 +1445,181 @@ export default function CoachSessions() {
   }
 
   const confirmDeleteSession = async () => {
-    if (!deleteTarget?.id || deleting) return
+    if (
+      !deleteTarget?.id ||
+      deleting
+    ) {
+      return
+    }
 
     setDeleting(true)
     setError('')
 
-    const [
-      scheduleDeleteResult,
-      trainingLogDeleteResult,
-    ] = await Promise.all([
-      supabase
-        .from('player_schedule')
-        .delete()
-        .eq('coach_session_id', deleteTarget.id),
+    try {
+      if (
+        googleSyncEnabled &&
+        deleteTarget.google_event_id
+      ) {
+        try {
+          await ensureGoogleCalendarAccess()
 
-      supabase
-        .from('fitness_training_logs')
-        .delete()
-        .eq('coach_session_id', deleteTarget.id),
-    ])
+          await deleteGoogleCalendarEvent({
+            eventId:
+              deleteTarget.google_event_id,
+          })
+        } catch (calendarError) {
+          console.error(
+            'Google Calendar delete error:',
+            calendarError
+          )
 
-    if (scheduleDeleteResult.error) {
-      console.error(
-        'Unable to remove linked player schedules:',
+          setError(
+            `The ShuttleTrack session will still be deleted, but its Google Calendar event could not be removed: ${
+              calendarError?.message ||
+              'Unable to remove the Google Calendar event.'
+            }`
+          )
+        }
+      }
+
+      const [
+        scheduleDeleteResult,
+        trainingLogDeleteResult,
+      ] = await Promise.all([
+        supabase
+          .from('player_schedule')
+          .delete()
+          .eq(
+            'coach_session_id',
+            deleteTarget.id
+          ),
+
+        supabase
+          .from(
+            'fitness_training_logs'
+          )
+          .delete()
+          .eq(
+            'coach_session_id',
+            deleteTarget.id
+          ),
+      ])
+
+      if (
         scheduleDeleteResult.error
-      )
-    }
+      ) {
+        console.error(
+          'Unable to remove linked player schedules:',
+          scheduleDeleteResult.error
+        )
+      }
 
-    if (trainingLogDeleteResult.error) {
-      console.error(
-        'Unable to remove linked training logs:',
+      if (
         trainingLogDeleteResult.error
+      ) {
+        console.error(
+          'Unable to remove linked training logs:',
+          trainingLogDeleteResult.error
+        )
+      }
+
+      const {
+        error: deleteError,
+      } = await supabase
+        .from(
+          'coach_training_sessions'
+        )
+        .delete()
+        .eq(
+          'id',
+          deleteTarget.id
+        )
+        .eq(
+          'coach_user_id',
+          user.id
+        )
+
+      if (deleteError) {
+        throw deleteError
+      }
+
+      setDeleteTarget(null)
+      await loadData()
+    } catch (deleteError) {
+      console.error(
+        'Delete training session error:',
+        deleteError
       )
-    }
 
-    const { error: deleteError } = await supabase
-      .from('coach_training_sessions')
-      .delete()
-      .eq('id', deleteTarget.id)
-      .eq('coach_user_id', user.id)
-
-    if (deleteError) {
-      setError(deleteError.message)
+      setError(
+        deleteError.message ||
+          'Unable to delete training session.'
+      )
+    } finally {
       setDeleting(false)
-      return
     }
-
-    setDeleteTarget(null)
-    setDeleting(false)
-    await loadData()
   }
 
   const monthTitle = calendarMonth.toLocaleDateString('en-MY', {
     month: 'long',
     year: 'numeric',
   })
+
+  const visibleTaggedSchedules = useMemo(
+    () =>
+      taggedSchedules.filter(
+        item =>
+          !['completed', 'missed'].includes(
+            String(
+              item.schedule_status || 'scheduled'
+            ).toLowerCase()
+          )
+      ),
+    [taggedSchedules]
+  )
+
+  const calendarEntries = useMemo(
+    () => [
+      ...sessions,
+      ...visibleTaggedSchedules,
+    ],
+    [sessions, visibleTaggedSchedules]
+  )
+
+  const upcomingTaggedSchedules = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+
+    return visibleTaggedSchedules
+      .filter(item => item.session_date >= today)
+      .sort((a, b) => {
+        const dateCompare =
+          a.session_date.localeCompare(b.session_date)
+
+        if (dateCompare !== 0) return dateCompare
+
+        return String(a.start_time || '').localeCompare(
+          String(b.start_time || '')
+        )
+      })
+  }, [visibleTaggedSchedules])
+
+  const upcomingCalendarItems = useMemo(
+    () =>
+      [
+        ...upcomingSessions,
+        ...upcomingTaggedSchedules,
+      ].sort((a, b) => {
+        const dateCompare =
+          a.session_date.localeCompare(b.session_date)
+
+        if (dateCompare !== 0) return dateCompare
+
+        return String(a.start_time || '').localeCompare(
+          String(b.start_time || '')
+        )
+      }),
+    [upcomingSessions, upcomingTaggedSchedules]
+  )
 
   const calendarCells = useMemo(() => {
     const year = calendarMonth.getFullYear()
@@ -746,7 +1644,9 @@ export default function CoachSessions() {
       cells.push({
         day,
         value,
-        sessions: sessions.filter(session => session.session_date === value),
+        sessions: calendarEntries.filter(
+          session => session.session_date === value
+        ),
       })
     }
 
@@ -755,14 +1655,17 @@ export default function CoachSessions() {
     }
 
     return cells
-  }, [calendarMonth, sessions])
+  }, [calendarMonth, calendarEntries])
 
   const selectedDaySessions = useMemo(
     () =>
       selectedDate
-        ? sessions.filter(session => session.session_date === selectedDate)
+        ? calendarEntries.filter(
+            session =>
+              session.session_date === selectedDate
+          )
         : [],
-    [selectedDate, sessions]
+    [selectedDate, calendarEntries]
   )
 
   const moveMonth = amount => {
@@ -773,6 +1676,186 @@ export default function CoachSessions() {
   }
 
   const renderSession = (session, fallbackStatus) => {
+    if (session.is_player_tagged) {
+      const player = studentMap.get(
+        String(session.player_user_id)
+      )
+
+      const typeColor =
+        session.schedule_type === 'Competition'
+          ? '#F59E0B'
+          : session.schedule_type === 'Friendly Match'
+            ? '#00A878'
+            : '#7C3AED'
+
+      return (
+        <div
+          key={session.id}
+          className={styles.listRow}
+          style={{
+            alignItems: 'flex-start',
+            paddingTop: 12,
+            paddingBottom: 12,
+            borderLeft: `3px solid ${typeColor}`,
+          }}
+        >
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 12,
+              background:
+                'var(--soft, #F6F8FF)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: typeColor,
+              }}
+            >
+              {new Date(
+                `${session.session_date}T00:00:00`
+              ).getDate()}
+            </div>
+
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: typeColor,
+                textTransform: 'uppercase',
+              }}
+            >
+              {new Date(
+                `${session.session_date}T00:00:00`
+              ).toLocaleDateString('en-MY', {
+                month: 'short',
+              })}
+            </div>
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                flexWrap: 'wrap',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 700,
+                  color:
+                    'var(--text, #0D1B3E)',
+                }}
+              >
+                {session.session_type}
+              </div>
+
+              <span
+                style={{
+                  borderRadius: 999,
+                  padding: '3px 8px',
+                  background:
+                    'color-mix(in srgb, #7C3AED 10%, var(--card, #FFFFFF))',
+                  color: '#7C3AED',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                Player-added
+              </span>
+            </div>
+
+            <div
+              style={{
+                marginTop: 3,
+                fontSize: 14,
+                color:
+                  'var(--text-muted, #8892A4)',
+              }}
+            >
+              {session.schedule_type}
+              {session.match_type
+                ? ` · ${session.match_type}`
+                : ''}
+            </div>
+
+            <div
+              style={{
+                marginTop: 3,
+                fontSize: 14,
+                color:
+                  'var(--text-muted, #8892A4)',
+              }}
+            >
+              {session.venue || 'No venue'}
+              {session.start_time
+                ? ` · ${formatTime(
+                    session.start_time
+                  )}`
+                : ''}
+              {session.end_time
+                ? ` – ${formatTime(
+                    session.end_time
+                  )}`
+                : ''}
+            </div>
+
+            <div
+              style={{
+                marginTop: 5,
+                fontSize: 14,
+                fontWeight: 700,
+                color:
+                  'var(--text, #0D1B3E)',
+              }}
+            >
+              {player?.name || 'Player'}
+            </div>
+
+            {session.group_notes && (
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 14,
+                  color:
+                    'var(--text-muted, #6B7280)',
+                  fontStyle: 'italic',
+                }}
+              >
+                {session.group_notes}
+              </div>
+            )}
+          </div>
+
+          <span
+            style={{
+              borderRadius: 999,
+              padding: '3px 10px',
+              background:
+                'color-mix(in srgb, #1A5FFF 10%, var(--card, #FFFFFF))',
+              color: '#1A5FFF',
+              fontSize: 12,
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            View only
+          </span>
+        </div>
+      )
+    }
+
     const assignments =
       session.coach_training_session_players || []
 
@@ -823,8 +1906,8 @@ export default function CoachSessions() {
         >
           <div
             style={{
-              fontSize: 14,
-              fontWeight: 800,
+              fontSize: 16,
+              fontWeight: 700,
               color:
                 status === 'Completed'
                   ? 'var(--text-muted, #6B7280)'
@@ -836,7 +1919,7 @@ export default function CoachSessions() {
 
           <div
             style={{
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 700,
               color:
                 status === 'Completed'
@@ -855,17 +1938,97 @@ export default function CoachSessions() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontSize: 13,
-              fontWeight: 800,
-              color: 'var(--text, #0D1B3E)',
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
             }}
           >
-            {session.session_type}
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: 'var(--text, #0D1B3E)',
+              }}
+            >
+              {session.session_type}
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexShrink: 0,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span
+                style={{
+                  background:
+                    status === 'Completed'
+                      ? 'var(--soft, #F3F4F6)'
+                      : 'color-mix(in srgb, #00C48C 14%, var(--card, #FFFFFF))',
+                  color:
+                    status === 'Completed'
+                      ? 'var(--text-muted, #6B7280)'
+                      : '#00976C',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: '3px 10px',
+                  borderRadius: 20,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {status}
+              </span>
+
+              {status !== 'Completed' && (
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  onClick={() => openEditSession(session)}
+                  disabled={saving || deleting}
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Edit
+                </button>
+              )}
+
+              <button
+                type="button"
+                className={styles.btnIconRed}
+                onClick={() => requestDeleteSession(session)}
+                title="Delete session"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div
             style={{
-              fontSize: 11,
+              fontSize: 14,
               color: 'var(--text-muted, #8892A4)',
               marginTop: 2,
             }}
@@ -878,7 +2041,7 @@ export default function CoachSessions() {
 
           <div
             style={{
-              fontSize: 11,
+              fontSize: 14,
               color: 'var(--text-muted, #8892A4)',
               marginTop: 5,
             }}
@@ -891,10 +2054,23 @@ export default function CoachSessions() {
               .join(', ')}
           </div>
 
+          {session.created_at && (
+            <div
+              style={{
+                fontSize: 13,
+                color:
+                  'var(--text-muted, #9AA3B2)',
+                marginTop: 4,
+              }}
+            >
+              Added {formatAddedTime(session.created_at)}
+            </div>
+          )}
+
           {session.group_notes && (
             <div
               style={{
-                fontSize: 11,
+                fontSize: 14,
                 color: 'var(--text-muted, #6B7280)',
                 marginTop: 5,
                 fontStyle: 'italic',
@@ -911,6 +2087,9 @@ export default function CoachSessions() {
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 7,
+                maxHeight: 260,
+                overflowY: 'auto',
+                paddingRight: 4,
               }}
             >
               {assignments.map(item => {
@@ -942,23 +2121,26 @@ export default function CoachSessions() {
                     style={{
                       display: 'flex',
                       alignItems: 'center',
+                      flexWrap: 'wrap',
                       gap: 8,
                       padding: '8px 9px',
                       borderRadius: 10,
+                      width: '100%',
+                      boxSizing: 'border-box',
                       background:
                         'var(--soft, #F6F8FF)',
                     }}
                   >
                     <div
                       style={{
-                        flex: 1,
+                        flex: '1 1 260px',
                         minWidth: 0,
                       }}
                     >
                       <div
                         style={{
-                          fontSize: 11,
-                          fontWeight: 800,
+                          fontSize: 14,
+                          fontWeight: 700,
                           color:
                             'var(--text, #0D1B3E)',
                         }}
@@ -970,7 +2152,7 @@ export default function CoachSessions() {
                         <div
                           style={{
                             marginTop: 2,
-                            fontSize: 10,
+                            fontSize: 13,
                             color:
                               'var(--text-muted, #8892A4)',
                           }}
@@ -987,8 +2169,8 @@ export default function CoachSessions() {
                         background:
                           attendanceBackground,
                         color: attendanceColor,
-                        fontSize: 9,
-                        fontWeight: 800,
+                        fontSize: 12,
+                        fontWeight: 700,
                         textTransform: 'capitalize',
                       }}
                     >
@@ -1013,7 +2195,7 @@ export default function CoachSessions() {
                         }
                         style={{
                           padding: '6px 9px',
-                          fontSize: 10,
+                          fontSize: 13,
                           whiteSpace: 'nowrap',
                         }}
                       >
@@ -1039,8 +2221,8 @@ export default function CoachSessions() {
                           background: '#FEF2F2',
                           color: '#DC2626',
                           padding: '6px 9px',
-                          fontSize: 10,
-                          fontWeight: 800,
+                          fontSize: 13,
+                          fontWeight: 700,
                           cursor: saving
                             ? 'wait'
                             : 'pointer',
@@ -1056,63 +2238,12 @@ export default function CoachSessions() {
             </div>
           )}
         </div>
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flexShrink: 0,
-          }}
-        >
-          <span
-            style={{
-              background:
-                status === 'Completed'
-                  ? 'var(--soft, #F3F4F6)'
-                  : 'color-mix(in srgb, #00C48C 14%, var(--card, #FFFFFF))',
-              color:
-                status === 'Completed'
-                  ? 'var(--text-muted, #6B7280)'
-                  : '#00976C',
-              fontSize: 9,
-              fontWeight: 700,
-              padding: '3px 10px',
-              borderRadius: 20,
-            }}
-          >
-            {status}
-          </span>
-
-          <button
-            type="button"
-            className={styles.btnIconRed}
-            onClick={() => requestDeleteSession(session)}
-            title="Delete session"
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
       </div>
     )
   }
 
   return (
-    <div>
+    <div className={styles.sessionsPage}>
       <CoachPageHeader
         title="Training Sessions"
         subtitle="Schedule individual or group sessions for your accepted students"
@@ -1138,7 +2269,7 @@ export default function CoachSessions() {
           },
           {
             label: 'Upcoming sessions',
-            value: upcomingSessions.length,
+            value: upcomingCalendarItems.length,
             color: '#00976C',
             background: '#DDF8EF',
             icon: 'upcoming',
@@ -1195,14 +2326,17 @@ export default function CoachSessions() {
               {item.value}
             </div>
 
-            <div className={styles.metricLbl}>
+            <div
+              className={styles.metricLbl}
+              style={{ fontSize: 14 }}
+            >
               {item.label}
             </div>
           </div>
         ))}
       </div>
 
-      {error && (
+      {error && !showAddSession && (
         <div
           className={styles.card}
           style={{
@@ -1225,7 +2359,19 @@ export default function CoachSessions() {
         ) : null
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className={styles.card}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(min(100%, 520px), 1fr))',
+              gap: 16,
+              alignItems: 'stretch',
+            }}
+          >
+          <div
+            className={`${styles.card} ${styles.sessionsCalendar}`}
+            style={{ minWidth: 0 }}
+          >
             <div
               style={{
                 display: 'flex',
@@ -1237,15 +2383,24 @@ export default function CoachSessions() {
               }}
             >
               <div>
-                <div className={styles.cardTitle}>Training calendar</div>
+                <div
+                  className={styles.cardTitle}
+                  style={{ fontSize: 16 }}
+                >
+                  Training calendar
+                </div>
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 14,
                     color: 'var(--text-muted, #8892A4)',
                     marginTop: 3,
                   }}
                 >
-                  View all individual and group training sessions by date
+                  View coach-created sessions and player-added schedules that tag you.
+                  {googleSyncEnabled
+                    ? ' New coach sessions also sync to Google Calendar.'
+                    : ''}
+                  {' '}Double-click a date to add a session.
                 </div>
               </div>
 
@@ -1256,8 +2411,40 @@ export default function CoachSessions() {
                   justifyContent: 'flex-end',
                   gap: 10,
                   marginLeft: 'auto',
+                  flexWrap: 'wrap',
                 }}
               >
+                <button
+                  type="button"
+                  className={
+                    googleSyncEnabled
+                      ? styles.btnOutline
+                      : styles.btnPrimary
+                  }
+                  onClick={
+                    handleGoogleCalendarToggle
+                  }
+                  disabled={
+                    googleCalendarBusy
+                  }
+                  style={{
+                    padding: '7px 14px',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    opacity:
+                      googleCalendarBusy
+                        ? 0.7
+                        : 1,
+                  }}
+                >
+                  {googleCalendarBusy
+                    ? 'Please wait...'
+                    : googleSyncEnabled
+                      ? 'Disconnect Google Calendar'
+                      : 'Connect Google Calendar'}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => moveMonth(-1)}
@@ -1287,7 +2474,7 @@ export default function CoachSessions() {
                     width: 125,
                     textAlign: 'center',
                     fontSize: 14,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     color: 'var(--text, #0D1B3E)',
                     whiteSpace: 'nowrap',
                   }}
@@ -1334,8 +2521,8 @@ export default function CoachSessions() {
                   key={day}
                   style={{
                     textAlign: 'center',
-                    fontSize: 9,
-                    fontWeight: 800,
+                    fontSize: 12,
+                    fontWeight: 700,
                     color: 'var(--text-muted, #8892A4)',
                     textTransform: 'uppercase',
                     letterSpacing: 0.5,
@@ -1378,6 +2565,13 @@ export default function CoachSessions() {
                         date: cell.value,
                       }))
                     }}
+                    onDoubleClick={() => {
+                      setSelectedDate(cell.value)
+                      openNewSession(
+                        cell.value
+                      )
+                    }}
+                    title="Click to view this date. Double-click to add a training session."
                     style={{
                       minHeight: 58,
                       borderRadius: 14,
@@ -1400,8 +2594,8 @@ export default function CoachSessions() {
                   >
                     <div
                       style={{
-                        fontSize: 11,
-                        fontWeight: 800,
+                        fontSize: 13,
+                        fontWeight: 700,
                         color: isToday
                           ? '#1A5FFF'
                           : 'var(--text, #0D1B3E)',
@@ -1414,30 +2608,46 @@ export default function CoachSessions() {
                       <div
                         key={session.id}
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           lineHeight: 1.3,
                           borderRadius: 8,
                           padding: '3px 5px',
                           background:
-                            'color-mix(in srgb, #1A5FFF 12%, var(--card, #FFFFFF))',
-                          color: '#1A5FFF',
+                            session.is_player_tagged
+                              ? 'color-mix(in srgb, #7C3AED 12%, var(--card, #FFFFFF))'
+                              : 'color-mix(in srgb, #1A5FFF 12%, var(--card, #FFFFFF))',
+                          color:
+                            session.is_player_tagged
+                              ? '#7C3AED'
+                              : '#1A5FFF',
                           fontWeight: 700,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                         }}
-                        title={`${session.session_type} · ${formatTime(
+                        title={`${
+                          session.is_player_tagged
+                            ? `${
+                                studentMap.get(
+                                  String(
+                                    session.player_user_id
+                                  )
+                                )?.name || 'Player'
+                              } · `
+                            : ''
+                        }${session.session_type} · ${formatTime(
                           session.start_time
                         )}`}
                       >
-                        {formatTime(session.start_time)} {session.session_type}
+                        {formatTime(session.start_time)}{' '}
+                        {session.session_type}
                       </div>
                     ))}
 
                     {cell.sessions.length > 2 && (
                       <div
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           color: 'var(--text-muted, #8892A4)',
                           fontWeight: 700,
                         }}
@@ -1460,8 +2670,8 @@ export default function CoachSessions() {
               >
                 <div
                   style={{
-                    fontSize: 13,
-                    fontWeight: 800,
+                    fontSize: 15,
+                    fontWeight: 700,
                     color: 'var(--text, #0D1B3E)',
                     marginBottom: 8,
                   }}
@@ -1480,11 +2690,11 @@ export default function CoachSessions() {
                 {selectedDaySessions.length === 0 ? (
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 14,
                       color: 'var(--text-muted, #8892A4)',
                     }}
                   >
-                    No training sessions on this date.
+                    No sessions or tagged player schedules on this date.
                   </div>
                 ) : (
                   selectedDaySessions.map(session =>
@@ -1500,9 +2710,23 @@ export default function CoachSessions() {
               </div>
             )}
           </div>
-          <div className={styles.card}>
-            <div className={styles.cardTitle}>Upcoming sessions</div>
-            {upcomingSessions.length === 0 ? (
+          <div
+            className={styles.card}
+            style={{
+              minWidth: 0,
+              maxHeight: 620,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div
+              className={styles.cardTitle}
+              style={{ fontSize: 16 }}
+            >
+              Upcoming sessions
+            </div>
+            {upcomingCalendarItems.length === 0 ? (
               <div
                 style={{
                   fontSize: 13,
@@ -1514,22 +2738,34 @@ export default function CoachSessions() {
                 No upcoming sessions.
               </div>
             ) : (
-              upcomingSessions.map(session =>
-                renderSession(session, 'Upcoming')
-              )
+              <div
+                style={{
+                  minHeight: 0,
+                  overflowY: 'auto',
+                  paddingRight: 4,
+                }}
+              >
+                {upcomingCalendarItems.map(session =>
+                  renderSession(session, 'Upcoming')
+                )}
+              </div>
             )}
+          </div>
           </div>
 
           {pastSessions.length > 0 && (
             <div className={styles.card}>
-              <div className={styles.cardTitle}>
+              <div
+                className={styles.cardTitle}
+                style={{ fontSize: 16 }}
+              >
                 Awaiting completion
               </div>
 
               <div
                 style={{
                   marginBottom: 10,
-                  fontSize: 11,
+                  fontSize: 14,
                   color:
                     'var(--text-muted, #8892A4)',
                 }}
@@ -1548,7 +2784,10 @@ export default function CoachSessions() {
 
           {completedSessions.length > 0 && (
             <div className={styles.card}>
-              <div className={styles.cardTitle}>
+              <div
+                className={styles.cardTitle}
+                style={{ fontSize: 16 }}
+              >
                 Completed sessions
               </div>
 
@@ -1658,7 +2897,7 @@ export default function CoachSessions() {
                 <div
                   style={{
                     fontSize: 14,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     color: 'var(--text, #0D1B3E)',
                   }}
                 >
@@ -1708,7 +2947,7 @@ export default function CoachSessions() {
                   background: '#DC2626',
                   color: '#FFFFFF',
                   fontSize: 12,
-                  fontWeight: 800,
+                  fontWeight: 700,
                   cursor: deleting ? 'wait' : 'pointer',
                   opacity: deleting ? 0.65 : 1,
                 }}
@@ -1723,10 +2962,15 @@ export default function CoachSessions() {
       {showAddSession && (
         <div
           className={styles.modalOverlay}
-          onClick={event =>
-            event.target === event.currentTarget &&
-            setShowAddSession(false)
-          }
+          onClick={event => {
+            if (
+              event.target ===
+                event.currentTarget &&
+              !saving
+            ) {
+              closeSessionModal()
+            }
+          }}
         >
           <div
             className={styles.modal}
@@ -1738,15 +2982,41 @@ export default function CoachSessions() {
           >
             <div className={styles.modalHead}>
               <div className={styles.modalTitle}>
-                Add training session
+                {editingSession
+                  ? 'Edit training session'
+                  : 'Add training session'}
               </div>
               <button
                 className={styles.modalClose}
-                onClick={() => setShowAddSession(false)}
+                onClick={
+                  closeSessionModal
+                }
+                disabled={saving}
               >
                 ✕
               </button>
             </div>
+
+            {error && (
+              <div
+                role="alert"
+                style={{
+                  marginBottom: 14,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border:
+                    '1px solid color-mix(in srgb, #EF4444 30%, var(--line, #EEF1F8))',
+                  background:
+                    'color-mix(in srgb, #EF4444 8%, var(--card, #FFFFFF))',
+                  color: '#B91C1C',
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  fontWeight: 700,
+                }}
+              >
+                {error}
+              </div>
+            )}
 
             <div className={styles.g2} style={{ marginBottom: 0 }}>
               <div className={styles.formRow}>
@@ -1895,28 +3165,57 @@ export default function CoachSessions() {
                   alignItems: 'center',
                   gap: 10,
                   marginBottom: 8,
+                  flexWrap: 'wrap',
                 }}
               >
-                <label
-                  className={styles.formLabel}
-                  style={{ marginBottom: 0 }}
-                >
-                  Students attending
-                </label>
+                <div>
+                  <label
+                    className={styles.formLabel}
+                    style={{ marginBottom: 2 }}
+                  >
+                    Students attending
+                  </label>
 
-                <div style={{ display: 'flex', gap: 6 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color:
+                        'var(--text-muted, #8892A4)',
+                    }}
+                  >
+                    {sessionForm.players.length}{' '}
+                    {sessionForm.players.length === 1
+                      ? 'student'
+                      : 'students'}{' '}
+                    selected
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 6,
+                  }}
+                >
                   <button
                     type="button"
                     className={styles.btnOutline}
-                    style={{ padding: '5px 10px', fontSize: 11 }}
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: 11,
+                    }}
                     onClick={selectAllStudents}
                   >
                     Select all
                   </button>
+
                   <button
                     type="button"
                     className={styles.btnOutline}
-                    style={{ padding: '5px 10px', fontSize: 11 }}
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: 11,
+                    }}
                     onClick={clearStudents}
                   >
                     Clear
@@ -1924,36 +3223,119 @@ export default function CoachSessions() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                {students.map(student => {
-                  const selected = sessionForm.players.includes(student.id)
-
-                  return (
-                    <button
-                      key={student.id}
-                      type="button"
-                      onClick={() => toggleSessionPlayer(student.id)}
-                      style={{
-                        border: selected
-                          ? '1px solid #1A5FFF'
-                          : '1px solid var(--line, #EEF1F8)',
-                        padding: '6px 12px',
-                        borderRadius: 20,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        background: selected
-                          ? '#1A5FFF'
-                          : 'var(--soft, #EEF1F8)',
-                        color: selected
-                          ? '#FFFFFF'
-                          : 'var(--text-muted, #8892A4)',
-                      }}
-                    >
-                      {student.name}
-                    </button>
+              <input
+                className={styles.formInput}
+                value={studentSearch}
+                onChange={event =>
+                  setStudentSearch(
+                    event.target.value
                   )
-                })}
+                }
+                placeholder="Search student name or club"
+                style={{
+                  marginBottom: 8,
+                }}
+              />
+
+              <div
+                style={{
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                  border:
+                    '1px solid var(--line, #EEF1F8)',
+                  borderRadius: 12,
+                  padding: 8,
+                  background:
+                    'var(--card, #FFFFFF)',
+                }}
+              >
+                {filteredStudents.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '12px 8px',
+                      fontSize: 11,
+                      color:
+                        'var(--text-muted, #8892A4)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    No students found.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns:
+                        'repeat(2, minmax(0, 1fr))',
+                      gap: 7,
+                    }}
+                  >
+                    {filteredStudents.map(student => {
+                      const selected =
+                        sessionForm.players.includes(
+                          student.id
+                        )
+
+                      return (
+                        <button
+                          key={student.id}
+                          type="button"
+                          onClick={() =>
+                            toggleSessionPlayer(
+                              student.id
+                            )
+                          }
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            border: selected
+                              ? '1px solid #1A5FFF'
+                              : '1px solid var(--line, #EEF1F8)',
+                            padding: '8px 10px',
+                            borderRadius: 10,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            background: selected
+                              ? '#1A5FFF'
+                              : 'var(--soft, #F6F8FF)',
+                            color: selected
+                              ? '#FFFFFF'
+                              : 'var(--text, #0D1B3E)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent:
+                              'space-between',
+                            gap: 8,
+                            textAlign: 'left',
+                          }}
+                        >
+                          <span
+                            style={{
+                              overflow: 'hidden',
+                              textOverflow:
+                                'ellipsis',
+                              whiteSpace:
+                                'nowrap',
+                            }}
+                          >
+                            {student.name}
+                          </span>
+
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              flexShrink: 0,
+                              fontSize: 11,
+                            }}
+                          >
+                            {selected ? '✓' : '+'}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2042,7 +3424,9 @@ export default function CoachSessions() {
             >
               <button
                 className={styles.btnOutline}
-                onClick={() => setShowAddSession(false)}
+                onClick={
+                  closeSessionModal
+                }
                 disabled={saving}
               >
                 Cancel
@@ -2053,7 +3437,13 @@ export default function CoachSessions() {
                 onClick={handleSave}
                 disabled={saving}
               >
-                {saving ? 'Saving...' : 'Save session'}
+                {saving
+                  ? editingSession
+                    ? 'Updating...'
+                    : 'Saving...'
+                  : editingSession
+                    ? 'Update session'
+                    : 'Save session'}
               </button>
             </div>
           </div>

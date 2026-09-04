@@ -1,27 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
 import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
-import {
-  Avatar,
-  CoachPageHeader,
-  LevelBadge,
-} from './CoachShared'
-import CoachNotificationBell from "../Notifications/CoachNotificationBell";
+import { Avatar, CoachPageHeader, LevelBadge } from './CoachShared'
+import CoachNotificationBell from '../Notifications/CoachNotificationBell'
 
 const DEFAULT_SKILL = 50
-
-function getLocalISODate(date = new Date()) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
-
 const REPORT_REASON_OPTIONS = [
   'Harassment or bullying',
   'Fake or misleading profile',
@@ -32,6 +20,13 @@ const REPORT_REASON_OPTIONS = [
   'Other',
 ]
 
+function getLocalISODate(date = new Date()) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 function getPlayerId(row) {
   return row?.user_id || row?.player_id || row?.id || null
 }
@@ -41,67 +36,33 @@ function normalizeMatchResult(value) {
 }
 
 function getNumericValue(value) {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ''
-  ) {
-    return null
-  }
-
-  const directNumber = Number(value)
-
-  if (Number.isFinite(directNumber)) {
-    return directNumber
-  }
-
-  const numberMatch = String(value).match(/\d+(?:\.\d+)?/)
-
-  if (!numberMatch) return null
-
-  const parsedNumber = Number(numberMatch[0])
-
-  return Number.isFinite(parsedNumber)
-    ? parsedNumber
-    : null
+  if (value === null || value === undefined || value === '') return null
+  const direct = Number(value)
+  if (Number.isFinite(direct)) return direct
+  const match = String(value).match(/\d+(?:\.\d+)?/)
+  if (!match) return null
+  const parsed = Number(match[0])
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function getProfileAge(profile) {
-  const savedAge = getNumericValue(profile?.age)
-
-  if (savedAge !== null && savedAge >= 0) {
-    return savedAge
-  }
+  const saved = getNumericValue(profile?.age)
+  if (saved !== null && saved >= 0) return saved
 
   const birthValue =
-    profile?.date_of_birth ||
-    profile?.dateOfBirth ||
-    profile?.dob ||
-    null
+    profile?.date_of_birth || profile?.dateOfBirth || profile?.dob || null
 
   if (!birthValue) return null
-
-  const birthDate = new Date(birthValue)
-
-  if (Number.isNaN(birthDate.getTime())) {
-    return null
-  }
+  const birth = new Date(birthValue)
+  if (Number.isNaN(birth.getTime())) return null
 
   const today = new Date()
-  let age =
-    today.getFullYear() -
-    birthDate.getFullYear()
-
-  const monthDifference =
-    today.getMonth() -
-    birthDate.getMonth()
+  let age = today.getFullYear() - birth.getFullYear()
+  const diff = today.getMonth() - birth.getMonth()
 
   if (
-    monthDifference < 0 ||
-    (
-      monthDifference === 0 &&
-      today.getDate() < birthDate.getDate()
-    )
+    diff < 0 ||
+    (diff === 0 && today.getDate() < birth.getDate())
   ) {
     age -= 1
   }
@@ -110,7 +71,7 @@ function getProfileAge(profile) {
 }
 
 function getProfileExperienceYears(profile) {
-  const directExperienceFields = [
+  const directFields = [
     profile?.experience_years,
     profile?.years_experience,
     profile?.playing_experience_years,
@@ -118,86 +79,69 @@ function getProfileExperienceYears(profile) {
     profile?.experience,
   ]
 
-  for (const value of directExperienceFields) {
-    const parsedValue = getNumericValue(value)
-
-    if (parsedValue !== null && parsedValue >= 0) {
-      return Math.round(parsedValue)
-    }
+  for (const value of directFields) {
+    const parsed = getNumericValue(value)
+    if (parsed !== null && parsed >= 0) return Math.round(parsed)
   }
 
-  const playingSinceValue =
+  const playingSince =
     profile?.playing_since ||
     profile?.since ||
     profile?.started_playing_year ||
     profile?.start_year ||
     null
 
-  if (playingSinceValue) {
-    const textValue =
-      String(playingSinceValue).trim()
-
-    if (/^\d{4}$/.test(textValue)) {
-      const startYear = Number(textValue)
+  if (playingSince) {
+    const text = String(playingSince).trim()
+    if (/^\d{4}$/.test(text)) {
+      const startYear = Number(text)
       const currentYear = new Date().getFullYear()
-
-      if (
-        startYear >= 1900 &&
-        startYear <= currentYear
-      ) {
+      if (startYear >= 1900 && startYear <= currentYear) {
         return currentYear - startYear
       }
     }
 
-    const startDate = new Date(playingSinceValue)
-
+    const startDate = new Date(playingSince)
     if (!Number.isNaN(startDate.getTime())) {
       const currentYear = new Date().getFullYear()
       const startYear = startDate.getFullYear()
-
-      if (
-        startYear >= 1900 &&
-        startYear <= currentYear
-      ) {
+      if (startYear >= 1900 && startYear <= currentYear) {
         return currentYear - startYear
       }
     }
   }
 
-  const currentAge = getProfileAge(profile)
-  const startedPlayingAge = getNumericValue(
+  const age = getProfileAge(profile)
+  const startAge = getNumericValue(
     profile?.started_playing_age ??
       profile?.starting_age ??
       profile?.start_age
   )
 
   if (
-    currentAge !== null &&
-    startedPlayingAge !== null &&
-    startedPlayingAge >= 0 &&
-    startedPlayingAge <= currentAge
+    age !== null &&
+    startAge !== null &&
+    startAge >= 0 &&
+    startAge <= age
   ) {
-    return Math.max(
-      0,
-      Math.round(currentAge - startedPlayingAge)
-    )
+    return Math.max(0, Math.round(age - startAge))
   }
 
   return null
 }
 
 function buildPlayerMatchStats(matches = []) {
-  const sortedMatches = [...matches].sort((a, b) => {
-    const aDate = new Date(a.match_date || a.created_at || 0).getTime()
-    const bDate = new Date(b.match_date || b.created_at || 0).getTime()
-    return bDate - aDate
+  const sorted = [...matches].sort((a, b) => {
+    const ad = new Date(a.match_date || a.created_at || 0).getTime()
+    const bd = new Date(b.match_date || b.created_at || 0).getTime()
+    return bd - ad
   })
 
-  const wins = sortedMatches.filter(
+  const wins = sorted.filter(
     match => normalizeMatchResult(match.result) === 'win'
   ).length
 
-  const totalMatches = sortedMatches.length
+  const totalMatches = sorted.length
   const winRate = totalMatches
     ? Math.round((wins / totalMatches) * 100)
     : 0
@@ -205,7 +149,7 @@ function buildPlayerMatchStats(matches = []) {
   let streakCount = 0
   let streakType = ''
 
-  for (const match of sortedMatches) {
+  for (const match of sorted) {
     const result = normalizeMatchResult(match.result)
     if (result !== 'win' && result !== 'loss') continue
 
@@ -228,12 +172,87 @@ function buildPlayerMatchStats(matches = []) {
   }
 }
 
+
+function formatPlayerMatchDate(value) {
+  if (!value) return '—'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value)
+  }
+
+  return date.toLocaleDateString('en-MY', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+function getPlayerMatchOpponent(match = {}) {
+  const matchType = String(match.match_type || '').toLowerCase()
+
+  if (matchType === 'singles') {
+    return String(match.opponent_name || '').trim() || 'Unknown opponent'
+  }
+
+  const opponents = [
+    match.opponent_name,
+    match.opponent_name2,
+  ]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join(' & ')
+
+  return opponents || 'Unknown opponent'
+}
+
+function getPlayerMatchScore(match = {}) {
+  return [
+    match.score1,
+    match.score2,
+    match.score3,
+  ]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join(', ')
+}
+
+function getPlayerMatchResultStyle(result) {
+  const normalized = normalizeMatchResult(result)
+
+  if (normalized === 'win') {
+    return {
+      label: 'WIN',
+      color: '#16A34A',
+      background: '#F0FDF4',
+      border: '#BBF7D0',
+    }
+  }
+
+  if (normalized === 'loss') {
+    return {
+      label: 'LOSS',
+      color: '#DC2626',
+      background: '#FEF2F2',
+      border: '#FECACA',
+    }
+  }
+
+  return {
+    label: String(result || '—').toUpperCase(),
+    color: '#6B7280',
+    background: '#F3F4F6',
+    border: '#E5E7EB',
+  }
+}
+
 function getRelationshipStatus(row) {
-  const rawStatus = String(
+  const raw = String(
     row?.status ||
-    row?.relationship_status ||
-    row?.request_status ||
-    ''
+      row?.relationship_status ||
+      row?.request_status ||
+      ''
   )
     .trim()
     .toLowerCase()
@@ -249,36 +268,32 @@ function getRelationshipStatus(row) {
       'request_sent',
       'sent',
       'awaiting_response',
-    ].includes(rawStatus)
-  ) {
-    return 'pending'
-  }
+    ].includes(raw)
+  ) return 'pending'
 
-  if (['accepted', 'active', 'approved'].includes(rawStatus)) {
-    return 'accepted'
-  }
-
-  if (['declined', 'rejected'].includes(rawStatus)) {
-    return 'declined'
-  }
-
-  if (['removed', 'cancelled', 'canceled'].includes(rawStatus)) {
-    return 'removed'
-  }
-
-  return rawStatus
+  if (['accepted', 'active', 'approved'].includes(raw)) return 'accepted'
+  if (['declined', 'rejected'].includes(raw)) return 'declined'
+  if (['removed', 'cancelled', 'canceled'].includes(raw)) return 'removed'
+  return raw
 }
 
 function getRequestedBy(row) {
   return String(
     row?.requested_by ||
-    row?.requester_role ||
-    row?.created_by_role ||
-    ''
+      row?.requester_role ||
+      row?.created_by_role ||
+      ''
   ).toLowerCase()
 }
 
-function normalizePlayer(profile, skillRow, relationship, source = 'registered', matchStats = null) {
+function normalizePlayer(
+  profile,
+  skillRow,
+  relationship,
+  source = 'registered',
+  matchStats = null,
+  latestMatches = []
+) {
   const playerId = getPlayerId(profile)
   const status = getRelationshipStatus(relationship)
   const requestedBy = getRequestedBy(relationship)
@@ -288,18 +303,13 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered',
     profileId: profile?.id || null,
     source,
     isRegistered: source === 'registered' && Boolean(profile?.user_id),
-
     name:
       profile?.display_name ||
       profile?.full_name ||
       profile?.name ||
       profile?.username ||
       'Unnamed player',
-
-    club:
-      profile?.club ||
-      profile?.external_club ||
-      'No club',
+    club: profile?.club || profile?.external_club || 'No club',
     state: profile?.state || profile?.location || '',
     location: profile?.location || profile?.state || '',
     category:
@@ -307,7 +317,6 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered',
       profile?.category ||
       profile?.playing_category ||
       'Not specified',
-
     level:
       profile?.level ||
       profile?.playing_level ||
@@ -315,29 +324,19 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered',
       profile?.category ||
       profile?.player_category ||
       'Beginner',
-
     style:
       profile?.playing_style ||
       profile?.play_style ||
       profile?.style ||
       'All-round',
-
     dominantHand:
       profile?.dominant_hand ||
       profile?.hand ||
       profile?.playing_hand ||
       'Not specified',
-
     age: profile?.age ?? null,
-    height:
-      profile?.height_cm ??
-      profile?.height ??
-      null,
-
-    weight:
-      profile?.weight_kg ??
-      profile?.weight ??
-      null,
+    height: profile?.height_cm ?? profile?.height ?? null,
+    weight: profile?.weight_kg ?? profile?.weight ?? null,
     bio: profile?.bio || profile?.about || '',
     phone: profile?.phone || '',
     avatarUrl:
@@ -345,44 +344,44 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered',
       profile?.profile_picture ||
       profile?.photo_url ||
       null,
-
     matches: Number(
       matchStats?.matches ??
-      profile?.matches ??
-      profile?.total_matches ??
-      profile?.match_count ??
-      0
+        profile?.matches ??
+        profile?.total_matches ??
+        profile?.match_count ??
+        0
     ),
     winRate: Number(
       matchStats?.winRate ??
-      profile?.win_rate ??
-      profile?.winRate ??
-      0
+        profile?.win_rate ??
+        profile?.winRate ??
+        0
     ),
     streak:
       matchStats?.streak ||
       profile?.streak ||
       profile?.current_streak ||
       'W0',
-    experienceYears:
-      getProfileExperienceYears(profile),
+    latestMatches: Array.isArray(latestMatches)
+      ? latestMatches.slice(0, 3)
+      : [],
+    experienceYears: getProfileExperienceYears(profile),
     smash: Number(skillRow?.smash ?? DEFAULT_SKILL),
     defense: Number(skillRow?.defense ?? DEFAULT_SKILL),
     footwork: Number(skillRow?.footwork ?? DEFAULT_SKILL),
     dropShot: Number(
       skillRow?.drop_shot ??
-      skillRow?.dropshot ??
-      skillRow?.dropShot ??
-      DEFAULT_SKILL
+        skillRow?.dropshot ??
+        skillRow?.dropShot ??
+        DEFAULT_SKILL
     ),
     netPlay: Number(
       skillRow?.net_play ??
-      skillRow?.net ??
-      skillRow?.netplay ??
-      DEFAULT_SKILL
+        skillRow?.net ??
+        skillRow?.netplay ??
+        DEFAULT_SKILL
     ),
     serve: Number(skillRow?.serve ?? DEFAULT_SKILL),
-
     relationshipId: relationship?.id || null,
     relationshipStatus: status,
     relationshipMessage: relationship?.message || '',
@@ -393,402 +392,6 @@ function normalizePlayer(profile, skillRow, relationship, source = 'registered',
     pending: status === 'pending',
   }
 }
-
-
-
-function ReportPlayerModal({
-  player,
-  submitting,
-  onClose,
-  onSubmit,
-}) {
-  const [reason, setReason] = useState(REPORT_REASON_OPTIONS[0])
-  const [details, setDetails] = useState('')
-  const [formError, setFormError] = useState('')
-
-  useEffect(() => {
-    setReason(REPORT_REASON_OPTIONS[0])
-    setDetails('')
-    setFormError('')
-  }, [player?.id])
-
-  if (!player) return null
-
-  const handleSubmit = async event => {
-    event.preventDefault()
-
-    if (!reason) {
-      setFormError('Please select a report reason.')
-      return
-    }
-
-    if (reason === 'Other' && !details.trim()) {
-      setFormError('Please explain the reason for this report.')
-      return
-    }
-
-    setFormError('')
-
-    await onSubmit({
-      reason,
-      details: details.trim(),
-    })
-  }
-
-  return (
-    <div
-      role="presentation"
-      onMouseDown={event => {
-        if (
-          event.target === event.currentTarget &&
-          !submitting
-        ) {
-          onClose()
-        }
-      }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 10050,
-        background: 'rgba(13, 27, 62, 0.55)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-      }}
-    >
-      <form
-        onSubmit={handleSubmit}
-        className={styles.card}
-        style={{
-          width: 'min(520px, 100%)',
-          padding: 22,
-          background: 'var(--card, #FFFFFF)',
-          border: '1px solid var(--line, #EEF1F8)',
-          borderRadius: 18,
-          boxShadow: '0 24px 60px rgba(13,27,62,0.25)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: 12,
-            marginBottom: 18,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 18,
-                fontWeight: 800,
-                color: 'var(--text, #0D1B3E)',
-              }}
-            >
-              Report player
-            </div>
-
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: 12,
-                lineHeight: 1.55,
-                color: 'var(--text-muted, #8892A4)',
-              }}
-            >
-              Report {player.name} to the ShuttleTrack administrator.
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            aria-label="Close report form"
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 999,
-              border: '1px solid var(--line, #DDE3EF)',
-              background: 'var(--card, #FFFFFF)',
-              color: 'var(--text-muted, #8892A4)',
-              fontSize: 18,
-              cursor: submitting ? 'wait' : 'pointer',
-            }}
-          >
-            ×
-          </button>
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Reason</label>
-
-          <select
-            className={styles.formSelect}
-            value={reason}
-            onChange={event => setReason(event.target.value)}
-            disabled={submitting}
-            style={{ width: '100%' }}
-          >
-            {REPORT_REASON_OPTIONS.map(option => (
-              <option key={option}>{option}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>
-            Additional details
-          </label>
-
-          <textarea
-            className={styles.formInput}
-            rows={5}
-            maxLength={1000}
-            value={details}
-            onChange={event => setDetails(event.target.value)}
-            disabled={submitting}
-            placeholder="Explain what happened. Do not include passwords or financial information."
-            style={{
-              width: '100%',
-              resize: 'vertical',
-              fontFamily: 'inherit',
-            }}
-          />
-
-          <div
-            style={{
-              marginTop: 5,
-              textAlign: 'right',
-              color: 'var(--text-muted, #8892A4)',
-              fontSize: 10,
-            }}
-          >
-            {details.length}/1000
-          </div>
-        </div>
-
-        {formError && (
-          <div
-            style={{
-              marginBottom: 14,
-              padding: '11px 12px',
-              borderRadius: 10,
-              background: '#FEF2F2',
-              border: '1px solid #FECACA',
-              color: '#B91C1C',
-              fontSize: 12,
-            }}
-          >
-            {formError}
-          </div>
-        )}
-
-        <div
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 11,
-            background: '#FFF7ED',
-            color: '#9A3412',
-            fontSize: 11,
-            lineHeight: 1.6,
-          }}
-        >
-          Reports are reviewed by an administrator. Submit only genuine
-          safety or behaviour concerns.
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 9,
-          }}
-        >
-          <button
-            type="button"
-            className={styles.btnOutline}
-            onClick={onClose}
-            disabled={submitting}
-          >
-            Cancel
-          </button>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              border: 'none',
-              borderRadius: 10,
-              padding: '9px 15px',
-              background: '#DC2626',
-              color: '#FFFFFF',
-              fontSize: 12,
-              fontWeight: 800,
-              cursor: submitting ? 'wait' : 'pointer',
-              opacity: submitting ? 0.65 : 1,
-            }}
-          >
-            {submitting ? 'Submitting...' : 'Submit report'}
-          </button>
-        </div>
-      </form>
-    </div>
-  )
-}
-
-function PlayerRadarChart({ player, size = 330 }) {
-  const skills = [
-    { label: 'Smash', value: Number(player?.smash ?? 0) },
-    { label: 'Defense', value: Number(player?.defense ?? 0) },
-    { label: 'Footwork', value: Number(player?.footwork ?? 0) },
-    { label: 'Drop shot', value: Number(player?.dropShot ?? 0) },
-    { label: 'Net play', value: Number(player?.netPlay ?? 0) },
-    { label: 'Serve', value: Number(player?.serve ?? 0) },
-  ]
-
-  const center = size / 2
-  const radius = size * 0.31
-  const levels = 5
-
-  const pointAt = (index, percentage) => {
-    const angle =
-      (Math.PI * 2 * index) / skills.length - Math.PI / 2
-    const distance = radius * (percentage / 100)
-
-    return {
-      x: center + Math.cos(angle) * distance,
-      y: center + Math.sin(angle) * distance,
-    }
-  }
-
-  const dataPoints = skills
-    .map((skill, index) => {
-      const point = pointAt(
-        index,
-        Math.max(0, Math.min(100, skill.value))
-      )
-
-      return `${point.x},${point.y}`
-    })
-    .join(' ')
-
-  return (
-    <div
-      style={{
-        width: '100%',
-        display: 'flex',
-        justifyContent: 'center',
-        overflow: 'hidden',
-      }}
-    >
-      <svg
-        width="100%"
-        height="auto"
-        viewBox={`0 0 ${size} ${size}`}
-        style={{ maxWidth: size }}
-        aria-label="Player skill radar chart"
-      >
-        {[...Array(levels)].map((_, levelIndex) => {
-          const percentage =
-            ((levelIndex + 1) / levels) * 100
-
-          const points = skills
-            .map((_, index) => {
-              const point = pointAt(index, percentage)
-              return `${point.x},${point.y}`
-            })
-            .join(' ')
-
-          return (
-            <polygon
-              key={percentage}
-              points={points}
-              fill="none"
-              stroke="#DDE4F0"
-              strokeWidth="1"
-            />
-          )
-        })}
-
-        {skills.map((skill, index) => {
-          const outerPoint = pointAt(index, 100)
-
-          return (
-            <line
-              key={`axis-${skill.label}`}
-              x1={center}
-              y1={center}
-              x2={outerPoint.x}
-              y2={outerPoint.y}
-              stroke="#DDE4F0"
-              strokeWidth="1"
-            />
-          )
-        })}
-
-        <polygon
-          points={dataPoints}
-          fill="rgba(26, 95, 255, 0.2)"
-          stroke="#1A5FFF"
-          strokeWidth="2.5"
-          strokeLinejoin="round"
-        />
-
-        {skills.map((skill, index) => {
-          const point = pointAt(
-            index,
-            Math.max(0, Math.min(100, skill.value))
-          )
-
-          return (
-            <circle
-              key={`value-${skill.label}`}
-              cx={point.x}
-              cy={point.y}
-              r="4"
-              fill="#1A5FFF"
-            />
-          )
-        })}
-
-        {skills.map((skill, index) => {
-          const labelPoint = pointAt(index, 121)
-
-          return (
-            <g key={`label-${skill.label}`}>
-              <text
-                x={labelPoint.x}
-                y={labelPoint.y - 3}
-                textAnchor="middle"
-                fontSize="11"
-                fontWeight="700"
-                fill="#0D1B3E"
-              >
-                {skill.label}
-              </text>
-
-              <text
-                x={labelPoint.x}
-                y={labelPoint.y + 12}
-                textAnchor="middle"
-                fontSize="10"
-                fontWeight="700"
-                fill="#1A5FFF"
-              >
-                {skill.value}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-    </div>
-  )
-}
-
-
 
 function ProfileAvatar({ player, size = 56 }) {
   if (player?.avatarUrl) {
@@ -824,16 +427,9 @@ function ProfileSkillBar({ label, value, dim = false }) {
         marginBottom: 9,
       }}
     >
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--text-muted, #8892A4)',
-          textAlign: 'right',
-        }}
-      >
+      <div style={{ fontSize: 11, color: '#8892A4', textAlign: 'right' }}>
         {label}
       </div>
-
       <div
         style={{
           height: 7,
@@ -851,12 +447,11 @@ function ProfileSkillBar({ label, value, dim = false }) {
           }}
         />
       </div>
-
       <div
         style={{
           fontSize: 11,
           fontWeight: 800,
-          color: 'var(--text, #0D1B3E)',
+          color: '#0D1B3E',
           textAlign: 'right',
         }}
       >
@@ -869,23 +464,10 @@ function ProfileSkillBar({ label, value, dim = false }) {
 function ProfileInfoItem({ label, value }) {
   return (
     <div>
-      <div
-        style={{
-          fontSize: 10,
-          color: 'var(--text-muted, #8892A4)',
-          marginBottom: 3,
-        }}
-      >
+      <div style={{ fontSize: 10, color: '#8892A4', marginBottom: 3 }}>
         {label}
       </div>
-
-      <div
-        style={{
-          fontSize: 13,
-          fontWeight: 700,
-          color: 'var(--text, #0D1B3E)',
-        }}
-      >
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#0D1B3E' }}>
         {value || 'Not specified'}
       </div>
     </div>
@@ -894,9 +476,7 @@ function ProfileInfoItem({ label, value }) {
 
 function formatRelationshipDate(value) {
   if (!value) return 'No date'
-
   const date = new Date(value)
-
   if (Number.isNaN(date.getTime())) return 'No date'
 
   return date.toLocaleString('en-MY', {
@@ -957,12 +537,238 @@ function RequestHistoryBadge({ status }) {
   )
 }
 
+function PlayerRadarChart({ player, size = 330 }) {
+  const skills = [
+    ['Smash', Number(player?.smash ?? 0)],
+    ['Defense', Number(player?.defense ?? 0)],
+    ['Footwork', Number(player?.footwork ?? 0)],
+    ['Drop shot', Number(player?.dropShot ?? 0)],
+    ['Net play', Number(player?.netPlay ?? 0)],
+    ['Serve', Number(player?.serve ?? 0)],
+  ]
 
-function PlayerMetricIcon({
-  type,
-  color = 'currentColor',
-  size = 18,
-}) {
+  const center = size / 2
+  const radius = size * 0.31
+  const pointAt = (index, percentage) => {
+    const angle = (Math.PI * 2 * index) / skills.length - Math.PI / 2
+    const distance = radius * (percentage / 100)
+    return {
+      x: center + Math.cos(angle) * distance,
+      y: center + Math.sin(angle) * distance,
+    }
+  }
+
+  const dataPoints = skills
+    .map(([, value], index) => {
+      const point = pointAt(index, Math.max(0, Math.min(100, value)))
+      return `${point.x},${point.y}`
+    })
+    .join(' ')
+
+  return (
+    <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+      <svg width="100%" viewBox={`0 0 ${size} ${size}`} style={{ maxWidth: size }}>
+        {[1, 2, 3, 4, 5].map(level => {
+          const points = skills
+            .map((_, index) => {
+              const point = pointAt(index, level * 20)
+              return `${point.x},${point.y}`
+            })
+            .join(' ')
+
+          return (
+            <polygon
+              key={level}
+              points={points}
+              fill="none"
+              stroke="#DDE4F0"
+              strokeWidth="1"
+            />
+          )
+        })}
+
+        {skills.map(([label], index) => {
+          const point = pointAt(index, 100)
+          return (
+            <line
+              key={label}
+              x1={center}
+              y1={center}
+              x2={point.x}
+              y2={point.y}
+              stroke="#DDE4F0"
+            />
+          )
+        })}
+
+        <polygon
+          points={dataPoints}
+          fill="rgba(26,95,255,.2)"
+          stroke="#1A5FFF"
+          strokeWidth="2.5"
+        />
+
+        {skills.map(([label, value], index) => {
+          const point = pointAt(index, Math.max(0, Math.min(100, value)))
+          const text = pointAt(index, 121)
+
+          return (
+            <g key={label}>
+              <circle cx={point.x} cy={point.y} r="4" fill="#1A5FFF" />
+              <text
+                x={text.x}
+                y={text.y - 3}
+                textAnchor="middle"
+                fontSize="11"
+                fontWeight="700"
+                fill="#0D1B3E"
+              >
+                {label}
+              </text>
+              <text
+                x={text.x}
+                y={text.y + 12}
+                textAnchor="middle"
+                fontSize="10"
+                fontWeight="700"
+                fill="#1A5FFF"
+              >
+                {value}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
+function ReportPlayerModal({ player, submitting, onClose, onSubmit }) {
+  const [reason, setReason] = useState(REPORT_REASON_OPTIONS[0])
+  const [details, setDetails] = useState('')
+  const [formError, setFormError] = useState('')
+
+  useEffect(() => {
+    setReason(REPORT_REASON_OPTIONS[0])
+    setDetails('')
+    setFormError('')
+  }, [player?.id])
+
+  if (!player) return null
+
+  const handleSubmit = async event => {
+    event.preventDefault()
+
+    if (!reason) return setFormError('Please select a report reason.')
+    if (reason === 'Other' && !details.trim()) {
+      return setFormError('Please explain the reason for this report.')
+    }
+
+    setFormError('')
+    await onSubmit({ reason, details: details.trim() })
+  }
+
+  return (
+    <div
+      onMouseDown={event => {
+        if (event.target === event.currentTarget && !submitting) onClose()
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10050,
+        background: 'rgba(13,27,62,.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        className={styles.card}
+        style={{ width: 'min(520px,100%)', padding: 22 }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>Report player</div>
+            <div style={{ marginTop: 4, fontSize: 12, color: '#8892A4' }}>
+              Report {player.name} to the ShuttleTrack administrator.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={onClose}
+            disabled={submitting}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className={styles.formRow}>
+          <label className={styles.formLabel}>Reason</label>
+          <select
+            className={styles.formSelect}
+            value={reason}
+            onChange={event => setReason(event.target.value)}
+            disabled={submitting}
+            style={{ width: '100%' }}
+          >
+            {REPORT_REASON_OPTIONS.map(option => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.formRow}>
+          <label className={styles.formLabel}>Additional details</label>
+          <textarea
+            className={styles.formInput}
+            rows={5}
+            maxLength={1000}
+            value={details}
+            onChange={event => setDetails(event.target.value)}
+            disabled={submitting}
+            style={{ width: '100%', resize: 'vertical' }}
+          />
+        </div>
+
+        {formError && (
+          <div style={{ color: '#B91C1C', marginBottom: 12 }}>{formError}</div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            style={{
+              border: 0,
+              borderRadius: 10,
+              padding: '9px 15px',
+              background: '#DC2626',
+              color: '#fff',
+              fontWeight: 800,
+            }}
+          >
+            {submitting ? 'Submitting...' : 'Submit report'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function PlayerMetricIcon({ type, color = 'currentColor', size = 18 }) {
   const props = {
     width: size,
     height: size,
@@ -974,28 +780,10 @@ function PlayerMetricIcon({
   if (type === 'players') {
     return (
       <svg {...props}>
-        <circle
-          cx="9"
-          cy="8"
-          r="3"
-          stroke={color}
-          strokeWidth="1.8"
-        />
-        <circle
-          cx="17"
-          cy="9"
-          r="2.5"
-          stroke={color}
-          strokeWidth="1.8"
-        />
+        <circle cx="9" cy="8" r="3" stroke={color} strokeWidth="1.8" />
+        <circle cx="17" cy="9" r="2.5" stroke={color} strokeWidth="1.8" />
         <path
           d="M3.5 19c.6-3.2 2.5-5 5.5-5s4.9 1.8 5.5 5"
-          stroke={color}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M14 15c2.8 0 4.7 1.4 5.5 4"
           stroke={color}
           strokeWidth="1.8"
           strokeLinecap="round"
@@ -1007,25 +795,8 @@ function PlayerMetricIcon({
   if (type === 'requests') {
     return (
       <svg {...props}>
-        <circle
-          cx="9"
-          cy="8"
-          r="3"
-          stroke={color}
-          strokeWidth="1.8"
-        />
-        <path
-          d="M3.5 19c.6-3.2 2.5-5 5.5-5s4.9 1.8 5.5 5"
-          stroke={color}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M17 8v6M14 11h6"
-          stroke={color}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
+        <circle cx="9" cy="8" r="3" stroke={color} strokeWidth="1.8" />
+        <path d="M17 8v6M14 11h6" stroke={color} strokeWidth="1.8" />
       </svg>
     )
   }
@@ -1033,65 +804,21 @@ function PlayerMetricIcon({
   if (type === 'available') {
     return (
       <svg {...props}>
-        <circle
-          cx="11"
-          cy="11"
-          r="7"
-          stroke={color}
-          strokeWidth="1.8"
-        />
-        <path
-          d="m16.5 16.5 4 4"
-          stroke={color}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <circle
-          cx="11"
-          cy="9"
-          r="2"
-          stroke={color}
-          strokeWidth="1.6"
-        />
-        <path
-          d="M7.5 15c.5-2 1.7-3 3.5-3s3 1 3.5 3"
-          stroke={color}
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
+        <circle cx="11" cy="11" r="7" stroke={color} strokeWidth="1.8" />
+        <path d="m16.5 16.5 4 4" stroke={color} strokeWidth="1.8" />
       </svg>
     )
   }
 
-  if (type === 'history') {
-    return (
-      <svg {...props}>
-        <path
-          d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5"
-          stroke={color}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M4 4v4.5h4.5"
-          stroke={color}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M12 8v4l2.8 1.7"
-          stroke={color}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    )
-  }
-
-  return null
+  return (
+    <svg {...props}>
+      <path
+        d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5M4 4v4.5h4.5M12 8v4l2.8 1.7"
+        stroke={color}
+        strokeWidth="1.8"
+      />
+    </svg>
+  )
 }
 
 function PlayerStats({
@@ -1101,72 +828,37 @@ function PlayerStats({
   requestHistory = [],
 }) {
   const items = [
-    {
-      label: 'My players',
-      value: myPlayers.length,
-      color: '#1A5FFF',
-      background: '#E8EFFE',
-      icon: 'players',
-    },
-    {
-      label: 'Pending requests',
-      value: pendingPlayers.length,
-      color: '#00976C',
-      background: '#DDF8EF',
-      icon: 'requests',
-    },
-    {
-      label: 'Available players',
-      value: availablePlayers.length,
-      color: '#F59E0B',
-      background: '#FEF3C7',
-      icon: 'available',
-    },
-    {
-      label: 'Request history',
-      value: requestHistory.length,
-      color: '#7C3AED',
-      background: '#EDE9FE',
-      icon: 'history',
-    },
+    ['My players', myPlayers.length, '#1A5FFF', '#E8EFFE', 'players'],
+    ['Pending requests', pendingPlayers.length, '#00976C', '#DDF8EF', 'requests'],
+    ['Available players', availablePlayers.length, '#F59E0B', '#FEF3C7', 'available'],
+    ['Request history', requestHistory.length, '#7C3AED', '#EDE9FE', 'history'],
   ]
 
   return (
     <div className={styles.g4} style={{ marginBottom: 16 }}>
-      {items.map(item => (
-        <div key={item.label} className={styles.metric}>
+      {items.map(([label, value, color, background, icon]) => (
+        <div key={label} className={styles.metric}>
           <div
             style={{
               width: 40,
               height: 40,
               borderRadius: 10,
-              background: item.background,
+              background,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: 10,
             }}
           >
-            <PlayerMetricIcon
-              type={item.icon}
-              color={item.color}
-              size={18}
-            />
+            <PlayerMetricIcon type={icon} color={color} size={18} />
           </div>
-
           <div
             className={styles.metricVal}
-            style={{
-              color: item.color,
-              WebkitTextFillColor: item.color,
-            }}
+            style={{ color, WebkitTextFillColor: color }}
           >
-            {item.value}
+            {value}
           </div>
-
-          <div className={styles.metricLbl}>
-            {item.label}
-          </div>
+          <div className={styles.metricLbl}>{label}</div>
         </div>
       ))}
     </div>
@@ -1175,10 +867,10 @@ function PlayerStats({
 
 export default function CoachPlayers() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [players, setPlayers] = useState([])
-
   const [selectedPlayerId, setSelectedPlayerId] = useState(null)
   const [profilePlayerId, setProfilePlayerId] = useState(null)
 
@@ -1194,6 +886,16 @@ export default function CoachPlayers() {
 
   const [reportPlayer, setReportPlayer] = useState(null)
   const [submittingReport, setSubmittingReport] = useState(false)
+
+  const [showScanner, setShowScanner] = useState(false)
+  const [scannerStarting, setScannerStarting] = useState(false)
+  const [cameraActive, setCameraActive] = useState(false)
+  const [scanSuccess, setScanSuccess] = useState(false)
+  const [scanSuccessLabel, setScanSuccessLabel] = useState('')
+  const [scanError, setScanError] = useState('')
+
+  const qrScannerRef = useRef(null)
+  const scanCloseTimerRef = useRef(null)
 
   const showLoader = useLoadingDelay(loading, 350)
 
@@ -1221,52 +923,47 @@ export default function CoachPlayers() {
         skillsResult,
         relationshipsResult,
         matchesResult,
+        publicMatchesResult,
         directoryAccountsResult,
       ] = await Promise.all([
-        supabase
-          .from('player_profiles')
-          .select('*')
-          .order('display_name', { ascending: true }),
-
-        supabase
-          .from('public_players')
-          .select('*')
-          .order('name', { ascending: true }),
-
-        supabase
-          .from('player_skill_ratings')
-          .select('*'),
-
+        supabase.from('player_profiles').select('*').order('display_name', { ascending: true }),
+        supabase.from('public_players').select('*').order('name', { ascending: true }),
+        supabase.from('player_skill_ratings').select('*'),
         supabase
           .from('coach_player_relationships')
           .select('*')
           .eq('coach_user_id', user.id),
-
         supabase
           .from('player_matches')
           .select('*')
           .order('match_date', { ascending: false })
           .order('created_at', { ascending: false }),
-
+        supabase
+          .from('public_player_matches')
+          .select(`
+            *,
+            public_players (
+              id,
+              name
+            )
+          `)
+          .order('match_date', { ascending: false })
+          .order('created_at', { ascending: false }),
         supabase.rpc('get_directory_visible_accounts'),
       ])
 
-      if (profilesResult.error) throw profilesResult.error
-      if (publicPlayersResult.error) throw publicPlayersResult.error
-      if (skillsResult.error) throw skillsResult.error
-      if (relationshipsResult.error) throw relationshipsResult.error
-      if (matchesResult.error) throw matchesResult.error
-      if (directoryAccountsResult.error) {
-        throw directoryAccountsResult.error
-      }
+      const firstError = [
+        profilesResult.error,
+        publicPlayersResult.error,
+        skillsResult.error,
+        relationshipsResult.error,
+        matchesResult.error,
+        publicMatchesResult.error,
+        directoryAccountsResult.error,
+      ].find(Boolean)
 
-      /*
-       * Directory visibility:
-       * Active     -> visible
-       * Suspended  -> visible
-       * Disabled   -> hidden
-       * Removed    -> hidden
-       */
+      if (firstError) throw firstError
+
       const visibleDirectoryUserIds = new Set(
         (directoryAccountsResult.data || [])
           .map(row => row?.user_id && String(row.user_id))
@@ -1281,62 +978,123 @@ export default function CoachPlayers() {
       )
 
       const skillMap = new Map()
-
       ;(skillsResult.data || []).forEach(row => {
-        const possibleKeys = [
+        ;[
           row.player_id,
           row.user_id,
           row.player_user_id,
           row.profile_id,
-        ].filter(Boolean)
-
-        possibleKeys.forEach(key => {
-          skillMap.set(key, row)
-        })
+        ]
+          .filter(Boolean)
+          .forEach(key => skillMap.set(key, row))
       })
 
       const matchesByProfileId = new Map()
-
       ;(matchesResult.data || []).forEach(match => {
         const profileId = match.player_id || match.profile_id || null
         if (!profileId) return
-
-        const currentMatches = matchesByProfileId.get(profileId) || []
-        currentMatches.push(match)
-        matchesByProfileId.set(profileId, currentMatches)
+        const current = matchesByProfileId.get(profileId) || []
+        current.push(match)
+        matchesByProfileId.set(profileId, current)
       })
 
       const matchStatsByProfileId = new Map()
+      matchesByProfileId.forEach((list, profileId) => {
+        matchStatsByProfileId.set(profileId, buildPlayerMatchStats(list))
+      })
 
-      matchesByProfileId.forEach((playerMatches, profileId) => {
-        matchStatsByProfileId.set(
-          profileId,
-          buildPlayerMatchStats(playerMatches)
+      const publicMatchesByPlayerId = new Map()
+      const publicMatchesByPlayerName = new Map()
+
+      ;(publicMatchesResult.data || []).forEach(match => {
+        const joinedPlayer = Array.isArray(match.public_players)
+          ? match.public_players[0]
+          : match.public_players
+
+        const linkedPlayerId =
+          joinedPlayer?.id ||
+          match.player_id ||
+          match.public_player_id ||
+          null
+
+        const linkedPlayerName = String(
+          joinedPlayer?.name ||
+          match.player_name ||
+          ''
+        )
+          .trim()
+          .toLowerCase()
+
+        const normalizedMatch = {
+          ...match,
+          player_id: linkedPlayerId,
+          player_name:
+            joinedPlayer?.name ||
+            match.player_name ||
+            '',
+          match_type:
+            match.match_type ||
+            'Singles',
+        }
+
+        if (linkedPlayerId) {
+          const idKey = String(linkedPlayerId)
+          const currentById =
+            publicMatchesByPlayerId.get(idKey) || []
+
+          currentById.push(normalizedMatch)
+          publicMatchesByPlayerId.set(idKey, currentById)
+        }
+
+        if (linkedPlayerName) {
+          const currentByName =
+            publicMatchesByPlayerName.get(linkedPlayerName) || []
+
+          currentByName.push(normalizedMatch)
+          publicMatchesByPlayerName.set(linkedPlayerName, currentByName)
+        }
+      })
+
+      const sortMatchesNewestFirst = matches =>
+        [...matches].sort((a, b) => {
+          const aDate = new Date(
+            a.match_date || a.created_at || 0
+          ).getTime()
+
+          const bDate = new Date(
+            b.match_date || b.created_at || 0
+          ).getTime()
+
+          return bDate - aDate
+        })
+
+      publicMatchesByPlayerId.forEach((list, playerId) => {
+        publicMatchesByPlayerId.set(
+          playerId,
+          sortMatchesNewestFirst(list)
+        )
+      })
+
+      publicMatchesByPlayerName.forEach((list, playerName) => {
+        publicMatchesByPlayerName.set(
+          playerName,
+          sortMatchesNewestFirst(list)
         )
       })
 
       const allRegisteredProfiles = profilesResult.data || []
 
-      /*
-       * Build duplicate guards before filtering private profiles.
-       * This prevents a hidden registered account from reappearing
-       * through an old public_players row.
-       */
       const allRegisteredNames = new Set(
         allRegisteredProfiles
           .map(profile =>
-            String(profile.display_name || '')
-              .trim()
-              .toLowerCase()
+            String(profile.display_name || '').trim().toLowerCase()
           )
           .filter(Boolean)
       )
 
       const allRegisteredUserIds = new Set(
         allRegisteredProfiles
-          .map(profile =>
-            profile.user_id ? String(profile.user_id) : ''
-          )
+          .map(profile => (profile.user_id ? String(profile.user_id) : ''))
           .filter(Boolean)
       )
 
@@ -1345,11 +1103,6 @@ export default function CoachPlayers() {
           const playerId = getPlayerId(profile)
           if (!playerId || playerId === user.id) return false
 
-          /*
-           * Account-level visibility always wins.
-           * Disabled/removed players must disappear even if they
-           * previously had a relationship with this coach.
-           */
           if (
             profile.user_id &&
             !visibleDirectoryUserIds.has(String(profile.user_id))
@@ -1358,50 +1111,35 @@ export default function CoachPlayers() {
           }
 
           const relationship = relationshipMap.get(playerId)
-          const relationshipStatus =
-            getRelationshipStatus(relationship)
+          const status = getRelationshipStatus(relationship)
+          const connected = status === 'accepted' || status === 'pending'
 
-          /*
-           * Private profiles stay visible only when this coach already
-           * has a pending or accepted relationship with the player.
-           */
-          const connectedToThisCoach =
-            relationshipStatus === 'accepted' ||
-            relationshipStatus === 'pending'
-
-          return (
-            profile.profile_public !== false ||
-            connectedToThisCoach
-          )
+          return profile.profile_public !== false || connected
         })
         .map(profile => {
           const playerId = getPlayerId(profile)
-
           const skillRow =
             skillMap.get(playerId) ||
             skillMap.get(profile.id) ||
             null
+
+          const playerMatches =
+            matchesByProfileId.get(profile.id) || []
 
           return normalizePlayer(
             profile,
             skillRow,
             relationshipMap.get(playerId),
             'registered',
-            matchStatsByProfileId.get(profile.id) || null
+            matchStatsByProfileId.get(profile.id) || null,
+            playerMatches.slice(0, 3)
           )
         })
 
       const publicPlayers = (publicPlayersResult.data || [])
         .filter(row => {
-          const linkedUserId =
-            row.user_id ||
-            row.player_user_id ||
-            null
-
-          const name = String(row?.name || '')
-            .trim()
-            .toLowerCase()
-
+          const linkedUserId = row.user_id || row.player_user_id || null
+          const name = String(row?.name || '').trim().toLowerCase()
           if (!name) return false
 
           if (
@@ -1418,26 +1156,18 @@ export default function CoachPlayers() {
             return false
           }
 
-          if (allRegisteredNames.has(name)) {
-            return false
-          }
-
+          if (allRegisteredNames.has(name)) return false
           return true
         })
         .map(row => {
-          const linkedUserId =
-            row.user_id ||
-            row.player_user_id ||
-            null
-
+          const linkedUserId = row.user_id || row.player_user_id || null
           const relationship = linkedUserId
             ? relationshipMap.get(linkedUserId)
             : null
 
           const publicSkillRow =
             skillMap.get(linkedUserId) ||
-            skillMap.get(row.id) ||
-            {
+            skillMap.get(row.id) || {
               smash: row.smash,
               defense: row.defense,
               footwork: row.footwork,
@@ -1445,6 +1175,21 @@ export default function CoachPlayers() {
               net_play: row.net_play,
               serve: row.serve,
             }
+
+          const rowIdKey = String(row.id)
+          const rowNameKey = String(row.name || '')
+            .trim()
+            .toLowerCase()
+
+          const publicPlayerMatches =
+            publicMatchesByPlayerId.get(rowIdKey) ||
+            publicMatchesByPlayerName.get(rowNameKey) ||
+            []
+
+          const publicMatchStats =
+            publicPlayerMatches.length > 0
+              ? buildPlayerMatchStats(publicPlayerMatches)
+              : null
 
           return normalizePlayer(
             {
@@ -1463,22 +1208,22 @@ export default function CoachPlayers() {
             publicSkillRow,
             relationship,
             linkedUserId ? 'registered' : 'public',
-            matchStatsByProfileId.get(row.id) || null
+            publicMatchStats,
+            publicPlayerMatches.slice(0, 3)
           )
         })
         .filter(player => player.id)
 
-      const normalizedPlayers = [
-        ...registeredPlayers,
-        ...publicPlayers,
-      ].sort((a, b) => a.name.localeCompare(b.name))
-
-      setPlayers(normalizedPlayers)
+      setPlayers(
+        [...registeredPlayers, ...publicPlayers].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      )
     } catch (loadError) {
       console.error('CoachPlayers load error:', loadError)
       setError(
         loadError.message ||
-        'Unable to load players from the database.'
+          'Unable to load players from the database.'
       )
     } finally {
       setLoading(false)
@@ -1496,11 +1241,7 @@ export default function CoachPlayers() {
       .channel(`coach-players-updates-${user.id}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'player_profiles',
-        },
+        { event: '*', schema: 'public', table: 'player_profiles' },
         () => loadData()
       )
       .on(
@@ -1515,11 +1256,7 @@ export default function CoachPlayers() {
       )
       .on(
         'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'app_users',
-        },
+        { event: 'UPDATE', schema: 'public', table: 'app_users' },
         () => loadData()
       )
       .subscribe()
@@ -1537,9 +1274,7 @@ export default function CoachPlayers() {
   const pendingPlayers = useMemo(
     () =>
       players.filter(
-        player =>
-          player.pending &&
-          player.requestedBy !== 'coach'
+        player => player.pending && player.requestedBy !== 'coach'
       ),
     [players]
   )
@@ -1547,9 +1282,7 @@ export default function CoachPlayers() {
   const outgoingRequests = useMemo(
     () =>
       players.filter(
-        player =>
-          player.pending &&
-          player.requestedBy === 'coach'
+        player => player.pending && player.requestedBy === 'coach'
       ),
     [players]
   )
@@ -1563,19 +1296,19 @@ export default function CoachPlayers() {
           )
         )
         .sort((a, b) => {
-          const aDate = new Date(
+          const ad = new Date(
             a.relationshipRespondedAt ||
-            a.relationshipCreatedAt ||
-            0
+              a.relationshipCreatedAt ||
+              0
           ).getTime()
 
-          const bDate = new Date(
+          const bd = new Date(
             b.relationshipRespondedAt ||
-            b.relationshipCreatedAt ||
-            0
+              b.relationshipCreatedAt ||
+              0
           ).getTime()
 
-          return bDate - aDate
+          return bd - ad
         }),
     [players]
   )
@@ -1594,23 +1327,26 @@ export default function CoachPlayers() {
 
   const availablePlayers = useMemo(
     () =>
-      players.filter(
-        player => !player.assigned && !player.pending
-      ),
+      players.filter(player => !player.assigned && !player.pending),
     [players]
   )
 
   const searchResults = useMemo(() => {
     const keyword = playerSearch.trim().toLowerCase()
-
     if (!keyword) return availablePlayers
 
     return availablePlayers.filter(player =>
-      player.name.toLowerCase().includes(keyword) ||
-      player.club.toLowerCase().includes(keyword) ||
-      player.state.toLowerCase().includes(keyword) ||
-      player.category.toLowerCase().includes(keyword) ||
-      player.level.toLowerCase().includes(keyword)
+      [
+        player.name,
+        player.club,
+        player.state,
+        player.category,
+        player.level,
+      ].some(value =>
+        String(value || '')
+          .toLowerCase()
+          .includes(keyword)
+      )
     )
   }, [availablePlayers, playerSearch])
 
@@ -1654,9 +1390,7 @@ export default function CoachPlayers() {
             message: null,
             responded_at: null,
           },
-          {
-            onConflict: 'player_user_id,coach_user_id',
-          }
+          { onConflict: 'player_user_id,coach_user_id' }
         )
         .select()
         .single()
@@ -1683,10 +1417,7 @@ export default function CoachPlayers() {
         })
 
       if (notificationError) {
-        console.error(
-          'Coach request notification error:',
-          notificationError
-        )
+        console.error('Coach request notification error:', notificationError)
       }
 
       updatePlayerRelationship(player.id, {
@@ -1698,7 +1429,6 @@ export default function CoachPlayers() {
       })
 
       setPlayerSearch('')
-
       setSuccess(
         notificationError
           ? `The coaching request was sent to ${player.name}, but the notification could not be created.`
@@ -1737,7 +1467,6 @@ export default function CoachPlayers() {
         pending: false,
       })
 
-
       setSuccess(`${player.name}'s request was accepted.`)
     } catch (acceptError) {
       console.error('Accept request error:', acceptError)
@@ -1769,7 +1498,6 @@ export default function CoachPlayers() {
         pending: false,
       })
 
-
       setSuccess(`${player.name}'s request was declined.`)
     } catch (declineError) {
       console.error('Decline request error:', declineError)
@@ -1782,11 +1510,13 @@ export default function CoachPlayers() {
   const handleCancelOutgoingRequest = async player => {
     if (!user?.id || !player?.id) return
 
-    const confirmed = window.confirm(
-      `Cancel the coaching request sent to ${player.name}?`
-    )
-
-    if (!confirmed) return
+    if (
+      !window.confirm(
+        `Cancel the coaching request sent to ${player.name}?`
+      )
+    ) {
+      return
+    }
 
     clearMessages()
     setSavingId(player.id)
@@ -1823,7 +1553,7 @@ export default function CoachPlayers() {
       console.error('Cancel outgoing request error:', cancelError)
       setError(
         cancelError.message ||
-        'Unable to cancel the coaching request.'
+          'Unable to cancel the coaching request.'
       )
     } finally {
       setSavingId(null)
@@ -1831,11 +1561,13 @@ export default function CoachPlayers() {
   }
 
   const handleRemove = async player => {
-    const confirmed = window.confirm(
-      `Remove ${player.name} from My Players? Their future coach-created sessions will also be removed. Completed training history will be kept.`
-    )
-
-    if (!confirmed) return
+    if (
+      !window.confirm(
+        `Remove ${player.name} from My Players? Their future coach-created sessions will also be removed. Completed training history will be kept.`
+      )
+    ) {
+      return
+    }
 
     clearMessages()
     setSavingId(player.id)
@@ -1843,29 +1575,23 @@ export default function CoachPlayers() {
     try {
       const today = getLocalISODate()
 
-      const {
-        data: futureCoachSessions,
-        error: futureSessionsError,
-      } = await supabase
-        .from('coach_training_sessions')
-        .select('id, session_date')
-        .eq('coach_user_id', user.id)
-        .gte('session_date', today)
+      const { data: futureSessions, error: futureSessionsError } =
+        await supabase
+          .from('coach_training_sessions')
+          .select('id, session_date')
+          .eq('coach_user_id', user.id)
+          .gte('session_date', today)
 
       if (futureSessionsError) throw futureSessionsError
 
-      const futureSessionIds = (
-        futureCoachSessions || []
-      )
-        .map(session => session.id)
-        .filter(Boolean)
+      const ids = (futureSessions || []).map(row => row.id).filter(Boolean)
 
-      if (futureSessionIds.length > 0) {
+      if (ids.length) {
         const { error: scheduleDeleteError } = await supabase
           .from('player_schedule')
           .delete()
           .eq('user_id', player.id)
-          .in('coach_session_id', futureSessionIds)
+          .in('coach_session_id', ids)
 
         if (scheduleDeleteError) throw scheduleDeleteError
 
@@ -1873,7 +1599,7 @@ export default function CoachPlayers() {
           .from('coach_training_session_players')
           .delete()
           .eq('player_user_id', player.id)
-          .in('session_id', futureSessionIds)
+          .in('session_id', ids)
 
         if (assignmentDeleteError) throw assignmentDeleteError
       }
@@ -1889,61 +1615,26 @@ export default function CoachPlayers() {
 
       if (removeError) throw removeError
 
-      const coachName =
-        user?.user_metadata?.display_name ||
-        user?.user_metadata?.full_name ||
-        user?.user_metadata?.name ||
-        user?.email ||
-        'Your coach'
-
-      const { error: notificationError } = await supabase
-        .from('notifications')
-        .insert({
-          user_id: player.id,
-          title: 'Removed from coach',
-          message: `${coachName} removed you from their player list. Future coach-created sessions were removed, while your completed training history was kept.`,
-          source_type: 'coach_relationship_removed',
-          action_url: '/player/players',
-          is_read: false,
-        })
-
-      if (notificationError) {
-        console.error(
-          'Remove player notification error:',
-          notificationError
-        )
-      }
-
       updatePlayerRelationship(player.id, {
         relationshipStatus: 'removed',
         assigned: false,
         pending: false,
       })
 
-      if (selectedPlayerId === player.id) {
-        setSelectedPlayerId(null)
-      }
+      if (selectedPlayerId === player.id) setSelectedPlayerId(null)
+      if (profilePlayerId === player.id) setProfilePlayerId(null)
 
-      if (profilePlayerId === player.id) {
-        setProfilePlayerId(null)
-      }
-
-      setSuccess(
-        notificationError
-          ? `${player.name} was removed and their future sessions were cleared, but the notification could not be sent.`
-          : `${player.name} was removed from My Players. Their future sessions were cleared and a notification was sent.`
-      )
+      setSuccess(`${player.name} was removed from My Players.`)
     } catch (removeError) {
       console.error('Remove player error:', removeError)
       setError(
         removeError.message ||
-        'Unable to remove the player and clean up future sessions.'
+          'Unable to remove the player and clean up future sessions.'
       )
     } finally {
       setSavingId(null)
     }
   }
-
 
   const openReportPlayer = player => {
     if (!player?.isRegistered || !player?.id) {
@@ -1960,12 +1651,6 @@ export default function CoachPlayers() {
   const submitPlayerReport = async ({ reason, details }) => {
     if (!user?.id || !reportPlayer?.id) return
 
-    if (reportPlayer.id === user.id) {
-      setError('You cannot report your own account.')
-      setReportPlayer(null)
-      return
-    }
-
     setSubmittingReport(true)
     setError('')
 
@@ -1979,49 +1664,331 @@ export default function CoachPlayers() {
           subject: reportPlayer.name,
           description: [
             `Reason: ${reason}`,
-            `Details: ${
-              details || 'No additional details provided.'
-            }`,
+            `Details: ${details || 'No additional details provided.'}`,
           ].join('\n'),
           status: 'pending',
         })
 
       if (reportError) throw reportError
 
-      const reportedName = reportPlayer.name
-
+      const name = reportPlayer.name
       setReportPlayer(null)
       setSuccess(
-        `Your report about ${reportedName} was submitted for admin review.`
+        `Your report about ${name} was submitted for admin review.`
       )
     } catch (reportError) {
       console.error('Coach report player error:', reportError)
       setError(
         reportError.message ||
-        'Unable to submit the player report.'
+          'Unable to submit the player report.'
       )
     } finally {
       setSubmittingReport(false)
     }
   }
 
+  const stopQrScanner = useCallback(async () => {
+    if (scanCloseTimerRef.current) {
+      window.clearTimeout(scanCloseTimerRef.current)
+      scanCloseTimerRef.current = null
+    }
+
+    const scanner = qrScannerRef.current
+    qrScannerRef.current = null
+
+    if (scanner) {
+      try {
+        if (scanner.isScanning) await scanner.stop()
+      } catch (scannerStopError) {
+        console.warn('Unable to stop coach QR scanner:', scannerStopError)
+      }
+
+      try {
+        await scanner.clear()
+      } catch (scannerClearError) {
+        console.warn('Unable to clear coach QR scanner:', scannerClearError)
+      }
+    }
+
+    setCameraActive(false)
+    setScannerStarting(false)
+  }, [])
+
+  const closeScanner = useCallback(async () => {
+    await stopQrScanner()
+    setShowScanner(false)
+    setScanSuccess(false)
+    setScanSuccessLabel('')
+    setScanError('')
+  }, [stopQrScanner])
+
+  const processScannedValue = useCallback(
+    async decodedText => {
+      if (scanSuccess) return
+
+      const rawValue = String(decodedText || '').trim()
+      let verificationToken = ''
+
+      if (rawValue.startsWith('SHUTTLETRACK_VERIFY_SKILL:')) {
+        verificationToken = rawValue
+          .slice('SHUTTLETRACK_VERIFY_SKILL:'.length)
+          .trim()
+      } else if (rawValue.includes('/verify-skill/')) {
+        try {
+          const parsedUrl = rawValue.startsWith('/')
+            ? new URL(rawValue, window.location.origin)
+            : new URL(rawValue)
+
+          const parts = parsedUrl.pathname.split('/').filter(Boolean)
+          const index = parts.findIndex(part => part === 'verify-skill')
+
+          if (index >= 0) {
+            verificationToken = parts[index + 1] || ''
+          }
+        } catch {
+          const marker = '/verify-skill/'
+          const index = rawValue.indexOf(marker)
+
+          if (index >= 0) {
+            verificationToken = rawValue
+              .slice(index + marker.length)
+              .split(/[?#/]/)[0]
+              .trim()
+          }
+        }
+      }
+
+      if (verificationToken) {
+        setScanError('')
+        setScanSuccess(true)
+        setScanSuccessLabel('Verification QR found')
+
+        if (qrScannerRef.current?.isScanning) {
+          try {
+            await qrScannerRef.current.pause(true)
+          } catch {}
+        }
+
+        scanCloseTimerRef.current = window.setTimeout(async () => {
+          await stopQrScanner()
+          setShowScanner(false)
+          setScanSuccess(false)
+          setScanSuccessLabel('')
+          setScanError('')
+          navigate(
+            `/verify-skill/${encodeURIComponent(verificationToken)}`
+          )
+        }, 700)
+
+        return
+      }
+
+      let scannedUserId = ''
+
+      if (rawValue.startsWith('SHUTTLETRACK_PLAYER:')) {
+        scannedUserId = rawValue
+          .slice('SHUTTLETRACK_PLAYER:'.length)
+          .trim()
+      } else {
+        try {
+          const scannedUrl = rawValue.startsWith('/')
+            ? new URL(rawValue, window.location.origin)
+            : new URL(rawValue)
+
+          const parts = scannedUrl.pathname.split('/').filter(Boolean)
+          const index = parts.findIndex(
+            part =>
+              part === 'player' ||
+              part === 'p' ||
+              part === 'scan'
+          )
+
+          scannedUserId =
+            index >= 0
+              ? parts[index + 1] || parts[parts.length - 1] || ''
+              : ''
+        } catch {
+          scannedUserId = ''
+        }
+      }
+
+      if (!scannedUserId) {
+        setScanError(
+          'This is not a valid ShuttleTrack QR code. Scan a player QR or skill verification QR.'
+        )
+        return
+      }
+
+      const scannedPlayer = players.find(
+        player =>
+          String(player.id || '') === String(scannedUserId) ||
+          String(player.profileId || '') === String(scannedUserId)
+      )
+
+      if (!scannedPlayer) {
+        setScanError(
+          'Player profile not found. The profile may be private, hidden, or unavailable.'
+        )
+        return
+      }
+
+      setScanError('')
+      setScanSuccess(true)
+      setScanSuccessLabel('Player found')
+      setProfilePlayerId(scannedPlayer.id)
+
+      if (qrScannerRef.current?.isScanning) {
+        try {
+          await qrScannerRef.current.pause(true)
+        } catch {}
+      }
+
+      scanCloseTimerRef.current = window.setTimeout(
+        async () => closeScanner(),
+        900
+      )
+    },
+    [
+      closeScanner,
+      navigate,
+      players,
+      scanSuccess,
+      stopQrScanner,
+    ]
+  )
+
+  const startQrScanner = useCallback(async () => {
+    if (scannerStarting || cameraActive || scanSuccess) return
+
+    setScanError('')
+
+    try {
+      await stopQrScanner()
+      setScannerStarting(true)
+
+      const reader = document.getElementById(
+        'coach-shuttletrack-qr-reader'
+      )
+
+      if (!reader) {
+        throw new Error(
+          'Scanner area is not ready. Please reopen the scanner.'
+        )
+      }
+
+      const scanner = new Html5Qrcode(
+        'coach-shuttletrack-qr-reader',
+        { verbose: false }
+      )
+
+      qrScannerRef.current = scanner
+
+      let cameraConfig = { facingMode: 'environment' }
+
+      try {
+        const cameras = await Html5Qrcode.getCameras()
+
+        if (cameras.length > 0) {
+          const backCamera = cameras.find(camera =>
+            /back|rear|environment/i.test(camera.label || '')
+          )
+          cameraConfig = backCamera?.id || cameras[0].id
+        }
+      } catch {}
+
+      await scanner.start(
+        cameraConfig,
+        {
+          fps: 10,
+          qrbox: (width, height) => {
+            const size = Math.floor(Math.min(width, height) * 0.72)
+            return { width: size, height: size }
+          },
+          aspectRatio: 1,
+        },
+        processScannedValue,
+        () => {}
+      )
+
+      setCameraActive(true)
+    } catch (scannerError) {
+      console.error('Failed to start coach QR scanner:', scannerError)
+      setScanError(
+        scannerError?.message ||
+          'Camera could not start. Allow camera permission and try again.'
+      )
+      await stopQrScanner()
+    } finally {
+      setScannerStarting(false)
+    }
+  }, [
+    cameraActive,
+    processScannedValue,
+    scanSuccess,
+    scannerStarting,
+    stopQrScanner,
+  ])
+
+  useEffect(() => {
+    if (!showScanner) return undefined
+
+    const timer = window.setTimeout(() => startQrScanner(), 150)
+    return () => window.clearTimeout(timer)
+  }, [showScanner, startQrScanner])
+
+  useEffect(() => {
+    return () => {
+      if (scanCloseTimerRef.current) {
+        window.clearTimeout(scanCloseTimerRef.current)
+      }
+
+      const scanner = qrScannerRef.current
+      qrScannerRef.current = null
+
+      if (scanner?.isScanning) {
+        scanner.stop().catch(() => {})
+      }
+    }
+  }, [])
+
   return (
-    <div>
+    <div className={styles.coachReadablePage}>
       <CoachPageHeader
         title="My Players"
         subtitle="Manage your players and write progress notes"
-      
+        showFindPlayer={false}
         rightAction={
-          <CoachNotificationBell
-            supabase={supabase}
-            mode="players"
-            title="Player notifications"
-          />
-        }/>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={() => {
+                setScanError('')
+                setScanSuccess(false)
+                setScanSuccessLabel('')
+                setShowScanner(true)
+              }}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              Scan QR
+            </button>
 
-      
-      
-<div
+            <CoachNotificationBell
+              supabase={supabase}
+              mode="players"
+              title="Player notifications"
+            />
+          </div>
+        }
+      />
+
+      <div
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
@@ -2085,9 +2052,7 @@ export default function CoachPlayers() {
             setShowRequestHistory(current => !current)
             setShowRequests(false)
           }}
-          style={{
-            fontSize: 12,
-          }}
+          style={{ fontSize: 12 }}
         >
           Request history
         </button>
@@ -2139,14 +2104,8 @@ export default function CoachPlayers() {
       ) : (
         <>
           {showRequests && pendingPlayers.length > 0 && (
-            <div
-              className={styles.card}
-              style={{ marginBottom: 14 }}
-            >
-              <div
-                className={styles.cardTitle}
-                style={{ marginBottom: 12 }}
-              >
+            <div className={styles.card} style={{ marginBottom: 14 }}>
+              <div className={styles.cardTitle} style={{ marginBottom: 12 }}>
                 Player requests ({pendingPlayers.length})
               </div>
 
@@ -2164,7 +2123,7 @@ export default function CoachPlayers() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: 10,
-                      padding: '12px',
+                      padding: 12,
                       background: '#F7F9FF',
                       borderRadius: 10,
                     }}
@@ -2242,14 +2201,8 @@ export default function CoachPlayers() {
           )}
 
           {showRequests && outgoingRequests.length > 0 && (
-            <div
-              className={styles.card}
-              style={{ marginBottom: 14 }}
-            >
-              <div
-                className={styles.cardTitle}
-                style={{ marginBottom: 12 }}
-              >
+            <div className={styles.card} style={{ marginBottom: 14 }}>
+              <div className={styles.cardTitle} style={{ marginBottom: 12 }}>
                 Requests sent ({outgoingRequests.length})
               </div>
 
@@ -2267,7 +2220,7 @@ export default function CoachPlayers() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: 10,
-                      padding: '12px',
+                      padding: 12,
                       background: '#F7F9FF',
                       borderRadius: 10,
                     }}
@@ -2284,7 +2237,6 @@ export default function CoachPlayers() {
                       >
                         {player.name}
                       </div>
-
                       <div
                         style={{
                           fontSize: 11,
@@ -2309,9 +2261,7 @@ export default function CoachPlayers() {
                       type="button"
                       className={styles.btnOutline}
                       disabled={savingId === player.id}
-                      onClick={() =>
-                        handleCancelOutgoingRequest(player)
-                      }
+                      onClick={() => handleCancelOutgoingRequest(player)}
                       style={{
                         fontSize: 11,
                         color: '#DC2626',
@@ -2330,10 +2280,7 @@ export default function CoachPlayers() {
           )}
 
           {showRequestHistory && (
-            <div
-              className={styles.card}
-              style={{ marginBottom: 14 }}
-            >
+            <div className={styles.card} style={{ marginBottom: 14 }}>
               <div
                 style={{
                   display: 'flex',
@@ -2343,9 +2290,7 @@ export default function CoachPlayers() {
                   marginBottom: 12,
                 }}
               >
-                <div className={styles.cardTitle}>
-                  Request history
-                </div>
+                <div className={styles.cardTitle}>Request history</div>
 
                 <button
                   type="button"
@@ -2383,7 +2328,7 @@ export default function CoachPlayers() {
                         display: 'flex',
                         alignItems: 'center',
                         gap: 10,
-                        padding: '12px',
+                        padding: 12,
                         background: '#F7F9FF',
                         borderRadius: 10,
                       }}
@@ -2483,10 +2428,7 @@ export default function CoachPlayers() {
                 gap: 8,
               }}
             >
-              <div
-                className={styles.card}
-                style={{ padding: 16 }}
-              >
+              <div className={styles.card} style={{ padding: 16 }}>
                 <div
                   style={{
                     display: 'flex',
@@ -2516,15 +2458,14 @@ export default function CoachPlayers() {
                   </button>
                 </div>
 
-                  <input
-                    className={styles.formInput}
-                    placeholder="Search by name, club, state or category..."
-                    value={playerSearch}
-                    onChange={event =>
-                      setPlayerSearch(event.target.value)
-                    }
-                    autoFocus
-                  />
+                <input
+                  className={styles.formInput}
+                  placeholder="Search by name, club, state or category..."
+                  value={playerSearch}
+                  onChange={event =>
+                    setPlayerSearch(event.target.value)
+                  }
+                />
 
                 {showSearch && (
                   <div
@@ -2538,116 +2479,92 @@ export default function CoachPlayers() {
                       paddingRight: 4,
                     }}
                   >
-                      {searchResults.length === 0 && (
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: '#8892A4',
-                            padding: '8px 0',
-                          }}
-                        >
-                          No available players found.
-                        </div>
-                      )}
+                    {searchResults.length === 0 && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#8892A4',
+                          padding: '8px 0',
+                        }}
+                      >
+                        No available players found.
+                      </div>
+                    )}
 
-                      {searchResults.map(player => (
-                        <div
-                          key={player.id}
-                          role="button"
-                          tabIndex={0}
-                          title={`View ${player.name}'s profile`}
-                          onClick={() => setProfilePlayerId(player.id)}
-                          onKeyDown={event => {
-                            if (
-                              event.key === 'Enter' ||
-                              event.key === ' '
-                            ) {
-                              event.preventDefault()
-                              setProfilePlayerId(player.id)
-                            }
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            padding: '10px 12px',
-                            background: 'var(--soft, #F7F9FF)',
-                            border: '1px solid transparent',
-                            borderRadius: 10,
-                            cursor: 'pointer',
-                            transition:
-                              'background 0.15s ease, border-color 0.15s ease',
-                          }}
-                          onMouseEnter={event => {
-                            event.currentTarget.style.background =
-                              'color-mix(in srgb, #1A5FFF 8%, var(--card, #FFFFFF))'
-                            event.currentTarget.style.borderColor =
-                              'color-mix(in srgb, #1A5FFF 28%, var(--line, #DDE3EF))'
-                          }}
-                          onMouseLeave={event => {
-                            event.currentTarget.style.background =
-                              'var(--soft, #F7F9FF)'
-                            event.currentTarget.style.borderColor =
-                              'transparent'
-                          }}
-                        >
-                          <Avatar name={player.name} size={32} />
+                    {searchResults.map(player => (
+                      <div
+                        key={player.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setProfilePlayerId(player.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '10px 12px',
+                          background: 'var(--soft, #F7F9FF)',
+                          borderRadius: 10,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Avatar name={player.name} size={32} />
 
-                          <div style={{ flex: 1 }}>
-                            <div
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 600,
-                                color: '#0D1B3E',
-                              }}
-                            >
-                              {player.name}
-                            </div>
-
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#8892A4',
-                              }}
-                            >
-                              {player.club} • {player.state || 'No state'}
-                            </div>
+                        <div style={{ flex: 1 }}>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: '#0D1B3E',
+                            }}
+                          >
+                            {player.name}
                           </div>
 
-                          <LevelBadge level={player.level} />
-
-                          {player.isRegistered ? (
-                            <button
-                              type="button"
-                              className={styles.btnPrimary}
-                              disabled={savingId === player.id}
-                              onClick={event => {
-                                event.stopPropagation()
-                                handleAddPlayer(player)
-                              }}
-                              style={{
-                                fontSize: 11,
-                                padding: '4px 12px',
-                              }}
-                            >
-                              {savingId === player.id ? 'Sending...' : '+ Request'}
-                            </button>
-                          ) : (
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: '#8892A4',
-                                fontWeight: 600,
-                                padding: '4px 8px',
-                              }}
-                            >
-                              View only
-                            </span>
-                          )}
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: '#8892A4',
+                            }}
+                          >
+                            {player.club} • {player.state || 'No state'}
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+
+                        <LevelBadge level={player.level} />
+
+                        {player.isRegistered ? (
+                          <button
+                            type="button"
+                            className={styles.btnPrimary}
+                            disabled={savingId === player.id}
+                            onClick={event => {
+                              event.stopPropagation()
+                              handleAddPlayer(player)
+                            }}
+                            style={{
+                              fontSize: 11,
+                              padding: '4px 12px',
+                            }}
+                          >
+                            {savingId === player.id
+                              ? 'Sending...'
+                              : '+ Request'}
+                          </button>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: '#8892A4',
+                              fontWeight: 600,
+                            }}
+                          >
+                            View only
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {showSearch && playerSearch && (
                   <button
@@ -2674,7 +2591,8 @@ export default function CoachPlayers() {
                     color: '#8892A4',
                   }}
                 >
-                  No players assigned yet. Accept a request or add one from Available Players.
+                  No players assigned yet. Accept a request or add one
+                  from Available Players.
                 </div>
               )}
 
@@ -2696,7 +2614,7 @@ export default function CoachPlayers() {
                     cursor: 'pointer',
                     background:
                       selectedPlayerId === player.id
-                        ? 'rgba(26, 95, 255, 0.14)'
+                        ? 'rgba(26,95,255,.14)'
                         : undefined,
                     border:
                       selectedPlayerId === player.id
@@ -2711,7 +2629,6 @@ export default function CoachPlayers() {
                       style={{
                         fontSize: 13,
                         fontWeight: 700,
-                        color: 'inherit',
                       }}
                     >
                       {player.name}
@@ -2735,12 +2652,10 @@ export default function CoachPlayers() {
                       }}
                     >
                       <LevelBadge level={player.level} />
-
                       <span
                         style={{
                           fontSize: 10,
-                          background: 'rgba(136, 146, 164, 0.14)',
-                          color: 'inherit',
+                          background: 'rgba(136,146,164,.14)',
                           padding: '2px 8px',
                           borderRadius: 20,
                           fontWeight: 600,
@@ -2802,55 +2717,46 @@ export default function CoachPlayers() {
                   Select a player
                 </div>
               ) : (
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10,
-                  }}
-                >
-                  <div className={styles.card}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        marginBottom: 16,
-                      }}
-                    >
-                      <Avatar name={selectedPlayer.name} size={44} />
+                <div className={styles.card}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <Avatar name={selectedPlayer.name} size={44} />
 
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: 15,
-                            fontWeight: 800,
-                            color: '#0D1B3E',
-                          }}
-                        >
-                          {selectedPlayer.name}
-                        </div>
-
-                        <div style={{ fontSize: 12, color: '#8892A4' }}>
-                          {selectedPlayer.club}
-                        </div>
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 800,
+                          color: '#0D1B3E',
+                        }}
+                      >
+                        {selectedPlayer.name}
                       </div>
 
-                      <button
-                        type="button"
-                        className={styles.btnOutline}
-                        onClick={() => setProfilePlayerId(selectedPlayer.id)}
-                      >
-                        View profile
-                      </button>
+                      <div style={{ fontSize: 12, color: '#8892A4' }}>
+                        {selectedPlayer.club}
+                      </div>
                     </div>
 
-                    <div className={styles.cardTitle}>
-                      Skill profile
-                    </div>
-
-                    <PlayerRadarChart player={selectedPlayer} />
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      onClick={() =>
+                        setProfilePlayerId(selectedPlayer.id)
+                      }
+                    >
+                      View profile
+                    </button>
                   </div>
+
+                  <div className={styles.cardTitle}>Skill profile</div>
+                  <PlayerRadarChart player={selectedPlayer} />
                 </div>
               )}
             </div>
@@ -2865,7 +2771,7 @@ export default function CoachPlayers() {
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            background: 'rgba(13, 27, 62, 0.52)',
+            background: 'rgba(13,27,62,.52)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2876,11 +2782,10 @@ export default function CoachPlayers() {
             className={styles.card}
             onClick={event => event.stopPropagation()}
             style={{
-              width: 'min(820px, 100%)',
+              width: 'min(820px,100%)',
               maxHeight: '90vh',
               overflowY: 'auto',
               padding: 0,
-              background: 'var(--card, #FFFFFF)',
             }}
           >
             <div
@@ -2892,18 +2797,18 @@ export default function CoachPlayers() {
                 alignItems: 'center',
                 gap: 14,
                 padding: '20px 22px 16px',
-                borderBottom: '1px solid var(--line, #EEF1F8)',
-                background: 'var(--card, #FFFFFF)',
+                borderBottom: '1px solid #EEF1F8',
+                background: '#fff',
               }}
             >
               <ProfileAvatar player={profilePlayer} size={58} />
 
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ flex: 1 }}>
                 <div
                   style={{
                     fontSize: 19,
                     fontWeight: 800,
-                    color: 'var(--text, #0D1B3E)',
+                    color: '#0D1B3E',
                   }}
                 >
                   {profilePlayer.name}
@@ -2912,7 +2817,7 @@ export default function CoachPlayers() {
                 <div
                   style={{
                     fontSize: 12,
-                    color: 'var(--text-muted, #8892A4)',
+                    color: '#8892A4',
                     marginTop: 3,
                   }}
                 >
@@ -2928,20 +2833,18 @@ export default function CoachPlayers() {
                   }}
                 >
                   <LevelBadge level={profilePlayer.level} />
-
                   <span
                     style={{
                       fontSize: 10,
                       padding: '2px 8px',
                       borderRadius: 999,
                       fontWeight: 700,
-                      background: 'var(--soft, #F3F4F6)',
-                      color: 'var(--text-muted, #6B7280)',
+                      background: '#F3F4F6',
+                      color: '#6B7280',
                     }}
                   >
                     {profilePlayer.style}
                   </span>
-
                 </div>
               </div>
 
@@ -2966,57 +2869,43 @@ export default function CoachPlayers() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gridTemplateColumns: 'repeat(3,minmax(0,1fr))',
                     gap: 10,
                     marginBottom: 18,
                   }}
                 >
                   {[
-                    {
-                      label: 'Matches',
-                      value: profilePlayer.matches,
-                      color: 'var(--text, #0D1B3E)',
-                    },
-                    {
-                      label: 'Win rate',
-                      value: `${profilePlayer.winRate}%`,
-                      color: '#1A5FFF',
-                    },
-                    {
-                      label: 'Streak',
-                      value: profilePlayer.streak,
-                      color: String(profilePlayer.streak).startsWith('W')
+                    ['Matches', profilePlayer.matches, '#0D1B3E'],
+                    ['Win rate', `${profilePlayer.winRate}%`, '#1A5FFF'],
+                    [
+                      'Streak',
+                      profilePlayer.streak,
+                      String(profilePlayer.streak).startsWith('W')
                         ? '#00A878'
                         : '#DC2626',
-                    },
-                  ].map(stat => (
+                    ],
+                  ].map(([label, value, color]) => (
                     <div
-                      key={stat.label}
+                      key={label}
                       style={{
                         padding: '11px 10px',
                         borderRadius: 11,
                         textAlign: 'center',
-                        background: 'var(--soft, #F6F8FF)',
+                        background: '#F6F8FF',
                       }}
                     >
-                      <div
-                        style={{
-                          fontSize: 10,
-                          color: 'var(--text-muted, #8892A4)',
-                        }}
-                      >
-                        {stat.label}
+                      <div style={{ fontSize: 10, color: '#8892A4' }}>
+                        {label}
                       </div>
-
                       <div
                         style={{
                           marginTop: 2,
                           fontSize: 17,
                           fontWeight: 800,
-                          color: stat.color,
+                          color,
                         }}
                       >
-                        {stat.value}
+                        {value}
                       </div>
                     </div>
                   ))}
@@ -3024,7 +2913,144 @@ export default function CoachPlayers() {
 
                 <div
                   style={{
-                    borderTop: '1px solid var(--line, #EEF1F8)',
+                    borderTop: '1px solid #EEF1F8',
+                    paddingTop: 16,
+                    marginBottom: 18,
+                  }}
+                >
+                  <div className={styles.cardTitle}>Latest matches</div>
+
+                  {profilePlayer.latestMatches?.length > 0 ? (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        borderRadius: 12,
+                        background: '#F6F8FF',
+                        border: '1px solid #EEF1F8',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {profilePlayer.latestMatches.map((match, index) => {
+                        const resultStyle =
+                          getPlayerMatchResultStyle(match.result)
+                        const opponent =
+                          getPlayerMatchOpponent(match)
+                        const score =
+                          getPlayerMatchScore(match)
+
+                        return (
+                          <div
+                            key={match.id || index}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 12,
+                              padding: '11px 13px',
+                              borderBottom:
+                                index !==
+                                profilePlayer.latestMatches.length - 1
+                                  ? '1px solid #EEF1F8'
+                                  : 'none',
+                            }}
+                          >
+                            <div
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  color: '#0D1B3E',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                vs {opponent}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop: 3,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  flexWrap: 'wrap',
+                                  fontSize: 10,
+                                  color: '#8892A4',
+                                }}
+                              >
+                                {match.match_type && (
+                                  <>
+                                    <span>{match.match_type}</span>
+                                    <span>•</span>
+                                  </>
+                                )}
+                                <span>
+                                  {formatPlayerMatchDate(
+                                    match.match_date
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div
+                              style={{
+                                flexShrink: 0,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: '#0D1B3E',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {score || '—'}
+                            </div>
+
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                minWidth: 50,
+                                textAlign: 'center',
+                                padding: '4px 8px',
+                                borderRadius: 999,
+                                background: resultStyle.background,
+                                border: `1px solid ${resultStyle.border}`,
+                                color: resultStyle.color,
+                                fontSize: 9,
+                                fontWeight: 800,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {resultStyle.label}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: 16,
+                        borderRadius: 12,
+                        background: '#F6F8FF',
+                        border: '1px solid #EEF1F8',
+                        color: '#8892A4',
+                        fontSize: 12,
+                        textAlign: 'center',
+                      }}
+                    >
+                      No match records yet.
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    borderTop: '1px solid #EEF1F8',
                     paddingTop: 16,
                   }}
                 >
@@ -3071,7 +3097,7 @@ export default function CoachPlayers() {
                       marginBottom: 18,
                       fontSize: 13,
                       lineHeight: 1.7,
-                      color: 'var(--text, #0D1B3E)',
+                      color: '#0D1B3E',
                       whiteSpace: 'pre-wrap',
                     }}
                   >
@@ -3082,7 +3108,7 @@ export default function CoachPlayers() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
                     gap: '14px 28px',
                     marginTop: profilePlayer.bio ? 0 : 12,
                   }}
@@ -3199,7 +3225,9 @@ export default function CoachPlayers() {
                       type="button"
                       className={styles.btnPrimary}
                       disabled={savingId === profilePlayer.id}
-                      onClick={() => handleAddPlayer(profilePlayer)}
+                      onClick={() =>
+                        handleAddPlayer(profilePlayer)
+                      }
                     >
                       {savingId === profilePlayer.id
                         ? 'Sending...'
@@ -3211,17 +3239,201 @@ export default function CoachPlayers() {
           </div>
         </div>
       )}
+
+      {showScanner && (
+        <div
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) {
+              closeScanner()
+            }
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10060,
+            background: 'rgba(13,27,62,.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 18,
+          }}
+        >
+          <div
+            className={styles.card}
+            style={{
+              width: 'min(520px,100%)',
+              padding: 20,
+              borderRadius: 20,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: '#0D1B3E',
+                  }}
+                >
+                  Scan ShuttleTrack QR
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 12,
+                    color: '#8892A4',
+                  }}
+                >
+                  Scan a player QR or skill verification QR.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={closeScanner}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                position: 'relative',
+                overflow: 'hidden',
+                borderRadius: 18,
+                border: scanSuccess
+                  ? '4px solid #16A34A'
+                  : scanError
+                    ? '3px solid #EF4444'
+                    : '3px solid #D9E2F2',
+                background: '#0F172A',
+                minHeight: 300,
+              }}
+            >
+              <div
+                id="coach-shuttletrack-qr-reader"
+                style={{
+                  width: '100%',
+                  minHeight: 300,
+                  background: '#0F172A',
+                }}
+              />
+
+              {!cameraActive &&
+                !scannerStarting &&
+                !scanSuccess && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 12,
+                      color: '#fff',
+                      background:
+                        'linear-gradient(180deg,#172554,#0F172A)',
+                    }}
+                  >
+                    <div style={{ fontSize: 38 }}>📷</div>
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      onClick={startQrScanner}
+                    >
+                      Start camera
+                    </button>
+                  </div>
+                )}
+
+              {scannerStarting && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    background: 'rgba(15,23,42,.8)',
+                    fontWeight: 800,
+                  }}
+                >
+                  Starting camera...
+                </div>
+              )}
+
+              {scanSuccess && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    background: 'rgba(240,253,244,.94)',
+                    color: '#166534',
+                    fontWeight: 900,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 70,
+                      height: 70,
+                      borderRadius: 999,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: '#16A34A',
+                      color: '#fff',
+                      fontSize: 38,
+                    }}
+                  >
+                    ✓
+                  </div>
+                  {scanSuccessLabel || 'QR found'}
+                </div>
+              )}
+            </div>
+
+            {scanError && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 11,
+                  background: '#FEF2F2',
+                  border: '1px solid #FECACA',
+                  color: '#B91C1C',
+                  fontSize: 12,
+                }}
+              >
+                {scanError}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <ReportPlayerModal
         player={reportPlayer}
         submitting={submittingReport}
         onClose={() => {
-          if (!submittingReport) {
-            setReportPlayer(null)
-          }
+          if (!submittingReport) setReportPlayer(null)
         }}
         onSubmit={submitPlayerReport}
       />
-
     </div>
   )
 }

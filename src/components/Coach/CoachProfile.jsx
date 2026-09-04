@@ -1136,7 +1136,7 @@ export default function CoachProfile() {
   }
 
   return (
-    <div>
+    <div className={styles.coachReadablePage}>
       <CoachPageHeader
         title="Coach Profile"
         subtitle="Build a profile that helps players understand your coaching services"

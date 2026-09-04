@@ -830,7 +830,7 @@ export default function CoachSettings() {
   }
 
   return (
-    <div>
+    <div className={styles.coachReadablePage}>
       <CoachPageHeader
         title="Settings"
         subtitle="Manage account, notifications and privacy settings"

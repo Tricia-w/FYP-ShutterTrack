@@ -10,6 +10,7 @@ import CoachNotificationBell from "../Notifications/CoachNotificationBell";
 
 const PERFORMANCE_FIELDS = ['smash', 'defense', 'footwork', 'drop_shot', 'net_play', 'serve']
 const FITNESS_FIELDS = ['stamina', 'speed', 'strength', 'flexibility', 'recovery']
+const ACTION_PLAN_PREFIX = '__SHUTTLETRACK_ACTION_PLAN__:'
 
 const SKILL_LABELS = {
   smash: 'Smash',
@@ -35,15 +36,40 @@ const averageValues = (row, fields) => {
     : 0
 }
 
-const hasMeaningfulProgressNote = (progress, assessment) =>
-  Boolean(
-    String(progress?.coach_comment || '').trim() ||
-    String(progress?.focus_area || '').trim() ||
-    String(progress?.progress_status || '').trim() ||
-    String(progress?.injury_recommendation || '').trim() ||
-    String(assessment?.performance_comment || '').trim() ||
-    String(assessment?.fitness_comment || '').trim()
-  )
+const parseActionPlan = value => {
+  const text = String(value || '').trim()
+
+  if (!text.startsWith(ACTION_PLAN_PREFIX)) return null
+
+  try {
+    const plan = JSON.parse(text.slice(ACTION_PLAN_PREFIX.length))
+    const performanceValue = plan?.performance
+    const fitnessValue = plan?.fitness
+
+    const performance = String(
+      performanceValue &&
+        typeof performanceValue === 'object' &&
+        !Array.isArray(performanceValue)
+        ? performanceValue.text || ''
+        : performanceValue || ''
+    ).trim()
+
+    const fitness = String(
+      fitnessValue &&
+        typeof fitnessValue === 'object' &&
+        !Array.isArray(fitnessValue)
+        ? fitnessValue.text || ''
+        : fitnessValue || ''
+    ).trim()
+
+    if (!performance && !fitness) return null
+
+    return { performance, fitness }
+  } catch (error) {
+    console.error('Unable to parse action plan:', error)
+    return null
+  }
+}
 
 const formatDate = value => {
   if (!value) return '-'
@@ -177,7 +203,7 @@ function CoachDashboardStats({
   myPlayers = [],
   upcomingSessions = [],
   pastSessions = [],
-  notes = [],
+  feedbackAndPlans = [],
 }) {
   const stats = [
     {
@@ -202,8 +228,8 @@ function CoachDashboardStats({
       icon: 'past',
     },
     {
-      label: 'Total notes',
-      value: notes.length,
+      label: 'Feedback & plans',
+      value: feedbackAndPlans.length,
       color: '#7C3AED',
       background: 'var(--soft-purple, #EDE9FE)',
       icon: 'notes',
@@ -470,24 +496,30 @@ export default function CoachDashboard() {
   )
 
   const assessmentMap = useMemo(
-    () =>
-      new Map(
-        assessments.map(assessment => [
-          String(assessment.player_user_id),
-          assessment,
-        ])
-      ),
+    () => {
+      const map = new Map()
+
+      assessments.forEach(assessment => {
+        const key = String(assessment.player_user_id)
+        if (!map.has(key)) map.set(key, assessment)
+      })
+
+      return map
+    },
     [assessments]
   )
 
   const progressMap = useMemo(
-    () =>
-      new Map(
-        progressRows.map(progress => [
-          String(progress.player_user_id),
-          progress,
-        ])
-      ),
+    () => {
+      const map = new Map()
+
+      progressRows.forEach(progress => {
+        const key = String(progress.player_user_id)
+        if (!map.has(key)) map.set(key, progress)
+      })
+
+      return map
+    },
     [progressRows]
   )
 
@@ -503,20 +535,55 @@ export default function CoachDashboard() {
     [students]
   )
 
-  const progressNotes = useMemo(
+  const feedbackAndPlans = useMemo(
     () =>
-      progressRows.filter(row =>
-        hasMeaningfulProgressNote(
-          row,
-          assessmentMap.get(String(row.player_user_id))
+      students
+        .map(student => {
+          const progress = progressMap.get(String(student.id))
+          const assessment = assessmentMap.get(String(student.id))
+          const performanceFeedback = String(
+            assessment?.performance_comment || ''
+          ).trim()
+          const fitnessFeedback = String(
+            assessment?.fitness_comment || ''
+          ).trim()
+          const actionPlan = parseActionPlan(progress?.coach_comment)
+          const coachFeedback = actionPlan
+            ? ''
+            : String(progress?.coach_comment || '').trim()
+
+          return {
+            id: `feedback-plan-${student.id}`,
+            player_user_id: student.id,
+            performanceFeedback,
+            fitnessFeedback,
+            coachFeedback,
+            actionPlan,
+            updated_at:
+              progress?.updated_at ||
+              assessment?.updated_at ||
+              progress?.created_at ||
+              assessment?.created_at ||
+              '',
+          }
+        })
+        .filter(
+          item =>
+            item.performanceFeedback ||
+            item.fitnessFeedback ||
+            item.coachFeedback ||
+            item.actionPlan
         )
-      ),
-    [progressRows, assessmentMap]
+        .sort(
+          (a, b) =>
+            new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
+        ),
+    [students, progressMap, assessmentMap]
   )
 
-  const recentNotes = useMemo(
-    () => progressNotes.slice(0, 3),
-    [progressNotes]
+  const recentFeedbackAndPlans = useMemo(
+    () => feedbackAndPlans.slice(0, 3),
+    [feedbackAndPlans]
   )
 
   const teamFocus = useMemo(
@@ -566,7 +633,7 @@ export default function CoachDashboard() {
   }
 
   return (
-    <div>
+    <div className={styles.dashboardPage}>
       <CoachPageHeader
         title="Coach Dashboard"
         subtitle="Manage your players, sessions and track progress"
@@ -671,7 +738,7 @@ export default function CoachDashboard() {
         myPlayers={students}
         upcomingSessions={upcomingSessions}
         pastSessions={pastSessions}
-        notes={progressNotes}
+        feedbackAndPlans={feedbackAndPlans}
       />
 
       {error && (
@@ -921,9 +988,11 @@ export default function CoachDashboard() {
         </div>
 
         <div className={styles.card}>
-          <div className={styles.cardTitle}>Recent coach notes</div>
+          <div className={styles.cardTitle}>
+            Recent feedback and action plans
+          </div>
 
-          {recentNotes.length === 0 ? (
+          {recentFeedbackAndPlans.length === 0 ? (
             <div
               style={{
                 padding: '20px 0',
@@ -931,33 +1000,22 @@ export default function CoachDashboard() {
                 color: 'var(--text-muted, #8892A4)',
               }}
             >
-              No progress notes yet.
+              No feedback or action plans yet.
             </div>
           ) : (
-            recentNotes.map(note => {
+            recentFeedbackAndPlans.map(planRow => {
               const player = studentMap.get(
-                String(note.player_user_id)
+                String(planRow.player_user_id)
               )
-
-              const assessment =
-                assessmentMap.get(String(note.player_user_id))
-
-              const noteText =
-                note.coach_comment ||
-                assessment?.performance_comment ||
-                assessment?.fitness_comment ||
-                note.focus_area ||
-                note.progress_status ||
-                note.injury_recommendation
 
               return (
                 <div
-                  key={note.id}
+                  key={planRow.id}
                   role="button"
                   tabIndex={0}
                   onClick={() =>
                     navigate(
-                      `/coach/progress?player=${note.player_user_id}`
+                      `/coach/progress?player=${planRow.player_user_id}`
                     )
                   }
                   onKeyDown={event => {
@@ -966,7 +1024,7 @@ export default function CoachDashboard() {
                       event.key === ' '
                     ) {
                       navigate(
-                        `/coach/progress?player=${note.player_user_id}`
+                        `/coach/progress?player=${planRow.player_user_id}`
                       )
                     }
                   }}
@@ -989,20 +1047,230 @@ export default function CoachDashboard() {
                   >
                     {player?.name || 'Player'} ·{' '}
                     {formatDate(
-                      note.updated_at?.slice(0, 10) ||
-                        note.created_at?.slice(0, 10)
+                      planRow.updated_at?.slice(0, 10)
                     )}
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: 'var(--text, #0D1B3E)',
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {noteText}
-                  </div>
+                  {(planRow.performanceFeedback ||
+                    planRow.fitnessFeedback ||
+                    planRow.coachFeedback) && (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: '12px 14px',
+                        background: '#F5F8FF',
+                        border: '1px solid #DCE6FF',
+                        borderRadius: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          marginBottom: 8,
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: '#1A5FFF',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                        }}
+                      >
+                        Feedback
+                      </div>
+
+                      {planRow.performanceFeedback && (
+                        <div
+                          style={{
+                            padding: '10px 12px',
+                            background: '#FFFFFF',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              marginBottom: 3,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: 'var(--text, #0D1B3E)',
+                            }}
+                          >
+                            Performance Feedback
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: 'var(--text, #0D1B3E)',
+                              lineHeight: 1.6,
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {planRow.performanceFeedback}
+                          </div>
+                        </div>
+                      )}
+
+                      {planRow.fitnessFeedback && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: '10px 12px',
+                            background: '#FFFFFF',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              marginBottom: 3,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: 'var(--text, #0D1B3E)',
+                            }}
+                          >
+                            Fitness Feedback
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: 'var(--text, #0D1B3E)',
+                              lineHeight: 1.6,
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {planRow.fitnessFeedback}
+                          </div>
+                        </div>
+                      )}
+
+                      {planRow.coachFeedback && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: '10px 12px',
+                            background: '#FFFFFF',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              marginBottom: 3,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: 'var(--text, #0D1B3E)',
+                            }}
+                          >
+                            Coach Feedback
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: 'var(--text, #0D1B3E)',
+                              lineHeight: 1.6,
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {planRow.coachFeedback}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(planRow.actionPlan?.performance ||
+                    planRow.actionPlan?.fitness) && (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: '12px 14px',
+                        background: '#F0FDF8',
+                        border: '1px solid #BDEBD8',
+                        borderRadius: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          marginBottom: 8,
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: '#00976C',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                        }}
+                      >
+                        Action Plan
+                      </div>
+
+                      {planRow.actionPlan?.performance && (
+                        <div
+                          style={{
+                            padding: '10px 12px',
+                            background: '#FFFFFF',
+                            border: '1px solid #D7E9E1',
+                            borderRadius: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              marginBottom: 3,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: 'var(--text, #0D1B3E)',
+                            }}
+                          >
+                            Performance Action Plan
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: 'var(--text, #0D1B3E)',
+                              lineHeight: 1.6,
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {planRow.actionPlan.performance}
+                          </div>
+                        </div>
+                      )}
+
+                      {planRow.actionPlan?.fitness && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: '10px 12px',
+                            background: '#FFFFFF',
+                            border: '1px solid #D7E9E1',
+                            borderRadius: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              marginBottom: 3,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: 'var(--text, #0D1B3E)',
+                            }}
+                          >
+                            Fitness Action Plan
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: 'var(--text, #0D1B3E)',
+                              lineHeight: 1.6,
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {planRow.actionPlan.fitness}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })
