@@ -245,16 +245,16 @@ export function calculateFitnessSummary({
       )
     : 50
 
-  const staminaTestScore = latestScore('Stamina')
+  const enduranceTestScore = latestScore('Endurance')
   const speedTestScore = latestScore('Speed')
   const strengthTestScore = latestScore('Strength')
-  const flexibilityTestScore = latestScore('Flexibility')
+  const agilityTestScore = latestScore('Agility')
 
   const indicators = [
     {
-      name: 'Stamina',
+      name: 'Endurance',
       val: Math.round(
-        staminaTestScore ??
+        enduranceTestScore ??
           (sessions.length
             ? clampScore(50 + Math.min(22, weeklyMinutes / 25))
             : 50)
@@ -269,9 +269,9 @@ export function calculateFitnessSummary({
       val: Math.round(strengthTestScore ?? 50),
     },
     {
-      name: 'Flexibility',
-      val: Math.round(flexibilityTestScore ?? 50),
-      low: (flexibilityTestScore ?? 50) < 65,
+      name: 'Agility',
+      val: Math.round(agilityTestScore ?? 50),
+      low: (agilityTestScore ?? 50) < 65,
     },
     {
       name: 'Recovery',
