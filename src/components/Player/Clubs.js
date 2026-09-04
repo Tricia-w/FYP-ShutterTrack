@@ -106,7 +106,7 @@ function StatusBadge({ status }) {
           background: "#FEF2F2",
           color: "#DC2626",
           fontSize: 10,
-          fontWeight: 800,
+          fontWeight: 700,
         }}
       >
         Request declined
@@ -401,7 +401,7 @@ function CreateClubForm({ submitting, onCreate }) {
           <div
             style={{
               fontSize: 13,
-              fontWeight: 800,
+              fontWeight: 700,
               color: C.text,
               marginBottom: 4,
             }}
@@ -430,7 +430,7 @@ function CreateClubForm({ submitting, onCreate }) {
                 background: "transparent",
                 color: "#DC2626",
                 fontSize: 11,
-                fontWeight: 800,
+                fontWeight: 700,
                 padding: 0,
                 cursor: submitting ? "wait" : "pointer",
               }}
@@ -628,7 +628,7 @@ function CreateClubForm({ submitting, onCreate }) {
                       background: "transparent",
                       color: "#DC2626",
                       fontSize: 11,
-                      fontWeight: 800,
+                      fontWeight: 700,
                       cursor: submitting ? "wait" : "pointer",
                     }}
                   >
@@ -749,7 +749,7 @@ function CreateClubForm({ submitting, onCreate }) {
 const labelStyle = {
   display: "block",
   fontSize: 11,
-  fontWeight: 800,
+  fontWeight: 700,
   color: C.muted,
   textTransform: "uppercase",
   letterSpacing: 0.7,
@@ -952,7 +952,7 @@ function ClubDetail({
                         marginTop: 10,
                         color: "#1A5FFF",
                         fontSize: 12,
-                        fontWeight: 800,
+                        fontWeight: 700,
                         textDecoration: "none",
                       }}
                     >
@@ -1053,7 +1053,7 @@ function ClubDetail({
                   <div
                     style={{
                       fontSize: 13,
-                      fontWeight: 800,
+                      fontWeight: 700,
                       color: C.text,
                     }}
                   >
@@ -1531,7 +1531,7 @@ function ClubPlayerProfileModal({ member, onClose }) {
               color: "#B5305A",
               textDecoration: "none",
               fontSize: 11,
-              fontWeight: 800,
+              fontWeight: 700,
             }}
           >
             {activeProfile.instagram}
@@ -1923,7 +1923,7 @@ function EditClubModal({
             <div
               style={{
                 fontSize: 13,
-                fontWeight: 800,
+                fontWeight: 700,
                 color: C.text,
                 marginBottom: 4,
               }}
@@ -1964,7 +1964,7 @@ function EditClubModal({
                   background: "transparent",
                   color: "#DC2626",
                   fontSize: 11,
-                  fontWeight: 800,
+                  fontWeight: 700,
                   padding: 0,
                   cursor: saving ? "wait" : "pointer",
                 }}
@@ -2165,7 +2165,7 @@ function EditClubModal({
                         background: "transparent",
                         color: "#DC2626",
                         fontSize: 11,
-                        fontWeight: 800,
+                        fontWeight: 700,
                         cursor: saving ? "wait" : "pointer",
                       }}
                     >
@@ -2439,7 +2439,7 @@ function ManageClub({
               )}
 
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
                   {request.playerName}
                 </div>
                 <div style={{ fontSize: 11, color: C.muted }}>
@@ -2523,7 +2523,7 @@ function ManageClub({
               )}
 
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
                   {member.playerName}
                 </div>
                 <div style={{ fontSize: 11, color: C.muted }}>
@@ -3831,7 +3831,7 @@ export default function Clubs() {
   }
 
   return (
-    <div>
+    <div className={styles.playerReadablePage}>
       <div className={styles.pageHead} style={{ overflow: "visible" }}>
         <div
           style={{
@@ -3968,7 +3968,7 @@ export default function Clubs() {
                         <div
                           style={{
                             fontSize: 13,
-                            fontWeight: 800,
+                            fontWeight: 700,
                             color: C.text,
                           }}
                         >

@@ -1088,7 +1088,9 @@ export default function Profile() {
   }
 
   return (
-    <div className="profileResponsivePage">
+    <div
+      className={`profileResponsivePage ${styles.playerReadablePage}`}
+    >
       <style>{`
         .profileResponsivePage {
           width: 100%;
@@ -1184,7 +1186,7 @@ export default function Profile() {
         }
 
         .profileSkillLabel {
-          font-size: 11px;
+          font-size: 14px;
           color: var(--text-muted, #8892A4);
           min-width: 0;
         }
@@ -1205,7 +1207,7 @@ export default function Profile() {
         .profileSkillNumber {
           width: 44px;
           text-align: center;
-          font-size: 11px;
+          font-size: 14px;
           font-weight: 800;
           line-height: 1;
         }

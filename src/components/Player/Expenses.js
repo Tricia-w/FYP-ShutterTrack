@@ -1042,7 +1042,7 @@ export default function Expenses() {
   }
 
   return (
-    <div>
+    <div className={styles.playerReadablePage}>
       <div className={styles.pageHead}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>

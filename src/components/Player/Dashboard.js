@@ -777,7 +777,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div>
+    <div className={styles.dashboardPage}>
       <div className={styles.pageHead}>
         <div
           style={{
