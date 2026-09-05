@@ -103,9 +103,7 @@ export default function Login() {
   const location = useLocation()
 
   const [email, setEmail] = useState(
-    location.state?.email ||
-      localStorage.getItem('shuttleRememberedEmail') ||
-      '',
+    location.state?.email || '',
   )
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -114,9 +112,7 @@ export default function Login() {
   const [forgotLoading, setForgotLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [rememberMe, setRememberMe] = useState(
-    localStorage.getItem('shuttleRememberMe') === 'true',
-  )
+  const [rememberMe, setRememberMe] = useState(false)
 
   const [isDark, setIsDark] = useState(
     localStorage.getItem('shuttleLoginTheme') === 'dark',
@@ -131,6 +127,20 @@ export default function Login() {
 
   useEffect(() => {
     localStorage.removeItem('shuttleAddingRole')
+
+    // Clear the previous account's login identity whenever the login page opens.
+    localStorage.removeItem('shuttleRememberedEmail')
+    localStorage.removeItem('shuttleRememberMe')
+    localStorage.removeItem('activeRole')
+    localStorage.removeItem('shuttleSessionOnly')
+    sessionStorage.removeItem('shuttleBrowserSession')
+
+    setPassword('')
+    setRememberMe(false)
+
+    if (!location.state?.email) {
+      setEmail('')
+    }
 
     const blockedMessage =
       sessionStorage.getItem('shuttleLoginBlockedMessage')
@@ -200,7 +210,7 @@ export default function Login() {
 
       if (rememberMe) {
         localStorage.setItem('shuttleRememberMe', 'true')
-        localStorage.setItem('shuttleRememberedEmail', cleanEmail)
+        localStorage.removeItem('shuttleRememberedEmail')
         localStorage.removeItem('shuttleSessionOnly')
         sessionStorage.removeItem('shuttleBrowserSession')
       } else {
@@ -437,13 +447,14 @@ export default function Login() {
     setGoogleLoading(true)
 
     try {
+      localStorage.removeItem('shuttleRememberedEmail')
+
       if (rememberMe) {
         localStorage.setItem('shuttleRememberMe', 'true')
         localStorage.removeItem('shuttleSessionOnly')
         sessionStorage.removeItem('shuttleBrowserSession')
       } else {
         localStorage.setItem('shuttleRememberMe', 'false')
-        localStorage.removeItem('shuttleRememberedEmail')
         localStorage.setItem('shuttleSessionOnly', 'true')
         sessionStorage.setItem('shuttleBrowserSession', 'true')
       }
@@ -545,7 +556,7 @@ export default function Login() {
               lineHeight: 1.08,
               letterSpacing: '-0.035em',
               color: isDark ? '#FFFFFF' : '#172033',
-              fontWeight: 800,
+              fontWeight: 700,
             }}
           >
             Train smarter.
@@ -703,7 +714,7 @@ export default function Login() {
         <h1
           style={{
             fontSize: 30,
-            fontWeight: 800,
+            fontWeight: 700,
             color: isDark ? '#FFFFFF' : '#172033',
             margin: '0 0 6px',
           }}

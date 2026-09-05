@@ -223,29 +223,52 @@ function EyeIcon({ visible }) {
 function PasswordChecklist({ password }) {
   const checks = getPasswordChecks(password)
 
-  const rowStyle = (valid) => ({
-    margin: '0 0 4px',
-    fontSize: 12,
-    color: valid ? '#34D399' : '#8892A4',
-  })
+  const items = [
+    ['length', '8+ characters'],
+    ['uppercase', 'Uppercase'],
+    ['lowercase', 'Lowercase'],
+    ['number', 'Number'],
+    ['symbol', 'Symbol'],
+  ]
 
   return (
-    <div style={{ margin: '-3px 0 15px' }}>
-      <p style={rowStyle(checks.length)}>
-        {checks.length ? '✓' : '•'} At least 8 characters
-      </p>
-      <p style={rowStyle(checks.uppercase)}>
-        {checks.uppercase ? '✓' : '•'} One uppercase letter
-      </p>
-      <p style={rowStyle(checks.lowercase)}>
-        {checks.lowercase ? '✓' : '•'} One lowercase letter
-      </p>
-      <p style={rowStyle(checks.number)}>
-        {checks.number ? '✓' : '•'} One number
-      </p>
-      <p style={rowStyle(checks.symbol)}>
-        {checks.symbol ? '✓' : '•'} One symbol
-      </p>
+    <div
+      style={{
+        margin: '-2px 0 12px',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '5px 12px',
+        lineHeight: 1.35,
+      }}
+    >
+      {items.map(([key, label]) => {
+        const valid = checks[key]
+
+        return (
+          <span
+            key={key}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 11,
+              color: valid ? '#34D399' : '#8892A4',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                fontSize: 11,
+                lineHeight: 1,
+              }}
+            >
+              {valid ? '✓' : '•'}
+            </span>
+            {label}
+          </span>
+        )
+      })}
     </div>
   )
 }
