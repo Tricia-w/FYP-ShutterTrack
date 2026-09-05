@@ -1291,7 +1291,7 @@ export default function Settings() {
   }
 
   return (
-    <div>
+    <div className={styles.playerReadablePage}>
       <div className={styles.pageHead}>
         <div
           style={{

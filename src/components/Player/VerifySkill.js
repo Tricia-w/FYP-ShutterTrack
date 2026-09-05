@@ -53,7 +53,7 @@ function SkillAssessmentRow({
       <div
         style={{
           fontSize: 11,
-          fontWeight: 800,
+          fontWeight: 700,
           color: C.text,
           whiteSpace: "nowrap",
         }}
@@ -102,7 +102,7 @@ function SkillAssessmentRow({
           alignItems: "center",
           justifyContent: "center",
           fontSize: 12,
-          fontWeight: 900,
+          fontWeight: 700,
         }}
         title={
           difference === 0
@@ -455,7 +455,7 @@ export default function VerifySkill() {
               background: "#FEF2F2",
               color: "#DC2626",
               fontSize: 26,
-              fontWeight: 900,
+              fontWeight: 700,
             }}
           >
             !
@@ -464,7 +464,7 @@ export default function VerifySkill() {
           <div
             style={{
               fontSize: 20,
-              fontWeight: 800,
+              fontWeight: 700,
               color: C.text,
             }}
           >
@@ -496,7 +496,7 @@ export default function VerifySkill() {
   }
 
   return (
-    <div>
+    <div className={styles.playerReadablePage}>
       <div className={styles.pageHead}>
         <div className={styles.pageTitle}>Verify Skill Assessment</div>
         <div className={styles.pageSub}>
@@ -543,7 +543,7 @@ export default function VerifySkill() {
               <div
                 style={{
                   fontSize: 18,
-                  fontWeight: 800,
+                  fontWeight: 700,
                   color: C.text,
                 }}
               >
@@ -611,7 +611,7 @@ export default function VerifySkill() {
                 Blue shows the player&apos;s score. Drag each slider to give your own 1–100 rating. Your rating is stored separately.
               </div>
 
-              <div className={styles.cardTitle}>Your skill assessment</div>
+              <div className={styles.formLabel}>Your skill assessment</div>
 
               <div
                 style={{
