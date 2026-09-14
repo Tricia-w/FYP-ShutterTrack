@@ -247,19 +247,54 @@ export default function AdminDashboard({
   const recentLogs = logs.slice(0, 5);
 
   return (
-    <>
+    <div className="adminOverviewReadable">
+      <style>{`
+        .adminOverviewStatsGrid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .adminOverviewStatsGrid [style*='font-size: 11px'],
+        .adminOverviewStatsGrid [style*='font-size: 12px'] {
+          font-size: 13px !important;
+        }
+
+        .adminOverviewStatsGrid [style*='font-size: 13px'] {
+          font-size: 14px !important;
+        }
+
+        .adminOverviewStatsGrid [style*='font-weight: 800'],
+        .adminOverviewStatsGrid [style*='font-weight: 900'] {
+          font-weight: 700 !important;
+        }
+
+        .adminOverviewTwoColumnGrid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        @media (max-width: 1180px) {
+          .adminOverviewStatsGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 820px) {
+          .adminOverviewStatsGrid,
+          .adminOverviewTwoColumnGrid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+        }
+      `}</style>
       <SectionHeader
         title="Admin Overview"
         subtitle="Monitor ShuttleTrack users, coaches, reports, and recent activity"
       />
 
       <div
+        className="adminOverviewStatsGrid"
         style={{
           display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 14,
-          marginBottom: 22,
+          gap: 18,
+          marginBottom: 24,
         }}
       >
         <SummaryCard
@@ -306,12 +341,11 @@ export default function AdminDashboard({
       </div>
 
       <div
+        className="adminOverviewTwoColumnGrid"
         style={{
           display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: 18,
-          marginBottom: 18,
+          gap: 20,
+          marginBottom: 20,
         }}
       >
         <div
@@ -320,13 +354,13 @@ export default function AdminDashboard({
             border: "1px solid var(--line, transparent)",
             borderRadius: 16,
             boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
-            padding: 20,
+            padding: 24,
           }}
         >
           <div
             style={{
-              fontSize: 17,
-              fontWeight: 800,
+              fontSize: 18,
+              fontWeight: 700,
               color: "var(--text, #0D1B3E)",
             }}
           >
@@ -335,7 +369,7 @@ export default function AdminDashboard({
 
           <div
             style={{
-              fontSize: 12,
+              fontSize: 14,
               color: "var(--text-muted, #8892A4)",
               marginTop: 3,
               marginBottom: 22,
@@ -350,7 +384,7 @@ export default function AdminDashboard({
               gap: 14,
               flexWrap: "wrap",
               marginBottom: 18,
-              fontSize: 10,
+              fontSize: 13,
               color: "var(--text-muted, #8892A4)",
             }}
           >
@@ -418,7 +452,7 @@ export default function AdminDashboard({
                     >
                       <span
                         style={{
-                          fontSize: 13,
+                          fontSize: 14,
                           fontWeight: 700,
                           color: "var(--text-soft, #334155)",
                         }}
@@ -428,7 +462,7 @@ export default function AdminDashboard({
 
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 13,
                           color: "var(--text-muted, #8892A4)",
                         }}
                       >
@@ -444,8 +478,8 @@ export default function AdminDashboard({
 
                     <span
                       style={{
-                        fontSize: 13,
-                        fontWeight: 800,
+                        fontSize: 14,
+                        fontWeight: 700,
                         color: "var(--text, #0D1B3E)",
                       }}
                     >
@@ -509,13 +543,13 @@ export default function AdminDashboard({
             border: "1px solid var(--line, transparent)",
             borderRadius: 16,
             boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
-            padding: 20,
+            padding: 24,
           }}
         >
           <div
             style={{
-              fontSize: 17,
-              fontWeight: 800,
+              fontSize: 18,
+              fontWeight: 700,
               color: "var(--text, #0D1B3E)",
             }}
           >
@@ -524,7 +558,7 @@ export default function AdminDashboard({
 
           <div
             style={{
-              fontSize: 12,
+              fontSize: 14,
               color: "var(--text-muted, #8892A4)",
               marginTop: 3,
             }}
@@ -538,7 +572,7 @@ export default function AdminDashboard({
               gap: 14,
               flexWrap: "wrap",
               marginTop: 14,
-              fontSize: 10,
+              fontSize: 13,
               color: "var(--text-muted, #8892A4)",
             }}
           >
@@ -571,7 +605,7 @@ export default function AdminDashboard({
 
           <div
             style={{
-              height: 220,
+              height: 240,
               marginTop: 12,
               display: "flex",
               alignItems: "flex-end",
@@ -618,8 +652,8 @@ export default function AdminDashboard({
                 >
                   <div
                     style={{
-                      fontSize: 12,
-                      fontWeight: 800,
+                      fontSize: 14,
+                      fontWeight: 700,
                       color: "var(--text, #0D1B3E)",
                       marginBottom: 7,
                     }}
@@ -678,7 +712,7 @@ export default function AdminDashboard({
 
                   <div
                     style={{
-                      fontSize: 10,
+                      fontSize: 13,
                       color: "var(--text-muted, #8892A4)",
                       marginTop: 9,
                       whiteSpace: "nowrap",
@@ -694,11 +728,10 @@ export default function AdminDashboard({
       </div>
 
       <div
+        className="adminOverviewTwoColumnGrid"
         style={{
           display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: 18,
+          gap: 20,
         }}
       >
         <div
@@ -707,7 +740,7 @@ export default function AdminDashboard({
             border: "1px solid var(--line, transparent)",
             borderRadius: 16,
             boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
-            padding: 20,
+            padding: 24,
           }}
         >
           <div
@@ -722,8 +755,8 @@ export default function AdminDashboard({
             <div>
               <div
                 style={{
-                  fontSize: 17,
-                  fontWeight: 800,
+                  fontSize: 18,
+                  fontWeight: 700,
                   color: "var(--text, #0D1B3E)",
                 }}
               >
@@ -732,7 +765,7 @@ export default function AdminDashboard({
 
               <div
                 style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   color: "var(--text-muted, #8892A4)",
                   marginTop: 3,
                 }}
@@ -781,7 +814,7 @@ export default function AdminDashboard({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontWeight: 800,
+                    fontWeight: 700,
                   }}
                 >
                   ✓
@@ -790,8 +823,8 @@ export default function AdminDashboard({
                 <div style={{ minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: 13,
-                      fontWeight: 800,
+                      fontSize: 14,
+                      fontWeight: 700,
                       color: "var(--text, #0D1B3E)",
                     }}
                   >
@@ -800,7 +833,7 @@ export default function AdminDashboard({
 
                   <div
                     style={{
-                      fontSize: 12,
+                      fontSize: 14,
                       color: "var(--text-muted, #6B7280)",
                       marginTop: 2,
                     }}
@@ -810,7 +843,7 @@ export default function AdminDashboard({
 
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 13,
                       color: "var(--text-muted, #A0A8B8)",
                       marginTop: 4,
                     }}
@@ -843,7 +876,7 @@ export default function AdminDashboard({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontWeight: 900,
+                  fontWeight: 700,
                   marginBottom: 10,
                 }}
               >
@@ -852,8 +885,8 @@ export default function AdminDashboard({
 
               <div
                 style={{
-                  fontSize: 13,
-                  fontWeight: 800,
+                  fontSize: 14,
+                  fontWeight: 700,
                   color: "var(--text-soft, #334155)",
                 }}
               >
@@ -862,7 +895,7 @@ export default function AdminDashboard({
 
               <div
                 style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   marginTop: 4,
                 }}
               >
@@ -878,13 +911,13 @@ export default function AdminDashboard({
             border: "1px solid var(--line, transparent)",
             borderRadius: 16,
             boxShadow: "0 1px 5px rgba(13,27,62,0.08)",
-            padding: 20,
+            padding: 24,
           }}
         >
           <div
             style={{
-              fontSize: 17,
-              fontWeight: 800,
+              fontSize: 18,
+              fontWeight: 700,
               color: "var(--text, #0D1B3E)",
             }}
           >
@@ -893,7 +926,7 @@ export default function AdminDashboard({
 
           <div
             style={{
-              fontSize: 12,
+              fontSize: 14,
               color: "var(--text-muted, #8892A4)",
               marginTop: 3,
             }}
@@ -927,8 +960,8 @@ export default function AdminDashboard({
               <div>
                 <div
                   style={{
-                    fontSize: 13,
-                    fontWeight: 800,
+                    fontSize: 14,
+                    fontWeight: 700,
                     color: "var(--text, #0D1B3E)",
                   }}
                 >
@@ -937,7 +970,7 @@ export default function AdminDashboard({
 
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 13,
                     color: "var(--text-muted, #8892A4)",
                     marginTop: 4,
                   }}
@@ -978,8 +1011,8 @@ export default function AdminDashboard({
               <div>
                 <div
                   style={{
-                    fontSize: 13,
-                    fontWeight: 800,
+                    fontSize: 14,
+                    fontWeight: 700,
                     color: "var(--text, #0D1B3E)",
                   }}
                 >
@@ -988,7 +1021,7 @@ export default function AdminDashboard({
 
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 13,
                     color: "var(--text-muted, #8892A4)",
                     marginTop: 4,
                   }}
@@ -1014,7 +1047,7 @@ export default function AdminDashboard({
           >
             <div
               style={{
-                fontSize: 12,
+                fontSize: 14,
                 color: "var(--text-muted, #64748B)",
               }}
             >
@@ -1024,8 +1057,8 @@ export default function AdminDashboard({
             <div
               style={{
                 marginTop: 5,
-                fontSize: 24,
-                fontWeight: 900,
+                fontSize: 28,
+                fontWeight: 700,
                 color: "var(--text, #0D1B3E)",
               }}
             >
@@ -1034,6 +1067,6 @@ export default function AdminDashboard({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

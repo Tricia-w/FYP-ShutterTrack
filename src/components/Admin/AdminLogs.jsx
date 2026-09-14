@@ -183,7 +183,53 @@ export default function AdminLogs() {
   }, [filter, logs, search]);
 
   return (
-    <>
+    <div className="adminReadablePage">
+      <style>{`
+.adminReadablePage {
+  font-family: "DM Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+        .adminReadablePage [style*='font-size: 10px'] {
+          font-size: 12px !important;
+        }
+
+        .adminReadablePage [style*='font-size: 11px'] {
+          font-size: 13px !important;
+        }
+
+        .adminReadablePage [style*='font-size: 12px'],
+        .adminReadablePage [style*='font-size: 13px'] {
+          font-size: 14px !important;
+        }
+
+        .adminReadablePage [style*='font-weight: 800'],
+        .adminReadablePage [style*='font-weight: 900'] {
+          font-weight: 700 !important;
+        }
+
+.adminReadablePage button,
+.adminReadablePage input,
+.adminReadablePage select,
+.adminReadablePage textarea {
+  font-family: "DM Sans", sans-serif !important;
+  font-size: 14px !important;
+}
+
+.adminReadablePage table {
+  font-family: "DM Sans", sans-serif;
+}
+
+        .adminReadablePage th {
+          font-size: 13px !important;
+          font-weight: 700 !important;
+        }
+
+        .adminReadablePage td {
+          font-size: 14px !important;
+        }
+      `}</style>
       <SectionHeader
         title="Activity Logs"
         subtitle="Track important administrative actions in ShuttleTrack"
@@ -449,6 +495,6 @@ export default function AdminLogs() {
           })
         )}
       </div>
-    </>
+    </div>
   );
 }

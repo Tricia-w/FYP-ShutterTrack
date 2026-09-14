@@ -422,7 +422,54 @@ export default function AdminClubs() {
   };
 
   return (
-    <div>
+    <div className="adminReadablePage">
+      <style>{`
+        .adminReadablePage {
+          font-family: "DM Sans", sans-serif;
+          font-size: 14px;
+          font-weight: 400;
+        }
+
+        .adminReadablePage [style*='font-size: 10px'] {
+          font-size: 12px !important;
+        }
+
+        .adminReadablePage [style*='font-size: 11px'] {
+          font-size: 13px !important;
+        }
+
+        .adminReadablePage [style*='font-size: 12px'],
+        .adminReadablePage [style*='font-size: 13px'] {
+          font-size: 14px !important;
+        }
+
+        .adminReadablePage [style*='font-weight: 800'],
+        .adminReadablePage [style*='font-weight: 900'] {
+          font-weight: 700 !important;
+        }
+
+        .adminReadablePage button,
+        .adminReadablePage input,
+        .adminReadablePage select,
+        .adminReadablePage textarea {
+          font-family: "DM Sans", sans-serif !important;
+          font-size: 14px !important;
+        }
+
+        .adminReadablePage table {
+          font-family: "DM Sans", sans-serif;
+        }
+
+        .adminReadablePage th {
+          font-size: 13px !important;
+          font-weight: 700 !important;
+        }
+
+        .adminReadablePage td {
+          font-size: 14px !important;
+        }
+      `}</style>
+
       <SectionHeader
         title="Club Management"
         subtitle="Review clubs, managers, members and club status"
@@ -584,7 +631,7 @@ export default function AdminClubs() {
                         <div
                           style={{
                             fontSize: 13,
-                            fontWeight: 800,
+                            fontWeight: 700,
                             color: "#0D1B3E",
                           }}
                         >
@@ -674,7 +721,7 @@ export default function AdminClubs() {
                   style={{
                     marginTop: 3,
                     fontSize: 13,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     color: "#0D1B3E",
                   }}
                 >
@@ -688,7 +735,7 @@ export default function AdminClubs() {
             <div
               style={{
                 fontSize: 11,
-                fontWeight: 800,
+                fontWeight: 700,
                 color: "#8892A4",
                 textTransform: "uppercase",
                 letterSpacing: 0.5,
@@ -712,7 +759,7 @@ export default function AdminClubs() {
           <div
             style={{
               fontSize: 11,
-              fontWeight: 800,
+              fontWeight: 700,
               color: "#8892A4",
               textTransform: "uppercase",
               letterSpacing: 0.5,
@@ -759,7 +806,7 @@ export default function AdminClubs() {
                     <div
                       style={{
                         fontSize: 13,
-                        fontWeight: 800,
+                        fontWeight: 700,
                         color: "#0D1B3E",
                       }}
                     >

@@ -1,3 +1,54 @@
+/* ---------------------------------------------------------
+   SHARED ADMIN TYPOGRAPHY
+   Matches the Player and Coach dashboard without changing logic.
+--------------------------------------------------------- */
+
+body.admin-theme-active {
+  font-family: "DM Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+body.admin-theme-active button,
+body.admin-theme-active input,
+body.admin-theme-active select,
+body.admin-theme-active textarea,
+body.admin-theme-active table {
+  font-family: "DM Sans", sans-serif !important;
+}
+
+body.admin-theme-active [style*="font-weight: 800"],
+body.admin-theme-active [style*="font-weight: 900"] {
+  font-weight: 700 !important;
+}
+
+body.admin-theme-active [style*="font-size: 10px"] {
+  font-size: 12px !important;
+}
+
+body.admin-theme-active [style*="font-size: 11px"] {
+  font-size: 13px !important;
+}
+
+body.admin-theme-active [style*="font-size: 12px"],
+body.admin-theme-active [style*="font-size: 13px"] {
+  font-size: 14px !important;
+}
+
+body.admin-theme-active th {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+body.admin-theme-active td {
+  font-size: 14px !important;
+}
+
+body.admin-theme-active .admin-section-header > div:first-child > div:first-child {
+  font-family: "Syne", sans-serif;
+  font-weight: 700 !important;
+}
+
 html[data-theme="dark"] body.admin-theme-active,
 body[data-theme="dark"].admin-theme-active {
   --bg: #0b1424;

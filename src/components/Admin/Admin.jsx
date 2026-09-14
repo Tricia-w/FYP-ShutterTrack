@@ -499,7 +499,7 @@ export default function Admin() {
             borderRadius: 12,
             background: "#FEF2F2",
             color: "#B91C1C",
-            fontSize: 13,
+            fontSize: 14,
           }}
         >
           {adminError}

@@ -268,7 +268,54 @@ export default function AdminUsers({
   };
 
   return (
-    <>
+    <div className="adminReadablePage">
+      <style>{`
+        .adminReadablePage {
+          font-family: "DM Sans", sans-serif;
+          font-size: 14px;
+          font-weight: 400;
+        }
+
+        .adminReadablePage [style*='font-size: 10px'] {
+          font-size: 12px !important;
+        }
+
+        .adminReadablePage [style*='font-size: 11px'] {
+          font-size: 13px !important;
+        }
+
+        .adminReadablePage [style*='font-size: 12px'],
+        .adminReadablePage [style*='font-size: 13px'] {
+          font-size: 14px !important;
+        }
+
+        .adminReadablePage [style*='font-weight: 800'],
+        .adminReadablePage [style*='font-weight: 900'] {
+          font-weight: 700 !important;
+        }
+
+        .adminReadablePage button,
+        .adminReadablePage input,
+        .adminReadablePage select,
+        .adminReadablePage textarea {
+          font-family: "DM Sans", sans-serif !important;
+          font-size: 14px !important;
+        }
+
+        .adminReadablePage table {
+          font-family: "DM Sans", sans-serif;
+        }
+
+        .adminReadablePage th {
+          font-size: 13px !important;
+          font-weight: 700 !important;
+        }
+
+        .adminReadablePage td {
+          font-size: 14px !important;
+        }
+      `}</style>
+
       <SectionHeader
         title="User Management"
         subtitle="Manage registered ShuttleTrack accounts and activity"
@@ -442,7 +489,7 @@ export default function AdminUsers({
                     textAlign: "left",
                     color: "#7B879C",
                     fontSize: 10,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     textTransform: "uppercase",
                     letterSpacing: "0.6px",
                   }}
@@ -511,7 +558,7 @@ export default function AdminUsers({
                           style={{
                             color: "#0D1B3E",
                             fontSize: 13,
-                            fontWeight: 800,
+                            fontWeight: 700,
                           }}
                         >
                           {account.name}
@@ -823,7 +870,7 @@ export default function AdminUsers({
           >
             <Avatar name={selected.name} role={selected.role} />
             <div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#0D1B3E" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0D1B3E" }}>
                 {selected.name}
               </div>
               <div style={{ marginTop: 2, fontSize: 11, color: "#8892A4" }}>
@@ -861,7 +908,7 @@ export default function AdminUsers({
                     change.oldValue !== change.newValue ? "#FFFDF5" : "#fff",
                 }}
               >
-                <div style={{ fontSize: 11, fontWeight: 800, color: "#7B879C" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#7B879C" }}>
                   {change.label}
                 </div>
                 <div style={{ fontSize: 12, color: "#0D1B3E" }}>
@@ -998,7 +1045,7 @@ export default function AdminUsers({
               <div
                 style={{
                   fontSize: 14,
-                  fontWeight: 800,
+                  fontWeight: 700,
                   color: "#0D1B3E",
                 }}
               >
@@ -1119,6 +1166,6 @@ export default function AdminUsers({
           </div>
         </Modal>
       )}
-    </>
+    </div>
   );
 }
