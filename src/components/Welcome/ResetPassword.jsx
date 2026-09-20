@@ -134,13 +134,40 @@ export default function ResetPassword() {
 
   useEffect(() => {
     let active = true
+    let verificationFinished = false
 
-    const timeoutId = window.setTimeout(() => {
-      if (active) {
-        setCheckingLink(false)
+    const recoveryStorageKey =
+      'shuttlePasswordRecoveryActive'
+
+    const finishValid = () => {
+      if (!active) return
+
+      verificationFinished = true
+      sessionStorage.setItem(
+        recoveryStorageKey,
+        'true',
+      )
+      setValidRecovery(true)
+      setCheckingLink(false)
+    }
+
+    const finishInvalid = (message = '') => {
+      if (!active || verificationFinished) return
+
+      verificationFinished = true
+      setValidRecovery(false)
+      setCheckingLink(false)
+
+      if (message) {
+        setError(message)
       }
-    }, 2000)
+    }
 
+    /*
+     * Register the listener before doing any async session checks.
+     * On slower mobile browsers the PASSWORD_RECOVERY event may arrive
+     * after the ResetPassword component has mounted.
+     */
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
@@ -151,13 +178,265 @@ export default function ResetPassword() {
           event === 'PASSWORD_RECOVERY' &&
           session
         ) {
-          setValidRecovery(true)
-          setCheckingLink(false)
-
-          window.clearTimeout(timeoutId)
+          finishValid()
         }
       },
     )
+
+    async function verifyRecoverySession() {
+      try {
+        const searchParams =
+          new URLSearchParams(
+            window.location.search,
+          )
+
+        const hashParams =
+          new URLSearchParams(
+            window.location.hash.replace(
+              /^#/,
+              '',
+            ),
+          )
+
+        const urlError =
+          searchParams.get(
+            'error_description',
+          ) ||
+          hashParams.get(
+            'error_description',
+          ) ||
+          searchParams.get('error') ||
+          hashParams.get('error') ||
+          ''
+
+        if (urlError) {
+          finishInvalid(
+            decodeURIComponent(
+              String(urlError).replace(
+                /\+/g,
+                ' ',
+              ),
+            ),
+          )
+          return
+        }
+
+        const recoveryType =
+          searchParams.get('type') ||
+          hashParams.get('type') ||
+          ''
+
+        const code =
+          searchParams.get('code') ||
+          ''
+
+        const accessToken =
+          hashParams.get('access_token') ||
+          ''
+
+        const refreshToken =
+          hashParams.get('refresh_token') ||
+          ''
+
+        const urlLooksLikeRecovery =
+          recoveryType === 'recovery' ||
+          Boolean(code) ||
+          Boolean(accessToken)
+
+        /*
+         * First let Supabase finish its normal URL/session handling.
+         * This also covers the common case where PASSWORD_RECOVERY was
+         * emitted before this component's listener was ready.
+         */
+        const {
+          data: sessionData,
+          error: sessionError,
+        } = await supabase.auth.getSession()
+
+        if (sessionError) {
+          console.error(
+            'Reset link session check error:',
+            sessionError,
+          )
+        }
+
+        if (!active) return
+
+        if (sessionData?.session) {
+          /*
+           * A recovery link creates a real authenticated Supabase
+           * session. If the PASSWORD_RECOVERY event was missed, the
+           * existing session is still sufficient to securely call
+           * updateUser({ password }).
+           *
+           * This also allows an already authenticated user to use the
+           * reset page, which is safe because Supabase still requires
+           * that user's valid session.
+           */
+          finishValid()
+          return
+        }
+
+        /*
+         * PKCE recovery links can arrive as ?code=...
+         * If automatic exchange has not completed yet, exchange it here.
+         */
+        if (code) {
+          const {
+            data: exchangeData,
+            error: exchangeError,
+          } =
+            await supabase.auth.exchangeCodeForSession(
+              code,
+            )
+
+          if (exchangeError) {
+            console.error(
+              'Password recovery code exchange error:',
+              exchangeError,
+            )
+          }
+
+          if (
+            active &&
+            exchangeData?.session
+          ) {
+            window.history.replaceState(
+              {},
+              document.title,
+              '/reset-password',
+            )
+            finishValid()
+            return
+          }
+        }
+
+        /*
+         * Older/implicit Supabase links can provide tokens in the hash.
+         * Normally the client consumes them automatically; this is a
+         * fallback for mobile browsers where that process is delayed.
+         */
+        if (
+          accessToken &&
+          refreshToken
+        ) {
+          const {
+            data: tokenData,
+            error: tokenError,
+          } =
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            })
+
+          if (tokenError) {
+            console.error(
+              'Password recovery token session error:',
+              tokenError,
+            )
+          }
+
+          if (
+            active &&
+            tokenData?.session
+          ) {
+            window.history.replaceState(
+              {},
+              document.title,
+              '/reset-password',
+            )
+            finishValid()
+            return
+          }
+        }
+
+        /*
+         * If Supabase is still processing the email callback, allow a
+         * little more time on mobile before declaring the link invalid.
+         */
+        if (
+          urlLooksLikeRecovery ||
+          sessionStorage.getItem(
+            recoveryStorageKey,
+          ) === 'true'
+        ) {
+          window.setTimeout(
+            async () => {
+              if (
+                !active ||
+                verificationFinished
+              ) {
+                return
+              }
+
+              const {
+                data: retryData,
+              } =
+                await supabase.auth.getSession()
+
+              if (
+                active &&
+                retryData?.session
+              ) {
+                finishValid()
+              } else {
+                sessionStorage.removeItem(
+                  recoveryStorageKey,
+                )
+                finishInvalid()
+              }
+            },
+            3500,
+          )
+
+          return
+        }
+
+        finishInvalid()
+      } catch (verifyError) {
+        console.error(
+          'Password recovery verification error:',
+          verifyError,
+        )
+
+        finishInvalid(
+          'Unable to verify this password-reset link. Please request a new one.',
+        )
+      }
+    }
+
+    verifyRecoverySession()
+
+    /*
+     * Safety timeout only. The old code declared the link invalid after
+     * 2 seconds, which was too aggressive on phones.
+     */
+    const timeoutId =
+      window.setTimeout(
+        async () => {
+          if (
+            !active ||
+            verificationFinished
+          ) {
+            return
+          }
+
+          const {
+            data,
+          } =
+            await supabase.auth.getSession()
+
+          if (data?.session) {
+            finishValid()
+          } else {
+            sessionStorage.removeItem(
+              recoveryStorageKey,
+            )
+            finishInvalid()
+          }
+        },
+        8000,
+      )
 
     return () => {
       active = false
@@ -198,6 +477,10 @@ export default function ResetPassword() {
 
       setSuccess(
         'Password updated successfully. You may now log in with your new password.',
+      )
+
+      sessionStorage.removeItem(
+        'shuttlePasswordRecoveryActive',
       )
 
       await supabase.auth.signOut()

@@ -9,6 +9,14 @@ const MAX_EMAIL_LENGTH = 254
 const MAX_PASSWORD_LENGTH = 128
 const CONSENT_VERSION = '1.0'
 
+const AUTH_REDIRECT_ORIGIN =
+  String(
+    process.env.REACT_APP_AUTH_REDIRECT_ORIGIN ||
+      window.location.origin,
+  )
+    .trim()
+    .replace(/\/$/, '')
+
 const INITIAL_FORM_STATE = {
   name: '',
   username: '',
@@ -82,7 +90,7 @@ function getFriendlyAuthMessage(error, fallback) {
     code === 'email_not_confirmed' ||
     message.includes('email not confirmed')
   ) {
-    return 'You cannot add another role yet. Reason: your email address has not been verified. Please verify your email first.'
+    return 'This account already exists, but the email address has not been verified yet. Please check your email and verify the account before continuing.'
   }
 
   if (
@@ -106,7 +114,7 @@ function getFriendlyAuthMessage(error, fallback) {
     message.includes('already exists') ||
     message.includes('user exists')
   ) {
-    return 'We could not create a new account with this email. Reason: this email is already registered. Choose "Add Role" to add another role, or go to Login.'
+    return 'This email is already registered. If the account has not been verified yet, check your email for the verification link. Otherwise, choose "Add Role" to add another role or go to Login.'
   }
 
   if (
@@ -169,7 +177,7 @@ function getFriendlyAuthMessage(error, fallback) {
     return 'We could not complete this request. Reason: the account service is temporarily unavailable. Please try again in a moment.'
   }
 
-  return 'Could not create your account. This email may already be registered, or there may be a temporary server issue.'
+  return 'We could not complete the registration. Please try again. If the problem continues, check your internet connection or try logging in to see whether the account was already created.'
 }
 
 function isExistingSignupResponse(error, user) {
@@ -653,7 +661,7 @@ export default function Register() {
       email: cleanEmail,
       password: form.password,
       options: {
-        emailRedirectTo: `${window.location.origin}/email-verified`,
+        emailRedirectTo: `${AUTH_REDIRECT_ORIGIN}/email-verified`,
         data: {
           role,
           requested_role: role,
@@ -674,7 +682,7 @@ export default function Register() {
       if (isExistingSignupResponse(signupError, data?.user)) {
         setAccountMode('existing')
         setError(
-          'We could not create a new account with this email. Reason: this email is already registered. Choose "Add Role" to add another role, or go to Login.',
+          'This email is already registered. If the account has not been verified yet, check your email for the verification link. Otherwise, choose "Add Role" to add another role or go to Login.',
         )
         setLoading(false)
         return
@@ -889,7 +897,7 @@ export default function Register() {
           err,
           accountMode === 'existing'
             ? 'We could not verify your account or add the new role. Reason: the account details could not be confirmed. Please check your details and try again.'
-            : 'Could not create your account. This email may already be registered, or there may be a temporary server issue.',
+            : 'We could not complete the registration. Please try again. If the problem continues, check your internet connection or try logging in to see whether the account was already created.',
         ),
       )
     } finally {
@@ -910,7 +918,7 @@ export default function Register() {
           email: verificationEmail,
           options: {
             emailRedirectTo:
-              `${window.location.origin}/email-verified`,
+              `${AUTH_REDIRECT_ORIGIN}/email-verified`,
           },
         })
 
@@ -1622,12 +1630,17 @@ export default function Register() {
               .register-role-shell {
                 grid-template-columns: 1fr !important;
                 max-width: 620px !important;
-                gap: 30px !important;
+                gap: 24px !important;
               }
 
               .register-role-intro {
-                padding: 8px 8px 20px !important;
+                order: 1;
+                padding: 4px 8px 8px !important;
                 text-align: center;
+              }
+
+              .register-role-card {
+                order: 2;
               }
 
               .register-role-intro h2,
@@ -1640,11 +1653,16 @@ export default function Register() {
             @media (max-width: 560px) {
               .register-role-screen {
                 padding: 16px !important;
+                overflow: visible !important;
               }
 
               .register-role-card {
                 padding: 32px 22px !important;
                 border-radius: 20px !important;
+              }
+
+              .register-role-intro {
+                padding-top: 0 !important;
               }
 
               .register-role-intro h2 {
@@ -2548,13 +2566,21 @@ export default function Register() {
           @media (max-width: 980px) {
             .register-details-shell {
               grid-template-columns: 1fr !important;
+              grid-template-areas:
+                "intro"
+                "form" !important;
               max-width: 650px !important;
-              gap: 30px !important;
+              gap: 24px !important;
             }
 
             .register-details-intro {
-              padding: 8px 8px 20px !important;
+              order: 1;
+              padding: 4px 8px 8px !important;
               text-align: center;
+            }
+
+            .register-details-card {
+              order: 2;
             }
 
             .register-details-intro h2,
@@ -2572,6 +2598,10 @@ export default function Register() {
             .register-details-card {
               padding: 30px 22px !important;
               border-radius: 20px !important;
+            }
+
+            .register-details-intro {
+              padding-top: 0 !important;
             }
 
             .register-detail-grid {

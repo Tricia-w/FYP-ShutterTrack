@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/supabase'
 
 function getFriendlyLoginError(error) {
@@ -38,6 +39,44 @@ function getFriendlyLoginError(error) {
 }
 
 const RETURNING_REVERIFY_DAYS = 30
+const SESSION_HEARTBEAT_KEY = 'shuttleSessionHeartbeat'
+const SESSION_HEARTBEAT_MAX_AGE_MS = 10000
+
+const AUTH_REDIRECT_ORIGIN =
+  String(
+    process.env.REACT_APP_AUTH_REDIRECT_ORIGIN ||
+      window.location.origin,
+  )
+    .trim()
+    .replace(/\/$/, '')
+
+const MOBILE_QR_URL = AUTH_REDIRECT_ORIGIN
+
+function getSafePostLoginRedirect(location) {
+  const from = location.state?.from
+  let redirectPath = ''
+
+  if (typeof from === 'string') {
+    redirectPath = from
+  } else if (from?.pathname) {
+    redirectPath = `${from.pathname}${from.search || ''}${from.hash || ''}`
+  }
+
+  if (!redirectPath) {
+    redirectPath =
+      sessionStorage.getItem('shuttlePostLoginRedirect') || ''
+  }
+
+  if (
+    !redirectPath.startsWith('/') ||
+    redirectPath.startsWith('//') ||
+    redirectPath === '/login'
+  ) {
+    return ''
+  }
+
+  return redirectPath
+}
 
 function needsReturningReverification(lastSeenAt) {
   if (!lastSeenAt) return false
@@ -58,7 +97,7 @@ async function sendReturningVerificationEmail(email) {
     options: {
       shouldCreateUser: false,
       emailRedirectTo:
-        `${window.location.origin}/verify-returning-user`,
+        `${AUTH_REDIRECT_ORIGIN}/verify-returning-user`,
     },
   })
 
@@ -101,9 +140,11 @@ function EyeIcon({ visible }) {
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
+  const postLoginRedirect = getSafePostLoginRedirect(location)
+  const locationEmail = location.state?.email || ''
 
   const [email, setEmail] = useState(
-    location.state?.email || '',
+    locationEmail,
   )
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -131,14 +172,11 @@ export default function Login() {
     // Clear the previous account's login identity whenever the login page opens.
     localStorage.removeItem('shuttleRememberedEmail')
     localStorage.removeItem('shuttleRememberMe')
-    localStorage.removeItem('activeRole')
-    localStorage.removeItem('shuttleSessionOnly')
-    sessionStorage.removeItem('shuttleBrowserSession')
 
     setPassword('')
     setRememberMe(false)
 
-    if (!location.state?.email) {
+    if (!locationEmail) {
       setEmail('')
     }
 
@@ -158,14 +196,27 @@ export default function Login() {
         sessionStorage.getItem('shuttleBrowserSession') === 'true'
 
       if (sessionOnly && !browserSessionActive) {
-        await supabase.auth.signOut()
-        localStorage.removeItem('activeRole')
-        localStorage.removeItem('shuttleSessionOnly')
+        const lastHeartbeat = Number(
+          localStorage.getItem(SESSION_HEARTBEAT_KEY),
+        )
+        const hasActiveBrowserSession =
+          Number.isFinite(lastHeartbeat) &&
+          Date.now() - lastHeartbeat <=
+            SESSION_HEARTBEAT_MAX_AGE_MS
+
+        if (hasActiveBrowserSession) {
+          sessionStorage.setItem('shuttleBrowserSession', 'true')
+        } else {
+          await supabase.auth.signOut({ scope: 'local' })
+          localStorage.removeItem('activeRole')
+          localStorage.removeItem('shuttleSessionOnly')
+          localStorage.removeItem(SESSION_HEARTBEAT_KEY)
+        }
       }
     }
 
     checkBrowserSession()
-  }, [])
+  }, [locationEmail])
 
   async function blockLoginWithMessage(message) {
     sessionStorage.setItem('shuttleLoginBlockedMessage', message)
@@ -212,12 +263,17 @@ export default function Login() {
         localStorage.setItem('shuttleRememberMe', 'true')
         localStorage.removeItem('shuttleRememberedEmail')
         localStorage.removeItem('shuttleSessionOnly')
+        localStorage.removeItem(SESSION_HEARTBEAT_KEY)
         sessionStorage.removeItem('shuttleBrowserSession')
       } else {
         localStorage.setItem('shuttleRememberMe', 'false')
         localStorage.removeItem('shuttleRememberedEmail')
         localStorage.setItem('shuttleSessionOnly', 'true')
         sessionStorage.setItem('shuttleBrowserSession', 'true')
+        localStorage.setItem(
+          SESSION_HEARTBEAT_KEY,
+          String(Date.now()),
+        )
       }
 
       const { data: appUser, error: appUserError } =
@@ -316,6 +372,15 @@ export default function Login() {
 
       localStorage.removeItem('shuttleAddingRole')
 
+      if (
+        postLoginRedirect.startsWith('/verify-skill/') &&
+        (hasPlayer || hasCoach)
+      ) {
+        sessionStorage.removeItem('shuttlePostLoginRedirect')
+        navigate(postLoginRedirect, { replace: true })
+        return
+      }
+
       const savedMode =
         localStorage.getItem('activeRole')
 
@@ -407,12 +472,21 @@ export default function Login() {
     setForgotLoading(true)
 
     try {
+      /*
+       * A newly requested reset link should start a fresh recovery flow.
+       * Use the configured auth redirect origin so email/OAuth links
+       * can open correctly on another device during LAN testing.
+       */
+      sessionStorage.removeItem(
+        'shuttlePasswordRecoveryActive',
+      )
+
       const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(
           cleanEmail,
           {
             redirectTo:
-              `${window.location.origin}/reset-password`,
+              `${AUTH_REDIRECT_ORIGIN}/reset-password`,
           },
         )
 
@@ -452,11 +526,16 @@ export default function Login() {
       if (rememberMe) {
         localStorage.setItem('shuttleRememberMe', 'true')
         localStorage.removeItem('shuttleSessionOnly')
+        localStorage.removeItem(SESSION_HEARTBEAT_KEY)
         sessionStorage.removeItem('shuttleBrowserSession')
       } else {
         localStorage.setItem('shuttleRememberMe', 'false')
         localStorage.setItem('shuttleSessionOnly', 'true')
         sessionStorage.setItem('shuttleBrowserSession', 'true')
+        localStorage.setItem(
+          SESSION_HEARTBEAT_KEY,
+          String(Date.now()),
+        )
       }
 
       const { error: googleError } =
@@ -464,7 +543,7 @@ export default function Login() {
           provider: 'google',
           options: {
             redirectTo:
-              `${window.location.origin}/auth/callback`,
+              `${AUTH_REDIRECT_ORIGIN}/auth/callback`,
           },
         })
 
@@ -579,6 +658,95 @@ export default function Login() {
             training, monitor fitness and performance progress, record
             match results, and stay connected through one central system.
           </p>
+
+          <div
+            className="shuttletrack-login-qr"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 18,
+              width: 'fit-content',
+              maxWidth: '100%',
+              padding: 16,
+              borderRadius: 18,
+              background: isDark
+                ? 'rgba(24,30,43,0.88)'
+                : 'rgba(255,255,255,0.72)',
+              border: isDark
+                ? '1px solid rgba(74,85,104,0.55)'
+                : '1px solid rgba(214,225,239,0.95)',
+              boxShadow: isDark
+                ? '0 18px 45px rgba(0,0,0,0.22)'
+                : '0 18px 45px rgba(30,64,175,0.08)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
+              style={{
+                width: 154,
+                height: 154,
+                padding: 10,
+                borderRadius: 14,
+                background: '#FFFFFF',
+                display: 'grid',
+                placeItems: 'center',
+                boxSizing: 'border-box',
+                flexShrink: 0,
+              }}
+            >
+              <QRCodeCanvas
+                value={MOBILE_QR_URL}
+                size={134}
+                level="M"
+                includeMargin={false}
+                bgColor="#FFFFFF"
+                fgColor="#0D1B3E"
+              />
+            </div>
+
+            <div
+              style={{
+                maxWidth: 250,
+                minWidth: 0,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: isDark ? '#FFFFFF' : '#172033',
+                  marginBottom: 6,
+                }}
+              >
+                Open on your phone
+              </div>
+
+              <div
+                style={{
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  color: isDark ? '#9AA5B8' : '#667085',
+                  marginBottom: 8,
+                }}
+              >
+                Scan this QR code with your phone camera to open
+                ShuttleTrack on mobile.
+              </div>
+
+              <div
+                style={{
+                  fontSize: 11,
+                  lineHeight: 1.45,
+                  color: isDark ? '#6F7B90' : '#98A2B3',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {MOBILE_QR_URL}
+              </div>
+            </div>
+          </div>
 
         </section>
 
@@ -1120,6 +1288,10 @@ export default function Login() {
             .shuttletrack-login-intro p {
               margin-left: auto !important;
               margin-right: auto !important;
+            }
+
+            .shuttletrack-login-qr {
+              display: none !important;
             }
 
           }

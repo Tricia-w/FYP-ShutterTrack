@@ -2,6 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 
+const AUTH_REDIRECT_ORIGIN =
+  String(
+    process.env.REACT_APP_AUTH_REDIRECT_ORIGIN ||
+      window.location.origin,
+  )
+    .trim()
+    .replace(/\/$/, '')
+
 function maskEmail(value) {
   const email = String(value || '').trim()
   if (!email.includes('@')) return email
@@ -271,7 +279,7 @@ export default function VerifyReturningUser() {
           options: {
             shouldCreateUser: false,
             emailRedirectTo:
-              `${window.location.origin}/verify-returning-user`,
+              `${AUTH_REDIRECT_ORIGIN}/verify-returning-user`,
           },
         })
 

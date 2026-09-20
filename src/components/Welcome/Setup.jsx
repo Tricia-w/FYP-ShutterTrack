@@ -11,9 +11,15 @@ export default function Setup() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // If user comes from Profile page, go back to Profile.
-  // If user comes from login/register, go to Dashboard.
-  const returnTo = location.state?.returnTo || '/dashboard'
+  // Redo setup should return to Profile.
+  // First-time setup should still continue to Dashboard.
+  // The ?redo=1 fallback also works if React Router state is lost after refresh.
+  const searchParams = new URLSearchParams(location.search)
+  const isRedoSetup = searchParams.get('redo') === '1'
+
+  const returnTo =
+    location.state?.returnTo ||
+    (isRedoSetup ? '/profile' : '/dashboard')
 
   const [form, setForm] = useState({
     event: 'Singles',
@@ -29,10 +35,15 @@ export default function Setup() {
   const [loadingSetup, setLoadingSetup] = useState(true)
   const [error, setError] = useState('')
 
-  // Same theme preference used by Login / Register.
-  const [isDark, setIsDark] = useState(
-    localStorage.getItem('shuttleLoginTheme') === 'dark',
-  )
+  // First-time setup follows the Login/Register theme.
+  // Re-do setup follows the main ShuttleTrack/Profile theme.
+  const [isDark, setIsDark] = useState(() => {
+    const themeKey = isRedoSetup
+      ? 'shuttleTheme'
+      : 'shuttleLoginTheme'
+
+    return localStorage.getItem(themeKey) === 'dark'
+  })
 
   const busy = saving || skipping || loadingSetup
 
@@ -78,7 +89,7 @@ export default function Setup() {
               data.weakness ||
               'Defense Under Pressure',
             stamina:
-              data.stamina_level ||
+              data.endurance_level ||
               'High',
             pressure:
               data.under_pressure ||
@@ -155,7 +166,7 @@ export default function Setup() {
             play_style: form.style,
             biggest_strength: form.strength,
             current_weakness: form.weakness,
-            stamina_level: form.stamina,
+            endurance_level: form.stamina,
             pressure_reaction: form.pressure,
           },
           {
@@ -237,7 +248,7 @@ export default function Setup() {
         setup_completed: true,
       })
 
-      navigate('/dashboard', { replace: true })
+      navigate(returnTo, { replace: true })
     } catch (err) {
       console.error('Skip player setup error:', err)
       setError(err.message || 'Failed to skip setup. Please try again.')
@@ -341,10 +352,24 @@ export default function Setup() {
               const next = !isDark
               setIsDark(next)
 
-              localStorage.setItem(
-                'shuttleLoginTheme',
-                next ? 'dark' : 'light',
-              )
+              const theme = next ? 'dark' : 'light'
+
+              if (isRedoSetup) {
+                localStorage.setItem('shuttleTheme', theme)
+                document.documentElement.setAttribute(
+                  'data-theme',
+                  theme,
+                )
+                document.body.setAttribute(
+                  'data-theme',
+                  theme,
+                )
+              } else {
+                localStorage.setItem(
+                  'shuttleLoginTheme',
+                  theme,
+                )
+              }
             }}
             aria-label={
               isDark ? 'Switch to light mode' : 'Switch to dark mode'
@@ -495,7 +520,7 @@ export default function Setup() {
               <option>Defense Under Pressure</option>
               <option>Net Play</option>
               <option>Footwork</option>
-              <option>Stamina</option>
+              <option>Endurance</option>
               <option>Backhand</option>
             </select>
           </div>
@@ -503,7 +528,7 @@ export default function Setup() {
 
         <div className={styles.field}>
           <label className={styles.label} style={labelStyle}>
-            How is your stamina level?
+            How is your endurance level?
           </label>
 
           <select
@@ -524,7 +549,7 @@ export default function Setup() {
             How do you react under pressure?
           </label>
 
-          <div className={styles.pressureBtns}>
+          <div className={`${styles.pressureBtns} setupPressureBtns`}>
             {PRESSURE_OPTIONS.map((option) => {
               const active = form.pressure === option
 
@@ -564,6 +589,39 @@ export default function Setup() {
             })}
           </div>
         </div>
+
+        <style>{`
+          @media (max-width: 640px) {
+            .setupPressureBtns {
+              display: grid !important;
+              grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+              gap: 10px !important;
+              width: 100% !important;
+            }
+
+            .setupPressureBtns > button {
+              width: 100% !important;
+              min-width: 0 !important;
+              max-width: 100% !important;
+              grid-column: auto !important;
+              margin: 0 !important;
+              box-sizing: border-box !important;
+              white-space: normal !important;
+            }
+          }
+
+          @media (max-width: 390px) {
+            .setupPressureBtns {
+              gap: 7px !important;
+            }
+
+            .setupPressureBtns > button {
+              padding-left: 6px !important;
+              padding-right: 6px !important;
+              font-size: 12px !important;
+            }
+          }
+        `}</style>
 
         <div
           className={styles.preview}
