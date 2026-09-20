@@ -11,6 +11,9 @@ import { supabase } from '../lib/supabase'
 const AuthContext = createContext(null)
 
 const RETURNING_REVERIFY_DAYS = 30
+const SESSION_HEARTBEAT_KEY = 'shuttleSessionHeartbeat'
+const SESSION_HEARTBEAT_MAX_AGE_MS = 10000
+const SESSION_HEARTBEAT_INTERVAL_MS = 3000
 
 function needsReturningReverification(appUser) {
   if (!appUser?.last_seen_at) return false
@@ -362,12 +365,30 @@ export function AuthProvider({ children }) {
          * session must be signed out here before protected routes load.
          */
         if (sessionOnly && !browserSessionActive) {
-          await supabase.auth.signOut({
-            scope: 'local',
-          })
+          const lastHeartbeat = Number(
+            localStorage.getItem(SESSION_HEARTBEAT_KEY)
+          )
+          const hasActiveBrowserSession =
+            Number.isFinite(lastHeartbeat) &&
+            Date.now() - lastHeartbeat <=
+              SESSION_HEARTBEAT_MAX_AGE_MS
 
-          localStorage.removeItem('activeRole')
-          localStorage.removeItem('shuttleSessionOnly')
+          if (hasActiveBrowserSession) {
+            // sessionStorage belongs to one tab. Allow a verification
+            // link opened in another tab to join the browser session.
+            sessionStorage.setItem(
+              'shuttleBrowserSession',
+              'true'
+            )
+          } else {
+            await supabase.auth.signOut({
+              scope: 'local',
+            })
+
+            localStorage.removeItem('activeRole')
+            localStorage.removeItem('shuttleSessionOnly')
+            localStorage.removeItem(SESSION_HEARTBEAT_KEY)
+          }
         }
 
         const {
@@ -523,6 +544,40 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe()
     }
   }, [loadAppUser, touchLastSeen])
+
+  /*
+   * Keep a short-lived cross-tab heartbeat for a session-only login.
+   * It supports verification links opened in another tab without
+   * permanently enabling Remember me.
+   */
+  useEffect(() => {
+    if (
+      !user?.id ||
+      localStorage.getItem('shuttleSessionOnly') !== 'true'
+    ) {
+      return undefined
+    }
+
+    sessionStorage.setItem('shuttleBrowserSession', 'true')
+
+    const refreshSessionHeartbeat = () => {
+      localStorage.setItem(
+        SESSION_HEARTBEAT_KEY,
+        String(Date.now())
+      )
+    }
+
+    refreshSessionHeartbeat()
+
+    const heartbeatTimer = window.setInterval(
+      refreshSessionHeartbeat,
+      SESSION_HEARTBEAT_INTERVAL_MS
+    )
+
+    return () => {
+      window.clearInterval(heartbeatTimer)
+    }
+  }, [user?.id])
 
   /*
    * While the app is open, refresh account status and
@@ -763,6 +818,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('pendingRole')
     localStorage.removeItem('activeRole')
     localStorage.removeItem('shuttleSessionOnly')
+    localStorage.removeItem(SESSION_HEARTBEAT_KEY)
     sessionStorage.removeItem('shuttleAddingRole')
     sessionStorage.removeItem('shuttleBrowserSession')
 

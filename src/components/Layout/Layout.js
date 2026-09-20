@@ -66,8 +66,10 @@ export default function Layout() {
       return
     }
 
-    setCheckingModes(true)
-
+    // Keep the existing sidebar visible while refreshing available modes.
+    // `checkingModes` is already true on the initial page load and becomes
+    // false after that first check. Setting it back to true here caused the
+    // Player/Coach switcher to disappear briefly on every refresh.
     try {
       const [playerResult, coachResult] =
         await Promise.all([
