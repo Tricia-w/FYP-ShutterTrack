@@ -292,7 +292,12 @@ function normalizePlayer(
   relationship,
   source = 'registered',
   matchStats = null,
-  latestMatches = []
+  latestMatches = [],
+  verificationPlayerCount = 0,
+  activeVerificationToken = '',
+  verifiedByCurrentCoach = false,
+  setupRow = null,
+  linkedClub = null
 ) {
   const playerId = getPlayerId(profile)
   const status = getRelationshipStatus(relationship)
@@ -309,10 +314,16 @@ function normalizePlayer(
       profile?.name ||
       profile?.username ||
       'Unnamed player',
-    club: profile?.club || profile?.external_club || 'No club',
+    club:
+      linkedClub?.short_name ||
+      linkedClub?.name ||
+      profile?.club ||
+      profile?.external_club ||
+      'No club',
     state: profile?.state || profile?.location || '',
     location: profile?.location || profile?.state || '',
     category:
+      setupRow?.preferred_event ||
       profile?.player_category ||
       profile?.category ||
       profile?.playing_category ||
@@ -323,12 +334,37 @@ function normalizePlayer(
       profile?.skill_level ||
       profile?.category ||
       profile?.player_category ||
+      setupRow?.preferred_event ||
       'Beginner',
     style:
+      setupRow?.play_style ||
       profile?.playing_style ||
       profile?.play_style ||
       profile?.style ||
       'All-round',
+    setupStrength:
+      setupRow?.biggest_strength ||
+      profile?.biggest_strength ||
+      profile?.strength ||
+      'Not specified',
+    setupWeakness:
+      setupRow?.current_weakness ||
+      setupRow?.biggest_weakness ||
+      profile?.current_weakness ||
+      profile?.weakness ||
+      'Not specified',
+    setupPlayerType:
+      setupRow?.pressure_reaction ||
+      setupRow?.player_type ||
+      profile?.pressure_reaction ||
+      profile?.player_type ||
+      'Not specified',
+    enduranceLevel:
+      setupRow?.endurance_level ||
+      profile?.endurance_level ||
+      null,
+    gender: profile?.gender || null,
+    showGender: profile?.show_gender === true,
     dominantHand:
       profile?.dominant_hand ||
       profile?.hand ||
@@ -382,6 +418,9 @@ function normalizePlayer(
         DEFAULT_SKILL
     ),
     serve: Number(skillRow?.serve ?? DEFAULT_SKILL),
+    verificationPlayerCount: Number(verificationPlayerCount || 0),
+    activeVerificationToken: String(activeVerificationToken || ''),
+    verifiedByCurrentCoach: Boolean(verifiedByCurrentCoach),
     relationshipId: relationship?.id || null,
     relationshipStatus: status,
     relationshipMessage: relationship?.message || '',
@@ -450,7 +489,7 @@ function ProfileSkillBar({ label, value, dim = false }) {
       <div
         style={{
           fontSize: 11,
-          fontWeight: 800,
+          fontWeight: 700,
           color: '#0D1B3E',
           textAlign: 'right',
         }}
@@ -528,7 +567,7 @@ function RequestHistoryBadge({ status }) {
         color: current.color,
         border: `1px solid ${current.border}`,
         fontSize: 10,
-        fontWeight: 800,
+        fontWeight: 700,
         whiteSpace: 'nowrap',
       }}
     >
@@ -691,7 +730,7 @@ function ReportPlayerModal({ player, submitting, onClose, onSubmit }) {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>Report player</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>Report player</div>
             <div style={{ marginTop: 4, fontSize: 12, color: '#8892A4' }}>
               Report {player.name} to the ShuttleTrack administrator.
             </div>
@@ -757,7 +796,7 @@ function ReportPlayerModal({ player, submitting, onClose, onSubmit }) {
               padding: '9px 15px',
               background: '#DC2626',
               color: '#fff',
-              fontWeight: 800,
+              fontWeight: 700,
             }}
           >
             {submitting ? 'Submitting...' : 'Submit report'}
@@ -865,6 +904,12 @@ function PlayerStats({
   )
 }
 
+function isCoachPlayersMobileView() {
+  if (typeof window === 'undefined') return false
+
+  return window.matchMedia('(max-width: 900px)').matches
+}
+
 export default function CoachPlayers() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -925,6 +970,9 @@ export default function CoachPlayers() {
         matchesResult,
         publicMatchesResult,
         directoryAccountsResult,
+        playerSetupResult,
+        clubsResult,
+        verificationRequestsResult,
       ] = await Promise.all([
         supabase.from('player_profiles').select('*').order('display_name', { ascending: true }),
         supabase.from('public_players').select('*').order('name', { ascending: true }),
@@ -950,6 +998,17 @@ export default function CoachPlayers() {
           .order('match_date', { ascending: false })
           .order('created_at', { ascending: false }),
         supabase.rpc('get_directory_visible_accounts'),
+        // Read setup data through a restricted RPC instead of querying
+        // player_setup directly. Direct access can be hidden by RLS for coaches.
+        supabase.rpc('get_coach_player_setup_profiles'),
+        supabase
+          .from('clubs')
+          .select('id, short_name, name'),
+        supabase
+          .from('skill_verification_requests')
+          .select('id, player_user_id, token, created_at')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false }),
       ])
 
       const firstError = [
@@ -960,14 +1019,124 @@ export default function CoachPlayers() {
         matchesResult.error,
         publicMatchesResult.error,
         directoryAccountsResult.error,
+        playerSetupResult.error,
+        clubsResult.error,
       ].find(Boolean)
 
       if (firstError) throw firstError
+
+      if (verificationRequestsResult.error) {
+        console.warn(
+          'Coach verification request load error:',
+          verificationRequestsResult.error
+        )
+      }
+
+      const activeVerificationRequests =
+        verificationRequestsResult.error
+          ? []
+          : verificationRequestsResult.data || []
+
+      const verificationPlayerCountByUserId = new Map()
+      const activeVerificationTokenByUserId = new Map()
+      const coachVerifiedOwnerUserIds = new Set()
+
+      activeVerificationRequests.forEach(request => {
+        const ownerUserId = String(request.player_user_id || '')
+        if (
+          ownerUserId &&
+          request.token &&
+          !activeVerificationTokenByUserId.has(ownerUserId)
+        ) {
+          activeVerificationTokenByUserId.set(
+            ownerUserId,
+            String(request.token)
+          )
+        }
+      })
+
+      if (activeVerificationRequests.length > 0) {
+        const activeRequestIds = activeVerificationRequests.map(
+          request => request.id
+        )
+
+        const requestOwnerById = new Map(
+          activeVerificationRequests.map(request => [
+            String(request.id),
+            String(request.player_user_id),
+          ])
+        )
+
+        const {
+          data: verificationRows,
+          error: verificationError,
+        } = await supabase
+          .from('skill_verifications')
+          .select('request_id, verifier_user_id, verifier_role')
+          .in('request_id', activeRequestIds)
+
+        if (verificationError) {
+          console.warn(
+            'Coach skill verification count load error:',
+            verificationError
+          )
+        } else {
+          const playerVerifierKeysByOwner = new Map()
+
+          ;(verificationRows || []).forEach(row => {
+            const ownerUserId = requestOwnerById.get(
+              String(row.request_id)
+            )
+
+            if (!ownerUserId || !row.verifier_user_id) return
+
+            const verifierRole = String(
+              row.verifier_role || ''
+            ).toLowerCase()
+
+            if (
+              verifierRole === 'coach' &&
+              String(row.verifier_user_id) === String(user.id)
+            ) {
+              coachVerifiedOwnerUserIds.add(ownerUserId)
+            }
+
+            if (verifierRole !== 'player') return
+
+            const verifierKeys =
+              playerVerifierKeysByOwner.get(ownerUserId) || new Set()
+
+            verifierKeys.add(String(row.verifier_user_id))
+            playerVerifierKeysByOwner.set(ownerUserId, verifierKeys)
+          })
+
+          playerVerifierKeysByOwner.forEach(
+            (verifierKeys, ownerUserId) => {
+              verificationPlayerCountByUserId.set(
+                ownerUserId,
+                verifierKeys.size
+              )
+            }
+          )
+        }
+      }
 
       const visibleDirectoryUserIds = new Set(
         (directoryAccountsResult.data || [])
           .map(row => row?.user_id && String(row.user_id))
           .filter(Boolean)
+      )
+
+      const setupByUserId = new Map(
+        (playerSetupResult.data || [])
+          .filter(row => row?.user_id)
+          .map(row => [String(row.user_id), row])
+      )
+
+      const clubById = new Map(
+        (clubsResult.data || [])
+          .filter(row => row?.id)
+          .map(row => [String(row.id), row])
       )
 
       const relationshipMap = new Map(
@@ -1132,7 +1301,14 @@ export default function CoachPlayers() {
             relationshipMap.get(playerId),
             'registered',
             matchStatsByProfileId.get(profile.id) || null,
-            playerMatches.slice(0, 3)
+            playerMatches.slice(0, 3),
+            verificationPlayerCountByUserId.get(String(playerId)) || 0,
+            activeVerificationTokenByUserId.get(String(playerId)) || '',
+            coachVerifiedOwnerUserIds.has(String(playerId)),
+            setupByUserId.get(String(playerId)) || null,
+            profile?.club_id
+              ? clubById.get(String(profile.club_id)) || null
+              : null
           )
         })
 
@@ -1209,7 +1385,51 @@ export default function CoachPlayers() {
             relationship,
             linkedUserId ? 'registered' : 'public',
             publicMatchStats,
-            publicPlayerMatches.slice(0, 3)
+            publicPlayerMatches.slice(0, 3),
+            linkedUserId
+              ? verificationPlayerCountByUserId.get(
+                  String(linkedUserId)
+                ) || 0
+              : 0,
+            linkedUserId
+              ? activeVerificationTokenByUserId.get(
+                  String(linkedUserId)
+                ) || ''
+              : '',
+            linkedUserId
+              ? coachVerifiedOwnerUserIds.has(String(linkedUserId))
+              : false,
+            linkedUserId
+              ? setupByUserId.get(String(linkedUserId)) || null
+              : {
+                  preferred_event:
+                    row.preferred_event ||
+                    row.player_category ||
+                    row.category ||
+                    null,
+                  play_style:
+                    row.play_style ||
+                    row.playing_style ||
+                    row.style ||
+                    null,
+                  biggest_strength:
+                    row.biggest_strength ||
+                    row.strength ||
+                    null,
+                  current_weakness:
+                    row.current_weakness ||
+                    row.weakness ||
+                    null,
+                  endurance_level:
+                    row.endurance_level || null,
+                  pressure_reaction:
+                    row.pressure_reaction ||
+                    row.player_type ||
+                    null,
+                },
+            row?.club_id
+              ? clubById.get(String(row.club_id)) || null
+              : null
           )
         })
         .filter(player => player.id)
@@ -1257,6 +1477,16 @@ export default function CoachPlayers() {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'app_users' },
+        () => loadData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'player_setup' },
+        () => loadData()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'clubs' },
         () => loadData()
       )
       .subscribe()
@@ -1349,6 +1579,22 @@ export default function CoachPlayers() {
       )
     )
   }, [availablePlayers, playerSearch])
+
+  const handlePlayerCardClick = player => {
+    if (!player?.id) return
+
+    // On mobile the two desktop columns stack vertically. Opening the
+    // existing profile modal avoids forcing the user to scroll past a
+    // long player list to reach the selected-player panel.
+    if (isCoachPlayersMobileView()) {
+      setProfilePlayerId(player.id)
+      return
+    }
+
+    setSelectedPlayerId(current =>
+      current === player.id ? null : player.id
+    )
+  }
 
   const updatePlayerRelationship = (playerId, changes) => {
     setPlayers(current =>
@@ -1953,6 +2199,107 @@ export default function CoachPlayers() {
 
   return (
     <div className={styles.coachReadablePage}>
+      <style>{`
+        /*
+         * Desktop keeps the current two-column player + detail layout.
+         * Mobile uses the existing profile modal instead, so users never
+         * need to scroll through a long player list to see the selection.
+         */
+        @media (max-width: 900px) {
+          .coachSelectedPlayerDesktopPanel {
+            display: none !important;
+          }
+
+          .coachAvailablePlayerRow {
+            display: grid !important;
+            grid-template-columns: 38px minmax(0, 1fr) !important;
+            gap: 10px !important;
+            padding: 12px !important;
+            align-items: start !important;
+          }
+
+          .coachAvailablePlayerAvatar {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+          }
+
+          .coachAvailablePlayerInfo {
+            grid-column: 2;
+            min-width: 0;
+          }
+
+          .coachAvailablePlayerActions {
+            grid-column: 2;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 7px !important;
+            flex-wrap: wrap !important;
+            margin-top: 4px;
+          }
+
+          .coachAvailablePlayerActions button,
+          .coachAvailablePlayerActions span {
+            flex: 0 0 auto;
+          }
+
+          .coachMyPlayerRow {
+            display: grid !important;
+            grid-template-columns: 42px minmax(0, 1fr) !important;
+            gap: 10px !important;
+            padding: 14px !important;
+            align-items: start !important;
+          }
+
+          .coachMyPlayerAvatar {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+          }
+
+          .coachMyPlayerInfo {
+            grid-column: 2;
+            min-width: 0;
+          }
+
+          .coachMyPlayerActions {
+            grid-column: 2;
+            display: flex !important;
+            gap: 8px !important;
+            flex-wrap: wrap !important;
+            margin-top: 4px;
+          }
+
+          .coachMyPlayerActions button {
+            min-height: 34px;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .coachAvailablePlayerRow,
+          .coachMyPlayerRow {
+            border-radius: 12px !important;
+          }
+
+          .coachAvailablePlayerActions {
+            justify-content: space-between !important;
+          }
+
+          .coachAvailablePlayerActions button {
+            min-height: 32px;
+            padding-left: 11px !important;
+            padding-right: 11px !important;
+          }
+
+          .coachMyPlayerActions {
+            width: 100%;
+          }
+
+          .coachMyPlayerActions button {
+            flex: 1 1 120px;
+          }
+        }
+      `}</style>
+
       <CoachPageHeader
         title="My Players"
         subtitle="Manage your players and write progress notes"
@@ -2034,7 +2381,7 @@ export default function CoachPlayers() {
                   ? '#FFFFFF'
                   : '#0D1B3E',
               fontSize: 11,
-              fontWeight: 800,
+              fontWeight: 700,
             }}
           >
             {pendingPlayers.length}
@@ -2496,6 +2843,7 @@ export default function CoachPlayers() {
                         key={player.id}
                         role="button"
                         tabIndex={0}
+                        className="coachAvailablePlayerRow"
                         onClick={() => setProfilePlayerId(player.id)}
                         style={{
                           display: 'flex',
@@ -2507,9 +2855,14 @@ export default function CoachPlayers() {
                           cursor: 'pointer',
                         }}
                       >
-                        <Avatar name={player.name} size={32} />
+                        <div className="coachAvailablePlayerAvatar">
+                          <Avatar name={player.name} size={32} />
+                        </div>
 
-                        <div style={{ flex: 1 }}>
+                        <div
+                          className="coachAvailablePlayerInfo"
+                          style={{ flex: 1, minWidth: 0 }}
+                        >
                           <div
                             style={{
                               fontSize: 13,
@@ -2530,37 +2883,39 @@ export default function CoachPlayers() {
                           </div>
                         </div>
 
-                        <LevelBadge level={player.level} />
+                        <div className="coachAvailablePlayerActions">
+                          <LevelBadge level={player.level} />
 
-                        {player.isRegistered ? (
-                          <button
-                            type="button"
-                            className={styles.btnPrimary}
-                            disabled={savingId === player.id}
-                            onClick={event => {
-                              event.stopPropagation()
-                              handleAddPlayer(player)
-                            }}
-                            style={{
-                              fontSize: 11,
-                              padding: '4px 12px',
-                            }}
-                          >
-                            {savingId === player.id
-                              ? 'Sending...'
-                              : '+ Request'}
-                          </button>
-                        ) : (
-                          <span
-                            style={{
-                              fontSize: 11,
-                              color: '#8892A4',
-                              fontWeight: 600,
-                            }}
-                          >
-                            View only
-                          </span>
-                        )}
+                          {player.isRegistered ? (
+                            <button
+                              type="button"
+                              className={styles.btnPrimary}
+                              disabled={savingId === player.id}
+                              onClick={event => {
+                                event.stopPropagation()
+                                handleAddPlayer(player)
+                              }}
+                              style={{
+                                fontSize: 11,
+                                padding: '4px 12px',
+                              }}
+                            >
+                              {savingId === player.id
+                                ? 'Sending...'
+                                : '+ Request'}
+                            </button>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: '#8892A4',
+                                fontWeight: 600,
+                              }}
+                            >
+                              View only
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2599,12 +2954,8 @@ export default function CoachPlayers() {
               {myPlayers.map(player => (
                 <div
                   key={player.id}
-                  className={styles.card}
-                  onClick={() =>
-                    setSelectedPlayerId(current =>
-                      current === player.id ? null : player.id
-                    )
-                  }
+                  className={`${styles.card} coachMyPlayerRow`}
+                  onClick={() => handlePlayerCardClick(player)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -2622,9 +2973,14 @@ export default function CoachPlayers() {
                         : undefined,
                   }}
                 >
-                  <Avatar name={player.name} />
+                  <div className="coachMyPlayerAvatar">
+                    <Avatar name={player.name} />
+                  </div>
 
-                  <div style={{ flex: 1 }}>
+                  <div
+                    className="coachMyPlayerInfo"
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
                     <div
                       style={{
                         fontSize: 13,
@@ -2666,43 +3022,45 @@ export default function CoachPlayers() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className={styles.btnOutline}
-                    onClick={event => {
-                      event.stopPropagation()
-                      setProfilePlayerId(player.id)
-                    }}
-                    style={{ fontSize: 11 }}
-                  >
-                    Profile
-                  </button>
+                  <div className="coachMyPlayerActions">
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      onClick={event => {
+                        event.stopPropagation()
+                        setProfilePlayerId(player.id)
+                      }}
+                      style={{ fontSize: 11 }}
+                    >
+                      Profile
+                    </button>
 
-                  <button
-                    type="button"
-                    disabled={savingId === player.id}
-                    onClick={event => {
-                      event.stopPropagation()
-                      handleRemove(player)
-                    }}
-                    style={{
-                      background: '#FEF2F2',
-                      border: '1px solid #FEE2E2',
-                      color: '#DC2626',
-                      borderRadius: 8,
-                      padding: '4px 10px',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Remove
-                  </button>
+                    <button
+                      type="button"
+                      disabled={savingId === player.id}
+                      onClick={event => {
+                        event.stopPropagation()
+                        handleRemove(player)
+                      }}
+                      style={{
+                        background: '#FEF2F2',
+                        border: '1px solid #FEE2E2',
+                        color: '#DC2626',
+                        borderRadius: 8,
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
 
-            <div>
+            <div className="coachSelectedPlayerDesktopPanel">
               {!selectedPlayer ? (
                 <div
                   className={styles.card}
@@ -2732,7 +3090,7 @@ export default function CoachPlayers() {
                       <div
                         style={{
                           fontSize: 15,
-                          fontWeight: 800,
+                          fontWeight: 700,
                           color: '#0D1B3E',
                         }}
                       >
@@ -2807,7 +3165,7 @@ export default function CoachPlayers() {
                 <div
                   style={{
                     fontSize: 19,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     color: '#0D1B3E',
                   }}
                 >
@@ -2901,7 +3259,7 @@ export default function CoachPlayers() {
                         style={{
                           marginTop: 2,
                           fontSize: 17,
-                          fontWeight: 800,
+                          fontWeight: 700,
                           color,
                         }}
                       >
@@ -2962,7 +3320,7 @@ export default function CoachPlayers() {
                               <div
                                 style={{
                                   fontSize: 12,
-                                  fontWeight: 800,
+                                  fontWeight: 700,
                                   color: '#0D1B3E',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
@@ -3020,7 +3378,7 @@ export default function CoachPlayers() {
                                 border: `1px solid ${resultStyle.border}`,
                                 color: resultStyle.color,
                                 fontSize: 9,
-                                fontWeight: 800,
+                                fontWeight: 700,
                                 whiteSpace: 'nowrap',
                               }}
                             >
@@ -3056,6 +3414,77 @@ export default function CoachPlayers() {
                 >
                   <div className={styles.cardTitle}>Skill profile</div>
 
+                  {Number(profilePlayer.verificationPlayerCount || 0) > 0 && (
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        marginTop: 7,
+                        padding: '3px 7px',
+                        borderRadius: 999,
+                        background: '#ECFDF5',
+                        border: '1px solid #A7F3D0',
+                        color: '#047857',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      ✓ Verified by {profilePlayer.verificationPlayerCount}{' '}
+                      player
+                      {profilePlayer.verificationPlayerCount === 1 ? '' : 's'}
+                    </div>
+                  )}
+
+                  {profilePlayer.assigned &&
+                    profilePlayer.activeVerificationToken &&
+                    !profilePlayer.verifiedByCurrentCoach && (
+                      <button
+                        type="button"
+                        className={styles.btnOutline}
+                        onClick={() =>
+                          navigate(
+                            `/verify-skill/${profilePlayer.activeVerificationToken}`
+                          )
+                        }
+                        style={{
+                          marginTop: 7,
+                          marginLeft: 7,
+                          padding: '3px 8px',
+                          borderColor: '#AFC7FF',
+                          color: '#1A5FFF',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        Verify skills
+                      </button>
+                    )}
+
+                  {profilePlayer.assigned &&
+                    profilePlayer.activeVerificationToken &&
+                    profilePlayer.verifiedByCurrentCoach && (
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          marginTop: 7,
+                          marginLeft: 7,
+                          padding: '3px 7px',
+                          borderRadius: 999,
+                          background: '#F5F3FF',
+                          border: '1px solid #DDD6FE',
+                          color: '#6D28D9',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        ✓ Verified by you
+                      </div>
+                    )}
+
                   <div style={{ marginTop: 12 }}>
                     <ProfileSkillBar
                       label="Smash"
@@ -3085,6 +3514,73 @@ export default function CoachPlayers() {
                     />
                   </div>
                 </div>
+              </div>
+
+              <div className={styles.card} style={{ padding: 18 }}>
+                <div className={styles.cardTitle}>Player profile</div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+                    gap: '14px 28px',
+                    marginTop: 12,
+                  }}
+                >
+                  <ProfileInfoItem
+                    label="Style"
+                    value={profilePlayer.style}
+                  />
+                  <ProfileInfoItem
+                    label="Strength"
+                    value={profilePlayer.setupStrength}
+                  />
+                  <ProfileInfoItem
+                    label="Weakness"
+                    value={profilePlayer.setupWeakness}
+                  />
+                  <ProfileInfoItem
+                    label="What player are you?"
+                    value={
+                      profilePlayer.setupPlayerType &&
+                      profilePlayer.setupPlayerType !== 'Not specified'
+                        ? String(profilePlayer.setupPlayerType)
+                            .toLowerCase()
+                            .includes('player')
+                          ? profilePlayer.setupPlayerType
+                          : `${profilePlayer.setupPlayerType} Player`
+                        : 'Not specified'
+                    }
+                  />
+
+                  {profilePlayer.assigned && (
+                    <ProfileInfoItem
+                      label="Endurance level"
+                      value={
+                        profilePlayer.enduranceLevel ||
+                        'Not specified'
+                      }
+                    />
+                  )}
+                </div>
+
+                {profilePlayer.assigned && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: '9px 11px',
+                      borderRadius: 10,
+                      background: '#EFF6FF',
+                      border: '1px solid #BFDBFE',
+                      color: '#1D4ED8',
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Endurance level is only shown here for players
+                    connected to this coach.
+                  </div>
+                )}
               </div>
 
               <div className={styles.card} style={{ padding: 18 }}>
@@ -3137,6 +3633,15 @@ export default function CoachPlayers() {
                     label="State"
                     value={profilePlayer.state}
                   />
+
+                  {profilePlayer.showGender &&
+                    profilePlayer.gender && (
+                      <ProfileInfoItem
+                        label="Gender"
+                        value={profilePlayer.gender}
+                      />
+                    )}
+
                   <ProfileInfoItem
                     label="Experience"
                     value={
@@ -3278,7 +3783,7 @@ export default function CoachPlayers() {
                 <div
                   style={{
                     fontSize: 20,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     color: '#0D1B3E',
                   }}
                 >
@@ -3365,7 +3870,7 @@ export default function CoachPlayers() {
                     justifyContent: 'center',
                     color: '#fff',
                     background: 'rgba(15,23,42,.8)',
-                    fontWeight: 800,
+                    fontWeight: 700,
                   }}
                 >
                   Starting camera...
@@ -3384,7 +3889,7 @@ export default function CoachPlayers() {
                     gap: 10,
                     background: 'rgba(240,253,244,.94)',
                     color: '#166534',
-                    fontWeight: 900,
+                    fontWeight: 700,
                   }}
                 >
                   <div

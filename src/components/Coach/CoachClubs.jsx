@@ -2702,11 +2702,6 @@ export default function CoachClubs() {
           membership.member_role === "coach" ||
           membership.member_role === "manager";
 
-        const preferredProfile =
-          isCoachMember && coachProfile
-            ? coachProfile
-            : playerProfile || coachProfile;
-
         const normalisedCoachProfile = coachProfile
           ? {
               ...coachProfile,

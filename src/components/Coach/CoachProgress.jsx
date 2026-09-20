@@ -1199,6 +1199,32 @@ function ActionPlanProgress({
   const value =
     clamp(completion)
 
+  const today =
+    new Date()
+      .toISOString()
+      .slice(0, 10)
+
+  const deadlineValue =
+    String(deadline || '')
+      .slice(0, 10)
+
+  const isCompleted =
+    value >= 100
+
+  const isOverdue =
+    Boolean(
+      deadlineValue &&
+      deadlineValue < today &&
+      !isCompleted
+    )
+
+  const isDueToday =
+    Boolean(
+      deadlineValue &&
+      deadlineValue === today &&
+      !isCompleted
+    )
+
   return (
     <div
       style={{
@@ -1226,13 +1252,51 @@ function ActionPlanProgress({
             style={{
               fontWeight: 700,
               color:
-                'var(--text, #0D1B3E)',
+                isOverdue || isDueToday
+                  ? '#EF4444'
+                  : 'var(--text, #0D1B3E)',
             }}
           >
             {deadline
               ? formatDate(deadline)
               : 'Not set'}
           </strong>
+
+          {isCompleted && deadline && (
+            <span
+              style={{
+                marginLeft: 7,
+                color: '#10B981',
+                fontWeight: 700,
+              }}
+            >
+              Completed
+            </span>
+          )}
+
+          {isDueToday && (
+            <span
+              style={{
+                marginLeft: 7,
+                color: '#EF4444',
+                fontWeight: 700,
+              }}
+            >
+              Due today
+            </span>
+          )}
+
+          {isOverdue && (
+            <span
+              style={{
+                marginLeft: 7,
+                color: '#EF4444',
+                fontWeight: 700,
+              }}
+            >
+              Overdue
+            </span>
+          )}
         </span>
 
         <span
@@ -1313,6 +1377,16 @@ export default function CoachProgress() {
     useState(false)
   const [allInjuriesOpen, setAllInjuriesOpen] =
     useState(false)
+  const [fitnessRecordsOpen, setFitnessRecordsOpen] =
+    useState(false)
+  const [fitnessTestAddOpen, setFitnessTestAddOpen] =
+    useState(false)
+  const [fitnessTestEditOpen, setFitnessTestEditOpen] =
+    useState(false)
+  const [editingFitnessTest, setEditingFitnessTest] =
+    useState(null)
+  const [savingFitnessTest, setSavingFitnessTest] =
+    useState(false)
 
   const [selectedMatch, setSelectedMatch] =
     useState(null)
@@ -1343,6 +1417,14 @@ export default function CoachProgress() {
     score3: '',
     result: 'Win',
     notes: '',
+  })
+
+  const [fitnessTestForm, setFitnessTestForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    indicator: 'Endurance',
+    testName: '',
+    result: '',
+    score: 50,
   })
 
   const [
@@ -1849,12 +1931,14 @@ export default function CoachProgress() {
               userId
             ) || []
 
+          const playerFitnessTests =
+            (testsByUserId.get(userId) || []).filter(
+              test => !test.added_by_coach
+            )
+
           const fitness =
             calculateFitnessIndicators({
-              tests:
-                testsByUserId.get(
-                  userId
-                ) || [],
+              tests: playerFitnessTests,
               trainingLogs:
                 trainingByUserId.get(
                   userId
@@ -1930,6 +2014,25 @@ export default function CoachProgress() {
               '',
             performance,
             fitness,
+            fitnessTests:
+              (testsByUserId.get(userId) || [])
+                .slice()
+                .sort((a, b) => {
+                  const dateCompare =
+                    String(b.test_date || '').localeCompare(
+                      String(a.test_date || '')
+                    )
+
+                  if (dateCompare !== 0) {
+                    return dateCompare
+                  }
+
+                  return String(
+                    b.created_at || ''
+                  ).localeCompare(
+                    String(a.created_at || '')
+                  )
+                }),
             injuries:
               normalizedInjuries,
             activeInjuryCount,
@@ -2197,6 +2300,99 @@ export default function CoachProgress() {
       ]
     )
 
+  const getCoachFitnessValue = useCallback(
+    fieldKey => {
+      if (!selectedStudent) {
+        return null
+      }
+
+      const indicatorLabel =
+        FITNESS_FIELDS.find(
+          field => field.key === fieldKey
+        )?.label || fieldKey
+
+      const latestCoachTest =
+        (selectedStudent.fitnessTests || [])
+          .filter(
+            test =>
+              test.added_by_coach &&
+              String(test.indicator || '')
+                .trim()
+                .toLowerCase() ===
+                String(indicatorLabel || '')
+                  .trim()
+                  .toLowerCase()
+          )
+          .slice()
+          .sort((a, b) => {
+            const aTime =
+              new Date(
+                a.created_at ||
+                  `${a.test_date || ''}T00:00:00`
+              ).getTime() || 0
+
+            const bTime =
+              new Date(
+                b.created_at ||
+                  `${b.test_date || ''}T00:00:00`
+              ).getTime() || 0
+
+            return bTime - aTime
+          })[0] || null
+
+      const assessmentValue =
+        selectedStudent.assessment?.[
+          fieldKey
+        ]
+
+      const hasAssessmentValue =
+        assessmentValue !== null &&
+        assessmentValue !== undefined &&
+        Number.isFinite(
+          Number(assessmentValue)
+        )
+
+      if (!latestCoachTest) {
+        return hasAssessmentValue
+          ? Number(assessmentValue)
+          : null
+      }
+
+      const coachTestValue =
+        Number(latestCoachTest.score)
+
+      if (
+        !Number.isFinite(coachTestValue)
+      ) {
+        return hasAssessmentValue
+          ? Number(assessmentValue)
+          : null
+      }
+
+      if (!hasAssessmentValue) {
+        return coachTestValue
+      }
+
+      const coachTestTime =
+        new Date(
+          latestCoachTest.created_at ||
+            `${latestCoachTest.test_date || ''}T00:00:00`
+        ).getTime() || 0
+
+      const assessmentTime =
+        new Date(
+          selectedStudent.assessment
+            ?.updated_at || 0
+        ).getTime() || 0
+
+      return coachTestTime >=
+        assessmentTime
+        ? coachTestValue
+        : Number(assessmentValue)
+    },
+    [selectedStudent]
+  )
+
   const searchMatchPlayers =
     useCallback(
       async (keyword, setter) => {
@@ -2460,6 +2656,419 @@ export default function CoachProgress() {
     setPartnerSuggestions([])
     setOpponent1Suggestions([])
     setOpponent2Suggestions([])
+  }
+
+  const getPlayerFitnessTestScore = indicator => {
+    if (!selectedStudent) return null
+
+    const normalizedIndicator =
+      String(indicator || '')
+        .trim()
+        .toLowerCase()
+
+    const latestPlayerTest =
+      (selectedStudent.fitnessTests || [])
+        .filter(
+          test =>
+            !test.added_by_coach &&
+            String(test.indicator || '')
+              .trim()
+              .toLowerCase() ===
+              normalizedIndicator
+        )
+        .slice()
+        .sort((a, b) => {
+          const aTime =
+            new Date(
+              a.created_at ||
+                `${a.test_date || ''}T00:00:00`
+            ).getTime() || 0
+
+          const bTime =
+            new Date(
+              b.created_at ||
+                `${b.test_date || ''}T00:00:00`
+            ).getTime() || 0
+
+          return bTime - aTime
+        })[0] || null
+
+    if (
+      !latestPlayerTest ||
+      !Number.isFinite(
+        Number(latestPlayerTest.score)
+      )
+    ) {
+      return null
+    }
+
+    return Number(latestPlayerTest.score)
+  }
+
+  const openEditFitnessTest = test => {
+    if (
+      !test?.added_by_coach ||
+      String(test.coach_user_id || '') !== String(user?.id || '')
+    ) {
+      return
+    }
+
+    setEditingFitnessTest(test)
+    setFitnessTestForm({
+      date:
+        String(test.test_date || '').slice(0, 10) ||
+        new Date().toISOString().split('T')[0],
+      indicator: test.indicator || 'Endurance',
+      testName: test.test_name || '',
+      result: test.result || '',
+      score: clamp(test.score),
+    })
+    setFitnessRecordsOpen(false)
+    setFitnessTestEditOpen(true)
+    setError('')
+    setSuccess('')
+  }
+
+  const saveEditedFitnessTest = async () => {
+    if (
+      !user?.id ||
+      !selectedStudent ||
+      !editingFitnessTest ||
+      savingFitnessTest
+    ) {
+      return
+    }
+
+    if (
+      !editingFitnessTest.added_by_coach ||
+      String(editingFitnessTest.coach_user_id || '') !== String(user.id)
+    ) {
+      alert('You can only edit fitness tests that you added.')
+      return
+    }
+
+    if (!fitnessTestForm.testName.trim()) {
+      alert('Please enter the test name.')
+      return
+    }
+
+    if (!fitnessTestForm.result.trim()) {
+      alert('Please enter the test result.')
+      return
+    }
+
+    setSavingFitnessTest(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const payload = {
+        test_date: fitnessTestForm.date,
+        indicator: fitnessTestForm.indicator,
+        test_name: fitnessTestForm.testName.trim(),
+        result: fitnessTestForm.result.trim(),
+        score: clamp(fitnessTestForm.score),
+        updated_at: new Date().toISOString(),
+      }
+
+      const {
+        data,
+        error: updateError,
+      } = await supabase
+        .from('fitness_tests')
+        .update(payload)
+        .eq('id', editingFitnessTest.id)
+        .eq('added_by_coach', true)
+        .eq('coach_user_id', user.id)
+        .select('*')
+        .single()
+
+      if (updateError) {
+        throw updateError
+      }
+
+      const indicatorKey =
+        String(fitnessTestForm.indicator || '')
+          .trim()
+          .toLowerCase()
+
+      const syncedCoachScore =
+        clamp(fitnessTestForm.score)
+
+      const {
+        data: syncedAssessment,
+        error: assessmentSyncError,
+      } = await supabase
+        .from('coach_player_assessments')
+        .upsert(
+          {
+            coach_user_id: user.id,
+            player_user_id: selectedStudent.id,
+            [indicatorKey]: syncedCoachScore,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict:
+              'coach_user_id,player_user_id',
+          }
+        )
+        .select('*')
+        .single()
+
+      if (assessmentSyncError) {
+        throw assessmentSyncError
+      }
+
+      setStudents(current =>
+        current.map(student =>
+          student.id === selectedStudent.id
+            ? {
+                ...student,
+                fitnessTests: (
+                  student.fitnessTests || []
+                )
+                  .map(test =>
+                    test.id === data.id
+                      ? data
+                      : test
+                  )
+                  .sort((a, b) => {
+                    const dateCompare =
+                      String(b.test_date || '').localeCompare(
+                        String(a.test_date || '')
+                      )
+
+                    if (dateCompare !== 0) {
+                      return dateCompare
+                    }
+
+                    return String(
+                      b.created_at || ''
+                    ).localeCompare(
+                      String(a.created_at || '')
+                    )
+                  }),
+                assessment: {
+                  ...(student.assessment || {}),
+                  ...(syncedAssessment || {}),
+                  [indicatorKey]:
+                    syncedCoachScore,
+                },
+              }
+            : student
+        )
+      )
+
+      setFitnessTestEditOpen(false)
+      setEditingFitnessTest(null)
+      setFitnessRecordsOpen(true)
+
+      setSuccess(
+        `Coach fitness test updated for ${selectedStudent.name}.`
+      )
+    } catch (saveError) {
+      console.error(
+        'Update coach fitness test error:',
+        saveError
+      )
+
+      setError(
+        saveError.message ||
+          'Unable to update the fitness test record.'
+      )
+    } finally {
+      setSavingFitnessTest(false)
+    }
+  }
+
+  const resetFitnessTestForm = (
+    indicator = 'Endurance'
+  ) => {
+    const indicatorKey =
+      String(indicator || '')
+        .trim()
+        .toLowerCase()
+
+    const displayedCoachScore =
+      getCoachFitnessValue(indicatorKey)
+
+    const savedAssessmentScore =
+      selectedStudent?.assessment?.[
+        indicatorKey
+      ]
+
+    const currentCoachScore =
+      displayedCoachScore !== null &&
+      displayedCoachScore !== undefined &&
+      Number.isFinite(
+        Number(displayedCoachScore)
+      )
+        ? Number(displayedCoachScore)
+        : savedAssessmentScore !== null &&
+            savedAssessmentScore !== undefined &&
+            Number.isFinite(
+              Number(savedAssessmentScore)
+            )
+          ? Number(savedAssessmentScore)
+          : 50
+
+    setFitnessTestForm({
+      date: new Date().toISOString().split('T')[0],
+      indicator,
+      testName: '',
+      result: '',
+      score: clamp(currentCoachScore),
+    })
+  }
+
+  const openAddFitnessTest = () => {
+    if (!selectedStudent) return
+
+    resetFitnessTestForm('Endurance')
+    setFitnessRecordsOpen(false)
+    setFitnessTestAddOpen(true)
+    setError('')
+    setSuccess('')
+  }
+
+  const saveCoachFitnessTest = async () => {
+    if (
+      !user?.id ||
+      !selectedStudent ||
+      savingFitnessTest
+    ) {
+      return
+    }
+
+    if (!fitnessTestForm.testName.trim()) {
+      alert('Please enter the test name.')
+      return
+    }
+
+    if (!fitnessTestForm.result.trim()) {
+      alert('Please enter the test result.')
+      return
+    }
+
+    setSavingFitnessTest(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const payload = {
+        user_id: selectedStudent.id,
+        test_date: fitnessTestForm.date,
+        indicator: fitnessTestForm.indicator,
+        test_name: fitnessTestForm.testName.trim(),
+        result: fitnessTestForm.result.trim(),
+        score: clamp(fitnessTestForm.score),
+        added_by_coach: true,
+        coach_user_id: user.id,
+      }
+
+      const {
+        data,
+        error: insertError,
+      } = await supabase
+        .from('fitness_tests')
+        .insert(payload)
+        .select('*')
+        .single()
+
+      if (insertError) {
+        throw insertError
+      }
+
+      const indicatorKey =
+        String(fitnessTestForm.indicator || '')
+          .trim()
+          .toLowerCase()
+
+      const syncedCoachScore =
+        clamp(fitnessTestForm.score)
+
+      const assessmentPayload = {
+        coach_user_id: user.id,
+        player_user_id: selectedStudent.id,
+        [indicatorKey]: syncedCoachScore,
+        updated_at: new Date().toISOString(),
+      }
+
+      const {
+        data: syncedAssessment,
+        error: assessmentSyncError,
+      } = await supabase
+        .from('coach_player_assessments')
+        .upsert(
+          assessmentPayload,
+          {
+            onConflict:
+              'coach_user_id,player_user_id',
+          }
+        )
+        .select('*')
+        .single()
+
+      if (assessmentSyncError) {
+        throw assessmentSyncError
+      }
+
+      setStudents(current =>
+        current.map(student =>
+          student.id === selectedStudent.id
+            ? {
+                ...student,
+                fitnessTests: [
+                  data,
+                  ...(student.fitnessTests || []),
+                ].sort((a, b) => {
+                  const dateCompare =
+                    String(b.test_date || '').localeCompare(
+                      String(a.test_date || '')
+                    )
+
+                  if (dateCompare !== 0) {
+                    return dateCompare
+                  }
+
+                  return String(
+                    b.created_at || ''
+                  ).localeCompare(
+                    String(a.created_at || '')
+                  )
+                }),
+                assessment: {
+                  ...(student.assessment || {}),
+                  ...(syncedAssessment || {}),
+                  [indicatorKey]:
+                    syncedCoachScore,
+                },
+              }
+            : student
+        )
+      )
+
+      setFitnessTestAddOpen(false)
+      resetFitnessTestForm()
+
+      setSuccess(
+        `Fitness test added for ${selectedStudent.name}. Coach ${fitnessTestForm.indicator} rating updated to ${clamp(
+          fitnessTestForm.score
+        )}.`
+      )
+    } catch (saveError) {
+      console.error(
+        'Save coach fitness test error:',
+        saveError
+      )
+
+      setError(
+        saveError.message ||
+          'Unable to add the fitness test record.'
+      )
+    } finally {
+      setSavingFitnessTest(false)
+    }
   }
 
   const openAddMatch = () => {
@@ -3490,11 +4099,14 @@ export default function CoachProgress() {
                       alignItems: 'center',
                       gap: 12,
                       marginBottom: 16,
+                      paddingBottom: 14,
+                      borderBottom:
+                        '1px solid var(--line, #EEF1F8)',
                     }}
                   >
                     <Avatar name={selectedStudent.name} size={44} />
 
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
                           fontSize: 15,
@@ -3504,55 +4116,70 @@ export default function CoachProgress() {
                       >
                         {selectedStudent.name}
                       </div>
+
                       <div
                         style={{
                           fontSize: 12,
                           color: 'var(--text-muted, #8892A4)',
+                          marginTop: 2,
                         }}
                       >
                         {selectedStudent.club}
+                        {selectedStudent.state
+                          ? ` • ${selectedStudent.state}`
+                          : ''}
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          flexWrap: 'wrap',
+                          marginTop: 7,
+                        }}
+                      >
+                        <LevelBadge level={selectedStudent.level} />
+
+                        <span
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: 999,
+                            background:
+                              'color-mix(in srgb, #7C3AED 10%, var(--card, #FFFFFF))',
+                            color: '#7C3AED',
+                            fontSize: 10,
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          Purple marker = coach rating
+                        </span>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      className={styles.btnPrimary}
-                      onClick={() => openEditor(selectedStudent)}
-                    >
-                      {selectedStudent.progress || selectedStudent.assessment
-                        ? 'Update progress'
-                        : 'Add progress'}
-                    </button>
                   </div>
 
                   <div
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 10,
                       marginBottom: 24,
                     }}
                   >
-                    <div className={styles.cardTitle} style={{ marginBottom: 0 }}>
+                    <div
+                      className={styles.cardTitle}
+                      style={{ marginBottom: 4 }}
+                    >
                       Performance skills
                     </div>
 
-                    {selectedStudent.assessment && (
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: '#7C3AED',
-                          background:
-                            'color-mix(in srgb, #7C3AED 13%, var(--card, #FFFFFF))',
-                          borderRadius: 999,
-                          padding: '4px 9px',
-                        }}
-                      >
-                        Coach changes shown below
-                      </span>
-                    )}
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--text-muted, #8892A4)',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      Player self-assessment with coach comparison markers.
+                    </div>
                   </div>
 
                   {PERFORMANCE_FIELDS.map(field => {
@@ -3599,31 +4226,43 @@ export default function CoachProgress() {
                   <div
                     style={{
                       display: 'flex',
-                      alignItems: 'center',
+                      alignItems: 'flex-start',
                       justifyContent: 'space-between',
                       gap: 10,
                       marginBottom: 24,
                     }}
                   >
-                    <div className={styles.cardTitle} style={{ marginBottom: 0 }}>
-                      Fitness indicators
-                    </div>
+                    <div>
+                      <div
+                        className={styles.cardTitle}
+                        style={{ marginBottom: 4 }}
+                      >
+                        Fitness indicators
+                      </div>
 
-                    {selectedStudent.assessment && (
-                      <span
+                      <div
                         style={{
                           fontSize: 11,
-                          fontWeight: 700,
-                          color: '#7C3AED',
-                          background:
-                            'color-mix(in srgb, #7C3AED 13%, var(--card, #FFFFFF))',
-                          borderRadius: 999,
-                          padding: '4px 9px',
+                          color: 'var(--text-muted, #8892A4)',
+                          lineHeight: 1.45,
                         }}
                       >
-                        Coach changes shown below
-                      </span>
-                    )}
+                        Current player fitness values and coach assessment.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      onClick={() => setFitnessRecordsOpen(true)}
+                      style={{
+                        fontSize: 11,
+                        padding: '7px 10px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      View records
+                    </button>
                   </div>
 
                   {FITNESS_FIELDS.map(field => (
@@ -3631,7 +4270,7 @@ export default function CoachProgress() {
                       key={field.key}
                       label={field.label}
                       studentValue={selectedStudent.fitness[field.key]}
-                      coachValue={selectedStudent.assessment?.[field.key]}
+                      coachValue={getCoachFitnessValue(field.key)}
                       color={value =>
                         getMetricColor(field.label, value, 'fitness')
                       }
@@ -3645,35 +4284,86 @@ export default function CoachProgress() {
                       color: 'var(--text-muted, #8892A4)',
                     }}
                   >
-                    Fitness values come from the player record. A purple marker
-                    shows the coach rating only when it is different.
+                    Fitness values come from the player record. The purple marker
+                    shows the coach's latest rating or coach-added test score.
                   </div>
                 </div>
 
                 <div className={styles.card}>
-                  <div className={styles.cardTitle}>
-                    Coach progress record
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div>
+                      <div
+                        className={styles.cardTitle}
+                        style={{ marginBottom: 4 }}
+                      >
+                        Coach progress record
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--text-muted, #8892A4)',
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        Coach feedback, action plans and next review details.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      onClick={() => openEditor(selectedStudent)}
+                      style={{
+                        fontSize: 11,
+                        padding: '7px 11px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {selectedStudent.progress || selectedStudent.assessment
+                        ? 'Update progress'
+                        : 'Add progress'}
+                    </button>
                   </div>
 
-                  <div className={styles.statRow}>
-                    <span className={styles.statLabel}>Status</span>
-                    <span className={styles.statVal}>
-                      {selectedStudent.progress?.progress_status || 'Not reviewed'}
-                    </span>
-                  </div>
+                  <div
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: 11,
+                      background: 'var(--soft, #F7F9FF)',
+                      border:
+                        '1px solid var(--line, #EEF1F8)',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div className={styles.statRow}>
+                      <span className={styles.statLabel}>Status</span>
+                      <span className={styles.statVal}>
+                        {selectedStudent.progress?.progress_status || 'Not reviewed'}
+                      </span>
+                    </div>
 
-                  <div className={styles.statRow}>
-                    <span className={styles.statLabel}>Focus area</span>
-                    <span className={styles.statVal}>
-                      {selectedStudent.progress?.focus_area || 'Not set'}
-                    </span>
-                  </div>
+                    <div className={styles.statRow}>
+                      <span className={styles.statLabel}>Focus area</span>
+                      <span className={styles.statVal}>
+                        {selectedStudent.progress?.focus_area || 'Not set'}
+                      </span>
+                    </div>
 
-                  <div className={styles.statRow}>
-                    <span className={styles.statLabel}>Next review</span>
-                    <span className={styles.statVal}>
-                      {formatDate(selectedStudent.progress?.next_review_date)}
-                    </span>
+                    <div className={styles.statRow}>
+                      <span className={styles.statLabel}>Next review</span>
+                      <span className={styles.statVal}>
+                        {formatDate(selectedStudent.progress?.next_review_date)}
+                      </span>
+                    </div>
                   </div>
 
                   <div
@@ -4085,8 +4775,8 @@ export default function CoachProgress() {
                           lineHeight: 1.5,
                         }}
                       >
-                        Showing the latest 5 matches. Open the full history to
-                        view older records or coach notes.
+                        Latest match history for this player. Open the full
+                        history to review older records and coach notes.
                       </div>
                     </div>
 
@@ -4574,6 +5264,870 @@ export default function CoachProgress() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {fitnessRecordsOpen && selectedStudent && (
+        <div
+          className={styles.modalOverlay}
+          onClick={event => {
+            if (event.target === event.currentTarget) {
+              setFitnessRecordsOpen(false)
+            }
+          }}
+        >
+          <div
+            className={styles.modal}
+            style={{
+              maxWidth: 760,
+              width: '92vw',
+              maxHeight: '86vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div className={styles.modalHead}>
+              <div>
+                <div className={styles.modalTitle}>
+                  Fitness Test Records
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 3,
+                    fontSize: 11,
+                    color: 'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  {selectedStudent.name} • Read-only player records
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() => setFitnessRecordsOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 14,
+                flexWrap: 'wrap',
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 240,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  background:
+                    'color-mix(in srgb, #7C3AED 7%, var(--soft, #F7F9FF))',
+                  border:
+                    '1px solid color-mix(in srgb, #7C3AED 14%, var(--line, #EEF1F8))',
+                  color: 'var(--text-muted, #8892A4)',
+                  fontSize: 11,
+                  lineHeight: 1.55,
+                }}
+              >
+                Player records stay unchanged; coach-added tests are labelled
+                <strong> Added by Coach</strong>.
+              </div>
+
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={openAddFitnessTest}
+                style={{
+                  fontSize: 11,
+                  padding: '8px 11px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                + Add fitness test
+              </button>
+            </div>
+
+            {!selectedStudent.fitnessTests?.length ? (
+              <div
+                style={{
+                  padding: '26px 16px',
+                  borderRadius: 12,
+                  background: 'var(--soft, #F7F9FF)',
+                  color: 'var(--text-muted, #8892A4)',
+                  fontSize: 12,
+                  textAlign: 'center',
+                }}
+              >
+                No fitness test records have been added by this player.
+              </div>
+            ) : (
+              <div
+                style={{
+                  border:
+                    '1px solid var(--line, #EEF1F8)',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      viewportWidth <= 650
+                        ? 'minmax(0, 1fr)'
+                        : 'minmax(180px, 1.4fr) minmax(100px, 0.8fr) minmax(100px, 0.8fr) 72px',
+                    gap: 10,
+                    padding: '10px 12px',
+                    background: 'var(--soft, #F7F9FF)',
+                    color: 'var(--text-muted, #8892A4)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.45,
+                  }}
+                >
+                  <span>Test</span>
+                  {viewportWidth > 650 && <span>Indicator</span>}
+                  {viewportWidth > 650 && <span>Result</span>}
+                  {viewportWidth > 650 && <span>Score</span>}
+                </div>
+
+                {selectedStudent.fitnessTests.map(test => {
+                  const canEditCoachTest =
+                    test.added_by_coach &&
+                    String(test.coach_user_id || '') ===
+                      String(user?.id || '')
+
+                  const playerScore =
+                    test.added_by_coach
+                      ? getPlayerFitnessTestScore(
+                          test.indicator
+                        )
+                      : null
+
+                  const scoreDifference =
+                    playerScore !== null &&
+                    Number.isFinite(
+                      Number(test.score)
+                    )
+                      ? Number(test.score) -
+                        Number(playerScore)
+                      : null
+
+                  return (
+                  <div
+                    key={test.id}
+                    onClick={() => {
+                      if (canEditCoachTest) {
+                        openEditFitnessTest(test)
+                      }
+                    }}
+                    role={canEditCoachTest ? 'button' : undefined}
+                    tabIndex={canEditCoachTest ? 0 : undefined}
+                    onKeyDown={event => {
+                      if (
+                        canEditCoachTest &&
+                        (event.key === 'Enter' ||
+                          event.key === ' ')
+                      ) {
+                        event.preventDefault()
+                        openEditFitnessTest(test)
+                      }
+                    }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns:
+                        viewportWidth <= 650
+                          ? 'minmax(0, 1fr)'
+                          : 'minmax(180px, 1.4fr) minmax(100px, 0.8fr) minmax(100px, 0.8fr) 72px',
+                      gap: 10,
+                      padding: '12px',
+                      alignItems: 'center',
+                      borderTop:
+                        '1px solid var(--line, #EEF1F8)',
+                      cursor:
+                        canEditCoachTest
+                          ? 'pointer'
+                          : 'default',
+                      background:
+                        canEditCoachTest
+                          ? 'color-mix(in srgb, #7C3AED 2%, var(--card, #FFFFFF))'
+                          : 'var(--card, #FFFFFF)',
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--text, #0D1B3E)',
+                        }}
+                      >
+                        {test.test_name || 'Fitness test'}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 3,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          flexWrap: 'wrap',
+                          fontSize: 11,
+                          color: 'var(--text-muted, #8892A4)',
+                        }}
+                      >
+                        <span>{formatDate(test.test_date)}</span>
+
+                        {test.added_by_coach && (
+                          <span
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: 999,
+                              background:
+                                'color-mix(in srgb, #7C3AED 10%, var(--card, #FFFFFF))',
+                              color: '#7C3AED',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            Added by Coach
+                          </span>
+                        )}
+
+                        {canEditCoachTest && (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 700,
+                              color: '#7C3AED',
+                            }}
+                          >
+                            Click to edit
+                          </span>
+                        )}
+                      </div>
+
+                      {viewportWidth <= 650 && (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 11,
+                            color: 'var(--text-muted, #8892A4)',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {test.indicator || '—'} • {test.result || '—'} •{' '}
+                          Score {clamp(test.score)}/100
+                          {test.added_by_coach &&
+                            scoreDifference !== null &&
+                            scoreDifference !== 0
+                              ? ` (${
+                                  scoreDifference > 0
+                                    ? '+'
+                                    : ''
+                                }${scoreDifference})`
+                              : ''}
+                        </div>
+                      )}
+                    </div>
+
+                    {viewportWidth > 650 && (
+                      <>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: 'var(--text, #0D1B3E)',
+                          }}
+                        >
+                          {test.indicator || '—'}
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: 'var(--text, #0D1B3E)',
+                          }}
+                        >
+                          {test.result || '—'}
+                        </div>
+
+                        <div
+                          style={{
+                            textAlign: 'right',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: '#7C3AED',
+                            }}
+                          >
+                            {clamp(test.score)}
+                          </div>
+
+                          {test.added_by_coach &&
+                            scoreDifference !== null &&
+                            scoreDifference !== 0 && (
+                              <div
+                                style={{
+                                  marginTop: 3,
+                                  fontSize: 9,
+                                  fontWeight: 700,
+                                  color:
+                                    scoreDifference > 0
+                                      ? '#10B981'
+                                      : '#EF4444',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {scoreDifference > 0
+                                  ? `+${scoreDifference}`
+                                  : scoreDifference}
+                              </div>
+                            )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                marginTop: 16,
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => setFitnessRecordsOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fitnessTestEditOpen &&
+        selectedStudent &&
+        editingFitnessTest && (
+        <div
+          className={styles.modalOverlay}
+          onClick={event => {
+            if (
+              event.target === event.currentTarget &&
+              !savingFitnessTest
+            ) {
+              setFitnessTestEditOpen(false)
+              setEditingFitnessTest(null)
+            }
+          }}
+        >
+          <div
+            className={styles.modal}
+            style={{
+              maxWidth: 720,
+              width: '92vw',
+            }}
+          >
+            <div className={styles.modalHead}>
+              <div>
+                <div className={styles.modalTitle}>
+                  Edit Fitness Test
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 3,
+                    fontSize: 11,
+                    color: 'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  Edit the coach-recorded test for {selectedStudent.name}.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() => {
+                  setFitnessTestEditOpen(false)
+                  setEditingFitnessTest(null)
+                }}
+                disabled={savingFitnessTest}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  viewportWidth <= 650
+                    ? 'minmax(0, 1fr)'
+                    : 'repeat(2, minmax(0, 1fr))',
+                gap: 12,
+              }}
+            >
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Date
+                </label>
+                <input
+                  className={styles.formInput}
+                  type="date"
+                  value={fitnessTestForm.date}
+                  onChange={event =>
+                    setFitnessTestForm(current => ({
+                      ...current,
+                      date: event.target.value,
+                    }))
+                  }
+                  disabled={savingFitnessTest}
+                />
+              </div>
+
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Indicator
+                </label>
+                <select
+                  className={styles.formSelect}
+                  value={fitnessTestForm.indicator}
+                  onChange={event => {
+                    const nextIndicator =
+                      event.target.value
+
+                    const nextIndicatorKey =
+                      String(nextIndicator)
+                        .trim()
+                        .toLowerCase()
+
+                    const displayedCoachScore =
+                      getCoachFitnessValue(
+                        nextIndicatorKey
+                      )
+
+                    const savedAssessmentScore =
+                      selectedStudent?.assessment?.[
+                        nextIndicatorKey
+                      ]
+
+                    const currentCoachScore =
+                      displayedCoachScore !== null &&
+                      displayedCoachScore !== undefined &&
+                      Number.isFinite(
+                        Number(displayedCoachScore)
+                      )
+                        ? Number(displayedCoachScore)
+                        : savedAssessmentScore !== null &&
+                            savedAssessmentScore !== undefined &&
+                            Number.isFinite(
+                              Number(savedAssessmentScore)
+                            )
+                          ? Number(savedAssessmentScore)
+                          : 50
+
+                    setFitnessTestForm(current => ({
+                      ...current,
+                      indicator: nextIndicator,
+                      score: clamp(currentCoachScore),
+                    }))
+                  }}
+                  disabled={savingFitnessTest}
+                >
+                  <option>Endurance</option>
+                  <option>Speed</option>
+                  <option>Strength</option>
+                  <option>Agility</option>
+                </select>
+              </div>
+            </div>
+
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>
+                Test name
+              </label>
+              <input
+                className={styles.formInput}
+                value={fitnessTestForm.testName}
+                onChange={event =>
+                  setFitnessTestForm(current => ({
+                    ...current,
+                    testName: event.target.value,
+                  }))
+                }
+                disabled={savingFitnessTest}
+              />
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  viewportWidth <= 650
+                    ? 'minmax(0, 1fr)'
+                    : 'repeat(2, minmax(0, 1fr))',
+                gap: 12,
+              }}
+            >
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Result
+                </label>
+                <input
+                  className={styles.formInput}
+                  value={fitnessTestForm.result}
+                  onChange={event =>
+                    setFitnessTestForm(current => ({
+                      ...current,
+                      result: event.target.value,
+                    }))
+                  }
+                  disabled={savingFitnessTest}
+                />
+              </div>
+
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Score /100
+                </label>
+                <input
+                  className={styles.formInput}
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={fitnessTestForm.score}
+                  onChange={event =>
+                    setFitnessTestForm(current => ({
+                      ...current,
+                      score: clamp(event.target.value),
+                    }))
+                  }
+                  disabled={savingFitnessTest}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 4,
+                padding: '10px 12px',
+                borderRadius: 10,
+                background:
+                  'color-mix(in srgb, #7C3AED 7%, var(--soft, #F7F9FF))',
+                color: 'var(--text-muted, #8892A4)',
+                fontSize: 11,
+                lineHeight: 1.55,
+              }}
+            >
+              Only coach-added fitness tests can be edited. Player-entered
+              records remain read-only.
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 10,
+                marginTop: 16,
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => {
+                  setFitnessTestEditOpen(false)
+                  setEditingFitnessTest(null)
+                  setFitnessRecordsOpen(true)
+                }}
+                disabled={savingFitnessTest}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={saveEditedFitnessTest}
+                disabled={savingFitnessTest}
+              >
+                {savingFitnessTest
+                  ? 'Saving...'
+                  : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fitnessTestAddOpen && selectedStudent && (
+        <div
+          className={styles.modalOverlay}
+          onClick={event => {
+            if (
+              event.target === event.currentTarget &&
+              !savingFitnessTest
+            ) {
+              setFitnessTestAddOpen(false)
+            }
+          }}
+        >
+          <div
+            className={styles.modal}
+            style={{
+              maxWidth: 720,
+              width: '92vw',
+            }}
+          >
+            <div className={styles.modalHead}>
+              <div>
+                <div className={styles.modalTitle}>
+                  Add Fitness Test
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 3,
+                    fontSize: 11,
+                    color: 'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  Add a coach-recorded test for {selectedStudent.name}.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() => setFitnessTestAddOpen(false)}
+                disabled={savingFitnessTest}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  viewportWidth <= 650
+                    ? 'minmax(0, 1fr)'
+                    : 'repeat(2, minmax(0, 1fr))',
+                gap: 12,
+              }}
+            >
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Date
+                </label>
+                <input
+                  className={styles.formInput}
+                  type="date"
+                  value={fitnessTestForm.date}
+                  onChange={event =>
+                    setFitnessTestForm(current => ({
+                      ...current,
+                      date: event.target.value,
+                    }))
+                  }
+                  disabled={savingFitnessTest}
+                />
+              </div>
+
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Indicator
+                </label>
+                <select
+                  className={styles.formSelect}
+                  value={fitnessTestForm.indicator}
+                  onChange={event => {
+                    const nextIndicator =
+                      event.target.value
+
+                    const nextIndicatorKey =
+                      String(nextIndicator)
+                        .trim()
+                        .toLowerCase()
+
+                    const displayedCoachScore =
+                      getCoachFitnessValue(
+                        nextIndicatorKey
+                      )
+
+                    const savedAssessmentScore =
+                      selectedStudent?.assessment?.[
+                        nextIndicatorKey
+                      ]
+
+                    const currentCoachScore =
+                      displayedCoachScore !== null &&
+                      displayedCoachScore !== undefined &&
+                      Number.isFinite(
+                        Number(displayedCoachScore)
+                      )
+                        ? Number(
+                            displayedCoachScore
+                          )
+                        : savedAssessmentScore !== null &&
+                            savedAssessmentScore !== undefined &&
+                            Number.isFinite(
+                              Number(savedAssessmentScore)
+                            )
+                          ? Number(
+                              savedAssessmentScore
+                            )
+                          : 50
+
+                    setFitnessTestForm(current => ({
+                      ...current,
+                      indicator: nextIndicator,
+                      score: clamp(
+                        currentCoachScore
+                      ),
+                    }))
+                  }}
+                  disabled={savingFitnessTest}
+                >
+                  <option>Endurance</option>
+                  <option>Speed</option>
+                  <option>Strength</option>
+                  <option>Agility</option>
+                </select>
+              </div>
+            </div>
+
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>
+                Test name
+              </label>
+              <input
+                className={styles.formInput}
+                placeholder="e.g. 5-10-5 Shuttle Run"
+                value={fitnessTestForm.testName}
+                onChange={event =>
+                  setFitnessTestForm(current => ({
+                    ...current,
+                    testName: event.target.value,
+                  }))
+                }
+                disabled={savingFitnessTest}
+              />
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  viewportWidth <= 650
+                    ? 'minmax(0, 1fr)'
+                    : 'repeat(2, minmax(0, 1fr))',
+                gap: 12,
+              }}
+            >
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Result
+                </label>
+                <input
+                  className={styles.formInput}
+                  placeholder="e.g. 5.8 s, 15 reps"
+                  value={fitnessTestForm.result}
+                  onChange={event =>
+                    setFitnessTestForm(current => ({
+                      ...current,
+                      result: event.target.value,
+                    }))
+                  }
+                  disabled={savingFitnessTest}
+                />
+              </div>
+
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Score /100
+                </label>
+                <input
+                  className={styles.formInput}
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={fitnessTestForm.score}
+                  onChange={event =>
+                    setFitnessTestForm(current => ({
+                      ...current,
+                      score: clamp(event.target.value),
+                    }))
+                  }
+                  disabled={savingFitnessTest}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 4,
+                padding: '10px 12px',
+                borderRadius: 10,
+                background:
+                  'color-mix(in srgb, #7C3AED 7%, var(--soft, #F7F9FF))',
+                color: 'var(--text-muted, #8892A4)',
+                fontSize: 11,
+                lineHeight: 1.55,
+              }}
+            >
+              This creates a new fitness test record. It does not overwrite a
+              test entered by the player.
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 10,
+                marginTop: 16,
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => setFitnessTestAddOpen(false)}
+                disabled={savingFitnessTest}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={saveCoachFitnessTest}
+                disabled={savingFitnessTest}
+              >
+                {savingFitnessTest
+                  ? 'Saving...'
+                  : 'Add fitness test'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

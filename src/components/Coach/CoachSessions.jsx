@@ -24,7 +24,61 @@ const SESSION_TYPES = [
   'Net Play',
   'Fitness & Conditioning',
   'Strategy Session',
+  'Competition',
+  'Friendly Match',
 ]
+
+const TRAINING_FOCUS_OPTIONS = [
+  'Endurance',
+  'Speed',
+  'Strength',
+  'Agility',
+  'Recovery',
+  'Matches',
+  'Defense Drills',
+  'Focus on retuning',
+]
+
+const normalizeTrainingFocus = (
+  playerFocus,
+  sessionType
+) => {
+  const typedFocus = String(
+    playerFocus || ''
+  ).trim()
+
+  const exactAllowedFocus =
+    TRAINING_FOCUS_OPTIONS.find(
+      option =>
+        option.toLowerCase() ===
+        typedFocus.toLowerCase()
+    )
+
+  if (exactAllowedFocus) {
+    return exactAllowedFocus
+  }
+
+  const type = String(
+    sessionType || ''
+  ).trim()
+
+  const sessionFocusMap = {
+    'Footwork Drills': 'Agility',
+    'Smash Training': 'Strength',
+    'Defense Drills': 'Defense Drills',
+    'Match Practice': 'Matches',
+    'Net Play': 'Speed',
+    'Fitness & Conditioning': 'Endurance',
+    'Strategy Session': 'Matches',
+    Competition: 'Matches',
+    'Friendly Match': 'Matches',
+  }
+
+  return (
+    sessionFocusMap[type] ||
+    'Endurance'
+  )
+}
 
 const PLAYER_SCHEDULE_META_PREFIX =
   '__SHUTTLETRACK_TRAINING__:'
@@ -163,70 +217,6 @@ const calculateDuration = (start, end) => {
   return `${minutes}min`
 }
 
-
-const timeToMinutes = value => {
-  const raw = String(value || '').slice(0, 5)
-  const match = raw.match(/^(\d{2}):(\d{2})$/)
-
-  if (!match) return null
-
-  const hour = Number(match[1])
-  const minute = Number(match[2])
-
-  if (
-    !Number.isFinite(hour) ||
-    !Number.isFinite(minute)
-  ) {
-    return null
-  }
-
-  return hour * 60 + minute
-}
-
-const timesOverlap = (
-  startA,
-  endA,
-  startB,
-  endB
-) => {
-  const aStart =
-    timeToMinutes(startA)
-  const aEnd =
-    timeToMinutes(endA)
-  const bStart =
-    timeToMinutes(startB)
-  const bEnd =
-    timeToMinutes(endB)
-
-  if (
-    aStart === null ||
-    aEnd === null ||
-    bStart === null ||
-    bEnd === null
-  ) {
-    return false
-  }
-
-  return (
-    aStart < bEnd &&
-    bStart < aEnd
-  )
-}
-
-const formatConflictDate = value => {
-  if (!value) return ''
-
-  return new Date(
-    `${value}T00:00:00`
-  ).toLocaleDateString(
-    'en-MY',
-    {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    }
-  )
-}
 
 
 const formatAddedTime = value => {
@@ -451,14 +441,19 @@ export default function CoachSessions() {
       }
 
       if (googleCalendarSettingRes.error) {
-        throw googleCalendarSettingRes.error
-      }
-
-      setGoogleSyncEnabled(
-        Boolean(
-          googleCalendarSettingRes.data?.enabled
+        console.error(
+          'Google Calendar preference load error:',
+          googleCalendarSettingRes.error
         )
-      )
+
+        setGoogleSyncEnabled(false)
+      } else {
+        setGoogleSyncEnabled(
+          Boolean(
+            googleCalendarSettingRes.data?.enabled
+          )
+        )
+      }
 
       const playerUserIds = [
         ...new Set(
@@ -590,6 +585,29 @@ export default function CoachSessions() {
         )
     )
   }, [students, studentSearch])
+
+  const venueHistory = useMemo(() => {
+    const seen = new Set()
+
+    return (sessions || [])
+      .map(session => String(session.venue || '').trim())
+      .filter(Boolean)
+      .filter(venue => {
+        const key = venue.toLowerCase()
+
+        if (seen.has(key)) {
+          return false
+        }
+
+        seen.add(key)
+        return true
+      })
+      .sort((a, b) =>
+        a.localeCompare(b, 'en', {
+          sensitivity: 'base',
+        })
+      )
+  }, [sessions])
 
   const upcomingSessions = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
@@ -1344,12 +1362,18 @@ export default function CoachSessions() {
           activity: session.session_type,
           duration,
           intensity: 'Medium',
-          focus:
-            assignment.player_focus ||
-            session.session_type,
+          focus: normalizeTrainingFocus(
+            assignment.player_focus,
+            session.session_type
+          ),
           notes,
           updated_at: new Date().toISOString(),
         }
+
+        console.log(
+          'TRAINING LOG PAYLOAD:',
+          trainingLogPayload
+        )
 
         const { data: existingLog, error: existingLogError } =
           await supabase
@@ -3148,6 +3172,8 @@ export default function CoachSessions() {
                 className={styles.formInput}
                 placeholder="e.g. Dewan Sukan USM"
                 value={sessionForm.venue}
+                list="coach-venue-history"
+                autoComplete="off"
                 onChange={event =>
                   setSessionForm(current => ({
                     ...current,
@@ -3155,6 +3181,15 @@ export default function CoachSessions() {
                   }))
                 }
               />
+
+              <datalist id="coach-venue-history">
+                {venueHistory.map(venue => (
+                  <option
+                    key={venue}
+                    value={venue}
+                  />
+                ))}
+              </datalist>
             </div>
 
             <div className={styles.formRow}>
