@@ -18,6 +18,13 @@ const C = {
   line: "var(--line, #EEF1F8)",
 };
 
+// Use the address that ShuttleTrack is currently opened with.
+// This keeps the QR correct when the laptop IP changes between networks,
+// without needing to edit .env just for the player QR.
+const APP_ORIGIN = String(window.location.origin)
+  .trim()
+  .replace(/\/$/, "");
+
 const CURRENT_PLAYER = {
   level: "Intermediate",
   style: "Aggressive",
@@ -280,6 +287,78 @@ function getPlayerMatchScore(match = {}) {
     .map((score) => String(score || "").trim())
     .filter(Boolean)
     .join(", ");
+}
+
+
+function normalisePlayerName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function matchHasOpponentName(match = {}, playerName = "") {
+  const targetName = normalisePlayerName(playerName);
+  if (!targetName) return false;
+
+  return [match.opponent_name, match.opponent_name2]
+    .map(normalisePlayerName)
+    .filter(Boolean)
+    .includes(targetName);
+}
+
+function resultIsWin(result) {
+  return ["w", "win", "won"].includes(
+    String(result || "").trim().toLowerCase()
+  );
+}
+
+function resultIsLoss(result) {
+  return ["l", "loss", "lost"].includes(
+    String(result || "").trim().toLowerCase()
+  );
+}
+
+function getHeadToHeadFromViewerMatches(matches = [], opponentName = "") {
+  const relevantMatches = matches
+    .filter((match) => matchHasOpponentName(match, opponentName))
+    .sort((a, b) => {
+      const aTime = new Date(a.match_date || a.created_at || 0).getTime();
+      const bTime = new Date(b.match_date || b.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+
+  return {
+    count: relevantMatches.length,
+    wins: relevantMatches.filter((match) => resultIsWin(match.result)).length,
+    losses: relevantMatches.filter((match) => resultIsLoss(match.result)).length,
+    lastPlayed:
+      relevantMatches.length > 0
+        ? formatPlayerMatchDate(relevantMatches[0].match_date)
+        : "—",
+  };
+}
+
+function getHeadToHeadFromTargetMatches(matches = [], currentPlayerName = "") {
+  const relevantMatches = matches
+    .filter((match) => matchHasOpponentName(match, currentPlayerName))
+    .sort((a, b) => {
+      const aTime = new Date(a.match_date || a.created_at || 0).getTime();
+      const bTime = new Date(b.match_date || b.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+
+  return {
+    count: relevantMatches.length,
+    // Result is stored from the selected player's perspective,
+    // so invert it to show the current user's H2H record.
+    wins: relevantMatches.filter((match) => resultIsLoss(match.result)).length,
+    losses: relevantMatches.filter((match) => resultIsWin(match.result)).length,
+    lastPlayed:
+      relevantMatches.length > 0
+        ? formatPlayerMatchDate(relevantMatches[0].match_date)
+        : "—",
+  };
 }
 
 function ReportModal({ target, submitting, onClose, onSubmit }) {
@@ -747,7 +826,7 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
         </div>
       )}
 
-      {p.isOpp && (
+      {p.hasHeadToHead && (
         <div className={styles.card}>
           <div className={styles.cardTitle}>Head-to-head vs you</div>
           <div style={{ display: "flex", justifyContent: "space-around", padding: "16px 0", textAlign: "center" }}>
@@ -760,17 +839,82 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
       )}
 
       <div className={styles.card}>
+        <div className={styles.cardTitle}>Player profile</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 12,
+          }}
+        >
+          <SmallInfo label="Style" value={p.setupStyle || p.style} />
+          <SmallInfo label="Strength" value={p.setupStrength} />
+          <SmallInfo label="Weakness" value={p.setupWeakness} />
+          <SmallInfo label="What player are you?" value={p.setupPlayerType} />
+        </div>
+      </div>
+
+      <div className={styles.card}>
         <div className={styles.cardTitle}>About</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <SmallInfo label="Club" value={p.club} />
           <SmallInfo label="Hand" value={p.hand} />
-          <SmallInfo label="Experience" value={p.experienceYears > 0 ? `${p.experienceYears} ${p.experienceYears === 1 ? "year" : "years"}` : "—"} />
+
+          <SmallInfo
+            label="Experience"
+            value={
+              p.experienceYears > 0
+                ? `${p.experienceYears} ${
+                    p.experienceYears === 1 ? "year" : "years"
+                  }`
+                : "—"
+            }
+          />
+          <SmallInfo label="State" value={p.state} />
+
+          {p.showGender && p.gender ? (
+            <SmallInfo label="Gender" value={p.gender} />
+          ) : (
+            <div />
+          )}
+
           <div>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>Playing video</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
+              Playing video
+            </div>
             {p.videoUrl ? (
-              <video src={p.videoUrl} controls preload="metadata" title={p.videoTitle || "Playing video"} style={{ width: "100%", maxHeight: 150, borderRadius: 10, background: "#0F172A", display: "block", objectFit: "cover" }} />
+              <video
+                src={p.videoUrl}
+                controls
+                preload="metadata"
+                title={p.videoTitle || "Playing video"}
+                style={{
+                  width: "100%",
+                  maxHeight: 150,
+                  borderRadius: 10,
+                  background: "#0F172A",
+                  display: "block",
+                  objectFit: "cover",
+                }}
+              />
             ) : (
-              <div style={{ minHeight: 72, borderRadius: 10, border: `1px dashed ${C.line}`, background: C.soft, display: "flex", alignItems: "center", justifyContent: "center", padding: 10, color: C.muted, fontSize: 11, textAlign: "center" }}>No featured playing video</div>
+              <div
+                style={{
+                  minHeight: 72,
+                  borderRadius: 10,
+                  border: `1px dashed ${C.line}`,
+                  background: C.soft,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 10,
+                  color: C.muted,
+                  fontSize: 11,
+                  textAlign: "center",
+                }}
+              >
+                No featured playing video
+              </div>
             )}
           </div>
         </div>
@@ -1035,9 +1179,10 @@ function normaliseSpecialties(value) {
 }
 
 export default function Players() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const notificationTab = searchParams.get("tab");
   const notificationCoachId = searchParams.get("coach");
+  const qrPlayerUserId = searchParams.get("player");
 
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
@@ -1068,6 +1213,14 @@ export default function Players() {
   const [loading, setLoading] = useState(true);
   const showLoader = useLoadingDelay(loading, 350);
 
+  const [isMobileDirectory, setIsMobileDirectory] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 900px)").matches
+      : false
+  );
+  const [showMobilePlayerDetail, setShowMobilePlayerDetail] = useState(false);
+  const [showMobileCoachDetail, setShowMobileCoachDetail] = useState(false);
+
   const [partnerCriteria, setPartnerCriteria] = useState({
     gameType: "Doubles",
     level: "Intermediate",
@@ -1087,7 +1240,7 @@ export default function Players() {
         playerMediaResult, coachResult, coachCertificatesResult, coachVenuesResult,
         clubsResult, acceptedMembershipsResult, playerMatchesResult,
         publicPlayerMatchesResult, directoryAccountsResult,
-        verificationRequestResult, verificationResult,
+        playerSetupResult, verificationRequestResult, verificationResult,
       ] = await Promise.all([
         supabase.from("public_players").select("*").order("created_at", { ascending: true }),
         supabase.from("player_profiles").select("*").order("display_name", { ascending: true }),
@@ -1115,6 +1268,16 @@ export default function Players() {
           `)
           .order("match_date", { ascending: false }),
         supabase.rpc("get_directory_visible_accounts"),
+        supabase
+          .from("player_setup")
+          .select(`
+            user_id,
+            preferred_event,
+            play_style,
+            biggest_strength,
+            current_weakness,
+            pressure_reaction
+          `),
         supabase
           .from("skill_verification_requests")
           .select("id, player_user_id, player_profile_id, is_active, created_at")
@@ -1152,6 +1315,7 @@ export default function Players() {
       if (playerMatchesResult.error) console.error("Failed to load player matches:", playerMatchesResult.error);
       if (publicPlayerMatchesResult.error) console.error("Failed to load public player matches:", publicPlayerMatchesResult.error);
       if (directoryAccountsResult.error) console.error("Failed to load visible directory accounts:", directoryAccountsResult.error);
+      if (playerSetupResult.error) console.error("Failed to load player setup profiles:", playerSetupResult.error);
       if (verificationRequestResult.error) console.error("Failed to load skill verification requests:", verificationRequestResult.error);
       if (verificationResult.error) console.error("Failed to load skill verifications:", verificationResult.error);
 
@@ -1168,6 +1332,12 @@ export default function Players() {
       const visibleDirectoryUserIds = new Set(
         (directoryAccountsResult.data || []).map((row) => row?.user_id && String(row.user_id)).filter(Boolean),
       );
+
+      const setupByUserId = new Map();
+      (playerSetupResult.data || []).forEach((setupRow) => {
+        if (!setupRow?.user_id) return;
+        setupByUserId.set(String(setupRow.user_id), setupRow);
+      });
 
       const matchesByProfileId = new Map();
       (playerMatchesResult.data || []).forEach((match) => {
@@ -1338,6 +1508,22 @@ export default function Players() {
       const allRegisteredNames = new Set(allRegisteredProfiles.map((player) => String(player.display_name || "").trim().toLowerCase()).filter(Boolean));
       const allRegisteredUserIds = new Set(allRegisteredProfiles.map((player) => player.user_id && String(player.user_id)).filter(Boolean));
 
+      const currentPlayerProfile = user
+        ? allRegisteredProfiles.find(
+            (player) => String(player.user_id || "") === String(user.id)
+          ) || null
+        : null;
+
+      const currentPlayerName =
+        currentPlayerProfile?.display_name ||
+        user?.user_metadata?.display_name ||
+        user?.user_metadata?.full_name ||
+        "";
+
+      const currentPlayerMatches = currentPlayerProfile?.id
+        ? matchesByProfileId.get(String(currentPlayerProfile.id)) || []
+        : [];
+
       const verificationRequestByUserId = new Map();
       const verificationRequestByProfileId = new Map();
 
@@ -1403,8 +1589,26 @@ export default function Players() {
         .map((player) => {
           const rating = ratingsByPlayerId.get(String(player.user_id)) || ratingsByPlayerId.get(String(player.id)) || null;
           const equipment = equipmentByPlayerId.get(String(player.id)) || null;
+          const setup = player.user_id
+            ? setupByUserId.get(String(player.user_id)) || null
+            : null;
+          const playerMatchRecords = matchesByProfileId.get(String(player.id)) || [];
           const matchStats = matchStatsByProfileId.get(String(player.id)) || null;
-          const latestMatches = (matchesByProfileId.get(String(player.id)) || []).slice(0, 3);
+          const latestMatches = playerMatchRecords.slice(0, 3);
+
+          const viewerH2H = getHeadToHeadFromViewerMatches(
+            currentPlayerMatches,
+            player.display_name
+          );
+
+          const targetH2H = getHeadToHeadFromTargetMatches(
+            playerMatchRecords,
+            currentPlayerName
+          );
+
+          const automaticH2H =
+            viewerH2H.count > 0 ? viewerH2H : targetH2H;
+
           const partner = connectionData.find((connection) => (connection.target_player_id === player.id || connection.target_player_id === player.user_id) && connection.type === "partner");
           const opponent = connectionData.find((connection) => (connection.target_player_id === player.id || connection.target_player_id === player.user_id) && connection.type === "opponent");
           const favourite = connectionData.find((connection) => (connection.target_player_id === player.id || connection.target_player_id === player.user_id) && connection.type === "favourite");
@@ -1418,9 +1622,32 @@ export default function Players() {
             name: player.display_name || "Unknown",
             club: player.club || acceptedClubByUserId.get(String(player.user_id)) || player.external_club || "No club",
             state: player.state || player.location || "-",
-            level: player.level || player.skill_level || player.player_category || player.category || "Beginner",
-            style: player.playing_style || player.play_style || player.style || "All-round",
+            level:
+              setup?.preferred_event
+                ? `${setup.preferred_event} Player`
+                : player.level || player.skill_level || player.player_category || player.category || "Beginner",
+            style:
+              setup?.play_style ||
+              player.playing_style ||
+              player.play_style ||
+              player.style ||
+              "All-round",
+            setupStyle: setup?.play_style || null,
+            setupStrength: setup?.biggest_strength || "—",
+            setupWeakness: setup?.current_weakness || "—",
+            setupPlayerType: setup?.pressure_reaction
+              ? `${setup.pressure_reaction}${
+                  String(setup.pressure_reaction).toLowerCase().includes("player")
+                    ? ""
+                    : " Player"
+                }`
+              : "—",
             hand: player.dominant_hand || player.playing_hand || player.hand || "-",
+            gender:
+              player.show_gender === true
+                ? player.gender || null
+                : null,
+            showGender: player.show_gender === true,
             startedPlayingAge: player.started_playing_age !== null && player.started_playing_age !== undefined ? Number(player.started_playing_age) : null,
             experienceYears: calculatePlayerExperience(player),
             videoUrl: videoByPlayerId.get(String(player.id))?.url || null,
@@ -1447,9 +1674,23 @@ export default function Players() {
             partnerRequestStatus: outgoingPartnerRequests.find((request) => request.recipient_user_id === player.user_id && request.status === "pending")?.status || null,
             isOpp: Boolean(opponent),
             isFavourite: Boolean(favourite),
-            w: Number(opponent?.h2h_wins || 0),
-            l: Number(opponent?.h2h_losses || 0),
-            last: opponent?.last_played || "—",
+            hasHeadToHead:
+              automaticH2H.count > 0 ||
+              Boolean(opponent),
+            w:
+              automaticH2H.count > 0
+                ? automaticH2H.wins
+                : Number(opponent?.h2h_wins || 0),
+            l:
+              automaticH2H.count > 0
+                ? automaticH2H.losses
+                : Number(opponent?.h2h_losses || 0),
+            last:
+              automaticH2H.count > 0
+                ? automaticH2H.lastPlayed
+                : opponent?.last_played
+                  ? formatPlayerMatchDate(opponent.last_played)
+                  : "—",
           };
         });
 
@@ -1487,6 +1728,20 @@ export default function Players() {
 
           const latestMatches =
             playerMatchRecords.slice(0, 3);
+
+          const viewerH2H = getHeadToHeadFromViewerMatches(
+            currentPlayerMatches,
+            player.name
+          );
+
+          const targetH2H = getHeadToHeadFromTargetMatches(
+            playerMatchRecords,
+            currentPlayerName
+          );
+
+          const automaticH2H =
+            viewerH2H.count > 0 ? viewerH2H : targetH2H;
+
           const partner = connectionData.find((connection) => connection.target_player_id === player.id && connection.type === "partner");
           const opponent = connectionData.find((connection) => connection.target_player_id === player.id && connection.type === "opponent");
           const favourite = connectionData.find((connection) => connection.target_player_id === player.id && connection.type === "favourite");
@@ -1502,7 +1757,19 @@ export default function Players() {
             state: player.state || "-",
             level: player.level || "Beginner",
             style: player.style || "All-round",
+            setupStyle: player.style || null,
+            setupStrength: player.biggest_strength || player.strength || "—",
+            setupWeakness: player.current_weakness || player.weakness || "—",
+            setupPlayerType:
+              player.pressure_reaction ||
+              player.player_type ||
+              "—",
             hand: player.hand || "-",
+            gender:
+              player.show_gender === true
+                ? player.gender || null
+                : null,
+            showGender: player.show_gender === true,
             startedPlayingAge: player.started_playing_age !== null && player.started_playing_age !== undefined ? Number(player.started_playing_age) : null,
             experienceYears: calculatePlayerExperience(player),
             videoUrl: player.video_url || player.playing_video_url || null,
@@ -1529,9 +1796,23 @@ export default function Players() {
             partnerRequestStatus: outgoingPartnerRequests.find((request) => request.recipient_user_id === player.user_id && request.status === "pending")?.status || null,
             isOpp: Boolean(opponent),
             isFavourite: Boolean(favourite),
-            w: Number(opponent?.h2h_wins || 0),
-            l: Number(opponent?.h2h_losses || 0),
-            last: opponent?.last_played || "—",
+            hasHeadToHead:
+              automaticH2H.count > 0 ||
+              Boolean(opponent),
+            w:
+              automaticH2H.count > 0
+                ? automaticH2H.wins
+                : Number(opponent?.h2h_wins || 0),
+            l:
+              automaticH2H.count > 0
+                ? automaticH2H.losses
+                : Number(opponent?.h2h_losses || 0),
+            last:
+              automaticH2H.count > 0
+                ? automaticH2H.lastPlayed
+                : opponent?.last_played
+                  ? formatPlayerMatchDate(opponent.last_played)
+                  : "—",
           };
         });
 
@@ -1606,6 +1887,32 @@ export default function Players() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const mediaQuery = window.matchMedia("(max-width: 900px)");
+
+    const updateMobileState = () => {
+      setIsMobileDirectory(mediaQuery.matches);
+    };
+
+    updateMobileState();
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", updateMobileState);
+    } else {
+      mediaQuery.addListener(updateMobileState);
+    }
+
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener("change", updateMobileState);
+      } else {
+        mediaQuery.removeListener(updateMobileState);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (notificationTab !== "coach") return;
     setTab("coach");
     setSelected(null);
@@ -1614,8 +1921,49 @@ export default function Players() {
     if (matchingCoach) {
       setSelectedCoach(matchingCoach);
       setCoachSearch("");
+
+      if (isMobileDirectory) {
+        setShowMobileCoachDetail(true);
+      }
     }
-  }, [notificationTab, notificationCoachId, coaches]);
+  }, [
+    notificationTab,
+    notificationCoachId,
+    coaches,
+    isMobileDirectory,
+  ]);
+
+  useEffect(() => {
+    if (!qrPlayerUserId || players.length === 0) return;
+
+    const matchingPlayer = players.find(
+      (player) =>
+        String(player.userId || "") === String(qrPlayerUserId) ||
+        String(player.id || "") === String(qrPlayerUserId)
+    );
+
+    if (!matchingPlayer) return;
+
+    setTab("all");
+    setSelected(matchingPlayer);
+    setSelectedCoach(null);
+    setSearch("");
+
+    if (isMobileDirectory) {
+      setShowMobilePlayerDetail(true);
+      setShowMobileCoachDetail(false);
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("player");
+    setSearchParams(nextParams, { replace: true });
+  }, [
+    qrPlayerUserId,
+    players,
+    isMobileDirectory,
+    searchParams,
+    setSearchParams,
+  ]);
 
   useEffect(() => {
     let mounted = true;
@@ -1674,6 +2022,30 @@ export default function Players() {
       return matchesSearch && (!coachLevelFilter || coach.coachingLevel === coachLevelFilter) && (!coachStateFilter || coach.state === coachStateFilter) && (!coachSpecialtyFilter || coach.specialties.includes(coachSpecialtyFilter));
     });
   }, [coaches, coachSearch, coachLevelFilter, coachStateFilter, coachSpecialtyFilter]);
+
+  function openPlayerDetail(player) {
+    if (!player) return;
+
+    setSelected(player);
+    setSelectedCoach(null);
+
+    if (isMobileDirectory) {
+      setShowMobilePlayerDetail(true);
+      setShowMobileCoachDetail(false);
+    }
+  }
+
+  function openCoachDetail(coach) {
+    if (!coach) return;
+
+    setSelectedCoach(coach);
+    setSelected(null);
+
+    if (isMobileDirectory) {
+      setShowMobileCoachDetail(true);
+      setShowMobilePlayerDetail(false);
+    }
+  }
 
   function openPlayerReport(player) {
     setReportTarget({ id: player.id, userId: player.userId || null, type: "player", name: player.name, source: player.source || "registered" });
@@ -1982,6 +2354,9 @@ export default function Players() {
         const scannedUrl = new URL(rawValue);
         const parts = scannedUrl.pathname.split("/").filter(Boolean);
 
+        const playerFromQuery =
+          scannedUrl.searchParams.get("player") || "";
+
         const playerMarkerIndex = parts.findIndex(
           (part) =>
             part === "player" ||
@@ -1990,9 +2365,10 @@ export default function Players() {
         );
 
         scannedUserId =
-          playerMarkerIndex >= 0
+          playerFromQuery ||
+          (playerMarkerIndex >= 0
             ? parts[parts.length - 1] || ""
-            : "";
+            : "");
       } catch {
         scannedUserId = "";
       }
@@ -2032,6 +2408,11 @@ export default function Players() {
     setSelected(scannedPlayer);
     setSelectedCoach(null);
 
+    if (isMobileDirectory) {
+      setShowMobilePlayerDetail(true);
+      setShowMobileCoachDetail(false);
+    }
+
     if (qrScannerRef.current?.isScanning) {
       try {
         await qrScannerRef.current.pause(true);
@@ -2046,6 +2427,7 @@ export default function Players() {
   }, [
     closeScanner,
     currentUserId,
+    isMobileDirectory,
     players,
     scanSuccess,
     stopQrScanner,
@@ -2071,14 +2453,42 @@ export default function Players() {
       } catch (cameraListError) {
         console.warn("Unable to list cameras, using default camera:", cameraListError);
       }
-      await scanner.start(cameraConfig, {
-        fps: 10,
-        qrbox: (viewfinderWidth, viewfinderHeight) => {
-          const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72);
-          return { width: size, height: size };
+      await scanner.start(
+        cameraConfig,
+        {
+          fps: 10,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            // html5-qrcode requires every qrbox dimension to be at least 50px.
+            // On some phones the scanner briefly reports a small viewfinder
+            // while the camera is starting, which previously produced a box
+            // smaller than 50px and crashed the scanner.
+            const shortestSide = Math.min(
+              Number(viewfinderWidth) || 0,
+              Number(viewfinderHeight) || 0
+            );
+
+            const calculatedSize = Math.floor(shortestSide * 0.72);
+
+            // Keep the scan area valid for html5-qrcode.
+            // 220px is a comfortable target, but never return below 50px.
+            const size = Math.max(
+              50,
+              Math.min(
+                calculatedSize > 0 ? calculatedSize : 220,
+                shortestSide >= 50 ? shortestSide : 220
+              )
+            );
+
+            return {
+              width: size,
+              height: size,
+            };
+          },
+          aspectRatio: 1,
         },
-        aspectRatio: 1,
-      }, processScannedValue, () => {});
+        processScannedValue,
+        () => {}
+      );
       setCameraActive(true);
     } catch (error) {
       console.error("Failed to start QR scanner:", error);
@@ -2108,6 +2518,8 @@ export default function Players() {
     setTab(nextTab);
     setSelected(null);
     setSelectedCoach(null);
+    setShowMobilePlayerDetail(false);
+    setShowMobileCoachDetail(false);
   }
 
   if (loading && !showLoader) return null;
@@ -2115,6 +2527,19 @@ export default function Players() {
 
   return (
     <div className={styles.playerReadablePage}>
+      <style>{`
+        /*
+         * Desktop keeps the existing split list/detail layout.
+         * Mobile uses the popup detail view so users do not have to
+         * scroll through a long directory before reaching the profile.
+         */
+        @media (max-width: 900px) {
+          .playersDirectoryDesktopDetail {
+            display: none !important;
+          }
+        }
+      `}</style>
+
       <div className={styles.pageHead} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
         <div>
           <div className={styles.pageTitle}>Players, Opponents & Coaches</div>
@@ -2158,7 +2583,7 @@ export default function Players() {
               {filtered.map((player) => {
                 const isSelected = selected?.id === player.id;
                 return (
-                  <div key={player.id} onClick={() => setSelected(player)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 16, cursor: "pointer", background: isSelected ? C.soft : C.card, border: isSelected ? "2px solid #1A5FFF" : `1.5px solid ${C.line}` }}>
+                  <div key={player.id} onClick={() => openPlayerDetail(player)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 16, cursor: "pointer", background: isSelected ? C.soft : C.card, border: isSelected ? "2px solid #1A5FFF" : `1.5px solid ${C.line}` }}>
                     <div className={styles.av}>{player.init}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>{player.name}</div>
@@ -2171,14 +2596,14 @@ export default function Players() {
                         {player.isFavourite && <span className={styles.badgeBlue}>Favourite</span>}
                       </div>
                     </div>
-                    {player.isOpp && <span className={styles.badgeAmber}>H2H {player.w}W {player.l}L</span>}
+                    {player.hasHeadToHead && <span className={styles.badgeAmber}>H2H {player.w}W {player.l}L</span>}
                   </div>
                 );
               })}
             </div>
           </div>
 
-          <div>
+          <div className="playersDirectoryDesktopDetail">
             {!selected ? (
               <div className={styles.card} style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>Select a player</div>
             ) : (
@@ -2274,7 +2699,7 @@ export default function Players() {
               {filteredCoaches.map((coach) => {
                 const isSelected = selectedCoach?.id === coach.id;
                 return (
-                  <div key={coach.id} onClick={() => setSelectedCoach(coach)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 16, cursor: "pointer", background: isSelected ? C.soft : C.card, border: isSelected ? "2px solid #1A5FFF" : `1.5px solid ${C.line}` }}>
+                  <div key={coach.id} onClick={() => openCoachDetail(coach)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 16, cursor: "pointer", background: isSelected ? C.soft : C.card, border: isSelected ? "2px solid #1A5FFF" : `1.5px solid ${C.line}` }}>
                     {coach.avatarUrl ? <img src={coach.avatarUrl} alt={`${coach.name} profile`} style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} /> : <div className={styles.av}>{coach.init}</div>}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>{coach.name}</div>
@@ -2288,8 +2713,192 @@ export default function Players() {
             </div>
           </div>
 
-          <div>
+          <div className="playersDirectoryDesktopDetail">
             {!selectedCoach ? <div className={styles.card} style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>Select a coach</div> : <CoachDetail key={`${selectedCoach.id}-${selectedCoach.requestStatus}`} coach={selectedCoach} onRequest={requestCoach} onCancel={cancelCoachRelationship} onAcceptIncoming={acceptIncomingCoachRequest} onDeclineIncoming={declineIncomingCoachRequest} onReport={openCoachReport} onRequestClub={requestCoachClub} onCancelClubRequest={cancelCoachClubRequest} />}
+          </div>
+        </div>
+      )}
+
+      {isMobileDirectory && showMobilePlayerDetail && selected && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowMobilePlayerDetail(false);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2500,
+            background: "rgba(13, 27, 62, 0.5)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: 12,
+            overflowY: "auto",
+          }}
+        >
+          <div
+            style={{
+              width: "min(760px, 100%)",
+              maxHeight: "calc(100vh - 24px)",
+              overflowY: "auto",
+              background: C.card,
+              borderRadius: 18,
+              boxShadow: "0 24px 60px rgba(13,27,62,0.28)",
+            }}
+          >
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 5,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "12px 14px",
+                background: C.card,
+                borderBottom: `1px solid ${C.line}`,
+              }}
+            >
+              <div
+                style={{
+                  minWidth: 0,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: C.text,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {selected.name}
+              </div>
+
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => setShowMobilePlayerDetail(false)}
+                style={{ flexShrink: 0 }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ padding: 12 }}>
+              <PlayerDetail
+                key={`mobile-${selected.id}-${selected.isOpp}-${selected.isPartner}-${selected.isFavourite}`}
+                p={selected}
+                isPartner={selected.isPartner}
+                onAddOpponent={(player) => {
+                  addConnection(player, "opponent");
+                  setTab("opp");
+                }}
+                onRemoveOpponent={(player) => {
+                  removeConnection(player, "opponent");
+                  setTab("all");
+                }}
+                onAddPartner={(player) => requestPartner(player)}
+                onCancelPartnerRequest={cancelPartnerRequest}
+                onRemovePartner={(player) =>
+                  removeConnection(player, "partner")
+                }
+                onAddFavourite={(player) =>
+                  addConnection(player, "favourite")
+                }
+                onRemoveFavourite={(player) =>
+                  removeConnection(player, "favourite")
+                }
+                onReport={openPlayerReport}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isMobileDirectory && showMobileCoachDetail && selectedCoach && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowMobileCoachDetail(false);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2500,
+            background: "rgba(13, 27, 62, 0.5)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: 12,
+            overflowY: "auto",
+          }}
+        >
+          <div
+            style={{
+              width: "min(760px, 100%)",
+              maxHeight: "calc(100vh - 24px)",
+              overflowY: "auto",
+              background: C.card,
+              borderRadius: 18,
+              boxShadow: "0 24px 60px rgba(13,27,62,0.28)",
+            }}
+          >
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 5,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "12px 14px",
+                background: C.card,
+                borderBottom: `1px solid ${C.line}`,
+              }}
+            >
+              <div
+                style={{
+                  minWidth: 0,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: C.text,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {selectedCoach.name}
+              </div>
+
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => setShowMobileCoachDetail(false)}
+                style={{ flexShrink: 0 }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ padding: 12 }}>
+              <CoachDetail
+                key={`mobile-${selectedCoach.id}-${selectedCoach.requestStatus}`}
+                coach={selectedCoach}
+                onRequest={requestCoach}
+                onCancel={cancelCoachRelationship}
+                onAcceptIncoming={acceptIncomingCoachRequest}
+                onDeclineIncoming={declineIncomingCoachRequest}
+                onReport={openCoachReport}
+                onRequestClub={requestCoachClub}
+                onCancelClubRequest={cancelCoachClubRequest}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -2301,7 +2910,14 @@ export default function Players() {
               <div><div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>My Player QR</div><div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>Let another ShuttleTrack player or coach scan this code.</div></div>
               <button type="button" aria-label="Close QR" onClick={() => setShowMyQr(false)} style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${C.line}`, background: C.card, color: C.muted, cursor: "pointer", fontSize: 18, flexShrink: 0 }}>×</button>
             </div>
-            {!currentUserId ? <div style={{ padding: 30, color: C.muted }}>Loading your QR code...</div> : <><div style={{ display: "inline-block", padding: 14, background: "#FFFFFF", border: `1px solid ${C.line}`, borderRadius: 16 }}><QRCodeCanvas value={`SHUTTLETRACK_PLAYER:${currentUserId}`} size={240} level="H" includeMargin /></div><div style={{ marginTop: 16, fontSize: 12, lineHeight: 1.6, color: C.muted }}>This QR contains only your ShuttleTrack player identifier, not your password or private account information.</div></>}
+            {!currentUserId ? <div style={{ padding: 30, color: C.muted }}>Loading your QR code...</div> : <><div style={{ display: "inline-block", padding: 14, background: "#FFFFFF", border: `1px solid ${C.line}`, borderRadius: 16 }}><QRCodeCanvas
+                    value={`${APP_ORIGIN}${window.location.pathname}?player=${encodeURIComponent(
+                      currentUserId
+                    )}`}
+                    size={240}
+                    level="H"
+                    includeMargin
+                  /></div><div style={{ marginTop: 16, fontSize: 12, lineHeight: 1.6, color: C.muted }}>This QR opens your ShuttleTrack player profile. It contains your ShuttleTrack player identifier in the link, not your password or private account information.</div></>}
           </div>
         </div>
       )}

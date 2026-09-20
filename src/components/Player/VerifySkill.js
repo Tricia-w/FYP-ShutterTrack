@@ -280,6 +280,7 @@ export default function VerifySkill() {
         setAlreadyVerified(false);
         setExistingVerification(null);
       }
+
     } catch (loadError) {
       console.error("Verify skill load error:", loadError);
       setError(
@@ -750,33 +751,37 @@ export default function VerifySkill() {
             </button>
 
             {!isOwner && (
-              <button
-                type="button"
-                className={styles.btnPrimary}
-                onClick={handleVerify}
-                disabled={
-                  submitting ||
-                  alreadyVerified
-                }
+              <div
                 style={{
-                  opacity:
-                    submitting ||
-                    alreadyVerified
-                      ? 0.55
-                      : 1,
-                  cursor:
-                    submitting ||
-                    alreadyVerified
-                      ? "not-allowed"
-                      : "pointer",
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  justifyContent: "flex-end",
                 }}
               >
-                {submitting
-                  ? "Submitting..."
-                  : alreadyVerified
-                    ? "Assessment submitted"
-                    : "Submit assessment"}
-              </button>
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  onClick={handleVerify}
+                  disabled={submitting || alreadyVerified}
+                  style={{
+                    opacity:
+                      submitting || alreadyVerified
+                        ? 0.55
+                        : 1,
+                    cursor:
+                      submitting || alreadyVerified
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {submitting
+                    ? "Submitting..."
+                    : alreadyVerified
+                      ? "Assessment submitted"
+                      : "Submit assessment"}
+                </button>
+              </div>
             )}
           </div>
         </div>

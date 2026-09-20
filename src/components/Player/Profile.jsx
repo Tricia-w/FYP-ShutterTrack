@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
@@ -150,6 +150,28 @@ const StatIcon = ({ type, color }) => {
   )
 }
 
+
+const VisibilityEyeIcon = ({ visible, size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+
+    {!visible && (
+      <path d="M3 3 21 21" />
+    )}
+  </svg>
+)
+
 export default function Profile() {
   const { user, saveProfile } = useAuth()
   const navigate = useNavigate()
@@ -185,9 +207,11 @@ export default function Profile() {
     name: '',
     dateOfBirth: '',
     gender: '',
+    showGender: false,
     height: '',
     weight: '',
     hand: 'Right',
+    clubId: '',
     club: '',
     externalClub: '',
     state: '',
@@ -303,24 +327,85 @@ export default function Profile() {
 
         if (profile?.profile_photo_url) setAvatarUrl(profile.profile_photo_url)
 
-        const savedClub = String(profile?.club || '').trim().toUpperCase()
-        const stillAccepted = acceptedClubs.some(
-          club => club.shortName === savedClub
-        )
-        const safeClubValue = stillAccepted
-          ? savedClub
-          : acceptedClubs.length === 1
-            ? acceptedClubs[0].shortName
-            : ''
+        const savedClubId = profile?.club_id
+          ? String(profile.club_id)
+          : ''
 
-        if (profile?.id && savedClub && !stillAccepted) {
-          const { error: clearStaleClubError } = await supabase
-            .from('player_profiles')
-            .update({ club: null })
-            .eq('id', profile.id)
+        const savedClub = String(profile?.club || '')
+          .trim()
+          .toUpperCase()
 
-          if (clearStaleClubError) {
-            console.error('Unable to clear stale club from player profile:', clearStaleClubError)
+        let selectedAcceptedClub =
+          acceptedClubs.find(
+            club => String(club.id) === savedClubId
+          ) || null
+
+        // Backward compatibility for profiles saved before club_id existed.
+        if (!selectedAcceptedClub && savedClub) {
+          selectedAcceptedClub =
+            acceptedClubs.find(
+              club => club.shortName === savedClub
+            ) || null
+        }
+
+        // If the player has only one accepted club, it is safe to use it.
+        if (!selectedAcceptedClub && acceptedClubs.length === 1) {
+          selectedAcceptedClub = acceptedClubs[0]
+        }
+
+        const safeClubId = selectedAcceptedClub?.id
+          ? String(selectedAcceptedClub.id)
+          : ''
+
+        const safeClubValue =
+          selectedAcceptedClub?.shortName || ''
+
+        /*
+         * Keep player_profiles.club as a backward-compatible cached label,
+         * but club_id is the real source of truth. If the club admin changes
+         * the short name, this automatically syncs the latest value.
+         */
+        if (profile?.id) {
+          if (selectedAcceptedClub) {
+            const needsClubSync =
+              String(profile?.club_id || '') !== safeClubId ||
+              savedClub !== safeClubValue
+
+            if (needsClubSync) {
+              const { error: syncClubError } = await supabase
+                .from('player_profiles')
+                .update({
+                  club_id: selectedAcceptedClub.id,
+                  club: selectedAcceptedClub.shortName || null,
+                  external_club: null,
+                })
+                .eq('id', profile.id)
+
+              if (syncClubError) {
+                console.error(
+                  'Unable to sync registered club details:',
+                  syncClubError,
+                )
+              }
+            }
+          } else if (
+            (profile?.club_id || savedClub) &&
+            acceptedClubs.length === 0
+          ) {
+            const { error: clearStaleClubError } = await supabase
+              .from('player_profiles')
+              .update({
+                club_id: null,
+                club: null,
+              })
+              .eq('id', profile.id)
+
+            if (clearStaleClubError) {
+              console.error(
+                'Unable to clear stale club from player profile:',
+                clearStaleClubError,
+              )
+            }
           }
         }
 
@@ -329,11 +414,15 @@ export default function Profile() {
           name: profile?.display_name || appUser?.full_name || authUser.email?.split('@')[0] || '',
           dateOfBirth: normaliseDateForSupabase(profile?.date_of_birth) || '',
           gender: profile?.gender || '',
+          showGender: profile?.show_gender ?? false,
           height: profile?.height_cm ? String(profile.height_cm) : '',
           weight: profile?.weight_kg ? String(profile.weight_kg) : '',
           hand: profile?.playing_hand || 'Right',
+          clubId: safeClubId,
           club: safeClubValue,
-          externalClub: profile?.external_club || '',
+          externalClub: selectedAcceptedClub
+            ? ''
+            : profile?.external_club || '',
           state: profile?.state || '',
           bio: profile?.bio || '',
           startedPlayingAge:
@@ -439,42 +528,85 @@ export default function Profile() {
 
         setJoinedClubs(acceptedClubs)
 
-        setForm(previous => {
-          const currentClub = String(previous.club || '').trim().toUpperCase()
-          const stillAccepted = acceptedClubs.some(
-            club => club.shortName === currentClub
-          )
-
-          if (stillAccepted) return previous
-
-          return {
-            ...previous,
-            club: acceptedClubs.length === 1
-              ? acceptedClubs[0].shortName
-              : '',
-          }
-        })
-
         const { data: profileRow, error: profileError } = await supabase
           .from('player_profiles')
-          .select('id, club')
+          .select('id, club_id, club')
           .eq('user_id', authUser.id)
           .maybeSingle()
 
         if (profileError) throw profileError
 
-        const savedClub = String(profileRow?.club || '').trim().toUpperCase()
-        const savedClubStillAccepted = acceptedClubs.some(
-          club => club.shortName === savedClub
-        )
+        const savedClubId = profileRow?.club_id
+          ? String(profileRow.club_id)
+          : ''
 
-        if (profileRow?.id && savedClub && !savedClubStillAccepted) {
-          const { error: clearError } = await supabase
-            .from('player_profiles')
-            .update({ club: null })
-            .eq('id', profileRow.id)
+        const savedClub = String(profileRow?.club || '')
+          .trim()
+          .toUpperCase()
 
-          if (clearError) throw clearError
+        let selectedAcceptedClub =
+          acceptedClubs.find(
+            club => String(club.id) === savedClubId
+          ) || null
+
+        if (!selectedAcceptedClub && savedClub) {
+          selectedAcceptedClub =
+            acceptedClubs.find(
+              club => club.shortName === savedClub
+            ) || null
+        }
+
+        if (!selectedAcceptedClub && acceptedClubs.length === 1) {
+          selectedAcceptedClub = acceptedClubs[0]
+        }
+
+        setForm(previous => ({
+          ...previous,
+          clubId: selectedAcceptedClub?.id
+            ? String(selectedAcceptedClub.id)
+            : '',
+          club: selectedAcceptedClub?.shortName || '',
+          externalClub: selectedAcceptedClub
+            ? ''
+            : previous.externalClub,
+        }))
+
+        if (profileRow?.id) {
+          if (selectedAcceptedClub) {
+            const latestClubId = String(selectedAcceptedClub.id)
+            const latestShortName =
+              selectedAcceptedClub.shortName || ''
+
+            const needsClubSync =
+              savedClubId !== latestClubId ||
+              savedClub !== latestShortName
+
+            if (needsClubSync) {
+              const { error: syncError } = await supabase
+                .from('player_profiles')
+                .update({
+                  club_id: selectedAcceptedClub.id,
+                  club: latestShortName || null,
+                  external_club: null,
+                })
+                .eq('id', profileRow.id)
+
+              if (syncError) throw syncError
+            }
+          } else if (
+            (profileRow.club_id || savedClub) &&
+            acceptedClubs.length === 0
+          ) {
+            const { error: clearError } = await supabase
+              .from('player_profiles')
+              .update({
+                club_id: null,
+                club: null,
+              })
+              .eq('id', profileRow.id)
+
+            if (clearError) throw clearError
+          }
         }
       } catch (error) {
         console.error('Unable to refresh accepted clubs:', error)
@@ -501,6 +633,15 @@ export default function Profile() {
         },
         () => refreshAcceptedClubs(),
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'clubs',
+        },
+        () => refreshAcceptedClubs(),
+      )
       .subscribe()
 
     return () => {
@@ -516,14 +657,18 @@ export default function Profile() {
   useEffect(() => {
     if (!showProfileModal) return
 
-    if (form.club) {
-      setClubEntryMode(form.club)
+    if (form.clubId) {
+      setClubEntryMode('__registered__')
     } else if (form.externalClub?.trim()) {
       setClubEntryMode('__external__')
     } else {
       setClubEntryMode('none')
     }
-  }, [showProfileModal, form.club, form.externalClub])
+  }, [
+    showProfileModal,
+    form.clubId,
+    form.externalClub,
+  ])
 
   const set = key => e => {
     setForm(prev => ({ ...prev, [key]: e.target.value }))
@@ -540,15 +685,17 @@ export default function Profile() {
   const acceptedClub =
     joinedClubs.find(
       club =>
-        club.shortName ===
-        String(form.club || '').trim().toUpperCase()
+        String(club.id) === String(form.clubId || '')
     ) ||
-    (joinedClubs.length === 1 ? joinedClubs[0] : null)
+    (!form.clubId && joinedClubs.length === 1
+      ? joinedClubs[0]
+      : null)
 
-  const hasAcceptedClub = Boolean(acceptedClub)
+  const hasAcceptedMembership = joinedClubs.length > 0
 
   const displayedClub =
     acceptedClub?.shortName ||
+    acceptedClub?.name ||
     form.externalClub?.trim() ||
     'No club'
 
@@ -559,6 +706,10 @@ export default function Profile() {
     setupData?.biggest_weakness ||
     setupData?.current_weakness ||
     setupData?.weakness ||
+    'Not set'
+
+  const enduranceLevel =
+    setupData?.endurance_level ||
     'Not set'
 
   const mindset =
@@ -580,20 +731,14 @@ export default function Profile() {
     return authData.user
   }
 
-  const getValidatedClubValue = () => {
-    if (acceptedClub?.shortName) {
-      return acceptedClub.shortName
+  const getValidatedClub = () => {
+    if (!acceptedClub) return null
+
+    return {
+      id: acceptedClub.id,
+      shortName: acceptedClub.shortName || null,
+      name: acceptedClub.name || '',
     }
-
-    const selectedClub = String(form.club || '').trim().toUpperCase()
-
-    if (!selectedClub) return null
-
-    const isAccepted = joinedClubs.some(
-      club => club.shortName === selectedClub
-    )
-
-    return isAccepted ? selectedClub : null
   }
 
   const saveMainProfileToSupabase = async authUser => {
@@ -603,6 +748,8 @@ export default function Profile() {
       .eq('user_id', authUser.id)
       .maybeSingle()
 
+    const validatedClub = getValidatedClub()
+
     const { data: savedProfile, error } = await supabase
       .from('player_profiles')
       .upsert(
@@ -611,13 +758,15 @@ export default function Profile() {
           display_name: form.name || appUser?.full_name || authUser.email?.split('@')[0] || 'Player',
           player_category: preferredEvent,
           state: form.state || null,
-          club: getValidatedClubValue(),
-          external_club: hasAcceptedClub
+          club_id: validatedClub?.id || null,
+          club: validatedClub?.shortName || null,
+          external_club: validatedClub
             ? null
             : form.externalClub?.trim() || null,
           date_of_birth: form.dateOfBirth || null,
           age: form.dateOfBirth ? calculateAge(form.dateOfBirth) : null,
           gender: form.gender || null,
+          show_gender: Boolean(form.showGender),
           height_cm: form.height ? Number(form.height) : null,
           weight_kg: form.weight ? Number(form.weight) : null,
           playing_hand: form.hand || null,
@@ -918,22 +1067,53 @@ export default function Profile() {
     }
   }
 
+  const checkDisplayNameAvailable = async (displayName, authUserId) => {
+    const cleanedName = String(displayName || '').trim()
+
+    if (!cleanedName) {
+      return {
+        available: false,
+        message: 'Please enter a display name.',
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('player_profiles')
+      .select('id, user_id, display_name')
+      .ilike('display_name', cleanedName)
+
+    if (error) {
+      throw error
+    }
+
+    const duplicate = (data || []).find(
+      row =>
+        row?.user_id &&
+        String(row.user_id) !== String(authUserId) &&
+        String(row.display_name || '').trim().toLowerCase() ===
+          cleanedName.toLowerCase()
+    )
+
+    return duplicate
+      ? {
+          available: false,
+          message:
+            'This display name is already used by another player. Please use your full name or choose a more distinctive display name.',
+        }
+      : {
+          available: true,
+          message: '',
+        }
+  }
+
   const handleSaveProfile = async () => {
     if (
-      hasAcceptedClub &&
-      String(form.club || '').trim().toUpperCase() !==
-        acceptedClub.shortName
+      hasAcceptedMembership &&
+      !acceptedClub
     ) {
       alert(
-        'Your club is linked to an accepted ShuttleTrack membership. Leave the club from the Clubs page before changing it.',
+        'Please select one of your accepted ShuttleTrack clubs.',
       )
-
-      setForm(previous => ({
-        ...previous,
-        club: acceptedClub.shortName,
-        externalClub: '',
-      }))
-      setClubEntryMode(acceptedClub.shortName)
       return
     }
 
@@ -967,20 +1147,39 @@ export default function Profile() {
     setIsSavingProfile(true)
     try {
       const authUser = await getSupabaseUser()
+
+      const displayNameCheck = await checkDisplayNameAvailable(
+        form.name,
+        authUser.id,
+      )
+
+      if (!displayNameCheck.available) {
+        alert(displayNameCheck.message)
+        return
+      }
+
       await saveMainProfileToSupabase(authUser)
 
-      const validatedClub = getValidatedClubValue()
+      const validatedClub = getValidatedClub()
+
       setForm(previous => ({
         ...previous,
-        club: validatedClub || '',
+        clubId: validatedClub?.id
+          ? String(validatedClub.id)
+          : '',
+        club: validatedClub?.shortName || '',
+        externalClub: validatedClub
+          ? ''
+          : previous.externalClub,
       }))
 
       await supabase.from('app_users').update({ setup_completed: true }).eq('user_id', authUser.id)
       saveProfile?.({
         ...user,
         ...form,
-        club: validatedClub || '',
-        externalClub: hasAcceptedClub
+        clubId: validatedClub?.id || '',
+        club: validatedClub?.shortName || '',
+        externalClub: validatedClub
           ? ''
           : form.externalClub?.trim() || '',
         name: form.name,
@@ -990,7 +1189,19 @@ export default function Profile() {
       alert('Profile saved successfully')
     } catch (error) {
       console.error('Profile save error:', error)
-      alert(error.message || 'Failed to save profile')
+
+      if (
+        error?.code === '23505' &&
+        String(error?.message || '')
+          .toLowerCase()
+          .includes('display_name')
+      ) {
+        alert(
+          'This display name is already used by another player. Please use your full name or choose a more distinctive display name.'
+        )
+      } else {
+        alert(error.message || 'Failed to save profile')
+      }
     } finally {
       setIsSavingProfile(false)
     }
@@ -1314,6 +1525,28 @@ export default function Profile() {
             grid-template-columns: minmax(0, 1fr) !important;
           }
 
+          .profileEditModal,
+          .profileEditModal .${styles.formRow} {
+            min-width: 0 !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
+
+          .profileEditModal input,
+          .profileEditModal select,
+          .profileEditModal textarea {
+            display: block !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
+
+          .profileEditModal input[type="date"] {
+            min-width: 0 !important;
+            max-width: 100% !important;
+          }
+
           .profileSkillRow {
             grid-template-columns: 72px minmax(0, 1fr) 40px;
             gap: 8px;
@@ -1440,8 +1673,19 @@ export default function Profile() {
                 { label: 'Strength', value: strength },
                 { label: 'Weakness', value: weakness },
                 { label: 'What player are you?', value: playerMindsetText },
+                { label: 'Endurance Level', value: enduranceLevel, fullWidth: true },
               ].map(item => (
-                <div key={item.label} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 12, minHeight: 58 }}>
+                <div
+                  key={item.label}
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 14,
+                    padding: 12,
+                    minHeight: 58,
+                    gridColumn: item.fullWidth ? '1 / -1' : undefined,
+                  }}
+                >
                   <div style={{ fontSize: 10, color: '#93A4BC', fontWeight: 600, letterSpacing: 0.5 }}>{item.label}</div>
                   <div style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 400, marginTop: 5, lineHeight: 1.35 }}>{item.value}</div>
                 </div>
@@ -1721,18 +1965,103 @@ export default function Profile() {
 
       {showProfileModal && (
         <div className={styles.modalOverlay} onClick={e => e.target === e.currentTarget && setShowProfileModal(false)}>
-          <div className={styles.modal} style={{ ...modalStyle, maxWidth: 760, width: '92vw', maxHeight: '86vh', overflowY: 'auto' }}>
+          <div className={`${styles.modal} profileEditModal`} style={{ ...modalStyle, maxWidth: 760, width: '92vw', maxHeight: '86vh', overflowY: 'auto' }}>
             <div className={styles.modalHead}>
               <div className={styles.modalTitle}>Edit Profile</div>
               <button className={styles.modalClose} onClick={() => setShowProfileModal(false)}>✕</button>
             </div>
 
             <div className={styles.g2} style={{ marginBottom: 0 }}>
-              <div className={styles.formRow}><label className={styles.formLabel}>Full Name</label><input className={styles.formInput} value={form.name} onChange={set('name')} /></div>
+              <div className={styles.formRow}><label className={styles.formLabel}>Display Name</label><input className={styles.formInput} value={form.name} onChange={set('name')} /></div>
               <div className={styles.formRow}><label className={styles.formLabel}>Date of birth</label><input className={styles.formInput} type="date" value={form.dateOfBirth || ''} onChange={set('dateOfBirth')} /></div>
             </div>
             <div className={styles.g2} style={{ marginBottom: 0 }}>
-              <div className={styles.formRow}><label className={styles.formLabel}>Gender optional</label><select className={styles.formSelect} value={form.gender} onChange={set('gender')}><option value="">Prefer not to say</option><option>Male</option><option>Female</option></select></div>
+              <div className={styles.formRow}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    marginBottom: 6,
+                  }}
+                >
+                  <label
+                    className={styles.formLabel}
+                    style={{ marginBottom: 0 }}
+                  >
+                    Gender optional
+                  </label>
+
+                  <button
+                    type="button"
+                    disabled={!form.gender}
+                    onClick={() =>
+                      setForm(previous => ({
+                        ...previous,
+                        showGender: !previous.showGender,
+                      }))
+                    }
+                    aria-label={
+                      form.showGender
+                        ? 'Hide gender from public profile'
+                        : 'Show gender on public profile'
+                    }
+                    title={
+                      form.showGender
+                        ? 'Visible publicly'
+                        : 'Hidden from public'
+                    }
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
+                      border: form.showGender
+                        ? '1px solid rgba(26,95,255,0.32)'
+                        : '1px solid var(--line, #D9E2F0)',
+                      background: form.showGender
+                        ? 'color-mix(in srgb, #1A5FFF 10%, var(--card, #FFFFFF))'
+                        : 'var(--soft, #F6F8FF)',
+                      color: form.showGender
+                        ? '#1A5FFF'
+                        : 'var(--text-muted, #8892A4)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      padding: 0,
+                      flexShrink: 0,
+                      cursor: form.gender
+                        ? 'pointer'
+                        : 'not-allowed',
+                      opacity: form.gender ? 1 : 0.45,
+                    }}
+                  >
+                    <VisibilityEyeIcon
+                      visible={form.showGender}
+                      size={17}
+                    />
+                  </button>
+                </div>
+
+                <select
+                  className={styles.formSelect}
+                  value={form.gender}
+                  onChange={e => {
+                    const value = e.target.value
+
+                    setForm(previous => ({
+                      ...previous,
+                      gender: value,
+                      showGender: value
+                        ? previous.showGender
+                        : false,
+                    }))
+                  }}
+                >
+                  <option value="">Prefer not to say</option>
+                  <option>Male</option>
+                  <option>Female</option>
+                </select>
+              </div>
               <div className={styles.formRow}><label className={styles.formLabel}>Playing Hand</label><select className={styles.formSelect} value={form.hand} onChange={set('hand')}><option>Right</option><option>Left</option></select></div>
             </div>
             <div className={styles.g2} style={{ marginBottom: 0 }}>
@@ -1776,22 +2105,55 @@ export default function Profile() {
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Club optional</label>
 
-              {hasAcceptedClub ? (
+              {hasAcceptedMembership ? (
                 <>
                   <select
                     className={styles.formSelect}
-                    value={acceptedClub.shortName}
-                    disabled
+                    value={form.clubId}
+                    onChange={event => {
+                      const nextClub = joinedClubs.find(
+                        club =>
+                          String(club.id) ===
+                          String(event.target.value),
+                      )
+
+                      setForm(previous => ({
+                        ...previous,
+                        clubId: nextClub?.id
+                          ? String(nextClub.id)
+                          : '',
+                        club: nextClub?.shortName || '',
+                        externalClub: '',
+                      }))
+                    }}
+                    disabled={joinedClubs.length === 1}
                     style={{
-                      cursor: 'not-allowed',
-                      opacity: 0.78,
+                      cursor:
+                        joinedClubs.length === 1
+                          ? 'not-allowed'
+                          : 'pointer',
+                      opacity:
+                        joinedClubs.length === 1
+                          ? 0.78
+                          : 1,
                     }}
                   >
-                    <option value={acceptedClub.shortName}>
-                      {acceptedClub.shortName
-                        ? `${acceptedClub.shortName} · ${acceptedClub.name}`
-                        : acceptedClub.name}
-                    </option>
+                    {joinedClubs.length > 1 && !form.clubId && (
+                      <option value="">
+                        Select a club to display
+                      </option>
+                    )}
+
+                    {joinedClubs.map(club => (
+                      <option
+                        key={club.id}
+                        value={String(club.id)}
+                      >
+                        {club.shortName
+                          ? `${club.shortName} · ${club.name}`
+                          : club.name}
+                      </option>
+                    ))}
                   </select>
 
                   <div
@@ -1806,9 +2168,9 @@ export default function Profile() {
                       lineHeight: 1.5,
                     }}
                   >
-                    This club is linked to your accepted ShuttleTrack
-                    membership. Leave the club from the Clubs page before
-                    changing it.
+                    {joinedClubs.length > 1
+                      ? 'These clubs come from your accepted ShuttleTrack memberships. Select which club should appear on your profile. Club name changes update automatically.'
+                      : 'This club is linked to your accepted ShuttleTrack membership. Club name changes update automatically. Leave the club from the Clubs page before changing to an outside club.'}
                   </div>
                 </>
               ) : (
@@ -1823,6 +2185,7 @@ export default function Profile() {
                       if (value === '__external__') {
                         setForm(previous => ({
                           ...previous,
+                          clubId: '',
                           club: '',
                         }))
                         return
@@ -1831,6 +2194,7 @@ export default function Profile() {
                       if (value === 'none') {
                         setForm(previous => ({
                           ...previous,
+                          clubId: '',
                           club: '',
                           externalClub: '',
                         }))
@@ -1839,7 +2203,8 @@ export default function Profile() {
 
                       setForm(previous => ({
                         ...previous,
-                        club: value,
+                        clubId: '',
+                        club: '',
                         externalClub: '',
                       }))
                     }}
@@ -1876,9 +2241,88 @@ export default function Profile() {
                 </>
               )}
             </div>
-            <div className={styles.g2} style={{ marginBottom: 0 }}>
-              <div className={styles.formRow}><label className={styles.formLabel}>Instagram optional</label><input className={styles.formInput} placeholder="@yourusername" value={form.instagram} onChange={set('instagram')} /></div>
-              <div className={styles.formRow}><label className={styles.formLabel}>Show Instagram publicly</label><select className={styles.formSelect} value={form.showInstagram ? 'Yes' : 'No'} onChange={e => setForm(prev => ({ ...prev, showInstagram: e.target.value === 'Yes' }))}><option>Yes</option><option>No</option></select></div>
+            <div className={styles.formRow}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  marginBottom: 6,
+                }}
+              >
+                <label
+                  className={styles.formLabel}
+                  style={{ marginBottom: 0 }}
+                >
+                  Instagram optional
+                </label>
+
+                <button
+                  type="button"
+                  disabled={!form.instagram.trim()}
+                  onClick={() =>
+                    setForm(previous => ({
+                      ...previous,
+                      showInstagram: !previous.showInstagram,
+                    }))
+                  }
+                  aria-label={
+                    form.showInstagram
+                      ? 'Hide Instagram from public profile'
+                      : 'Show Instagram on public profile'
+                  }
+                  title={
+                    form.showInstagram
+                      ? 'Visible publicly'
+                      : 'Hidden from public'
+                  }
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    border: form.showInstagram
+                      ? '1px solid rgba(26,95,255,0.32)'
+                      : '1px solid var(--line, #D9E2F0)',
+                    background: form.showInstagram
+                      ? 'color-mix(in srgb, #1A5FFF 10%, var(--card, #FFFFFF))'
+                      : 'var(--soft, #F6F8FF)',
+                    color: form.showInstagram
+                      ? '#1A5FFF'
+                      : 'var(--text-muted, #8892A4)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    padding: 0,
+                    flexShrink: 0,
+                    cursor: form.instagram.trim()
+                      ? 'pointer'
+                      : 'not-allowed',
+                    opacity: form.instagram.trim() ? 1 : 0.45,
+                  }}
+                >
+                  <VisibilityEyeIcon
+                    visible={form.showInstagram}
+                    size={17}
+                  />
+                </button>
+              </div>
+
+              <input
+                className={styles.formInput}
+                placeholder="@yourusername"
+                value={form.instagram}
+                onChange={e => {
+                  const value = e.target.value
+
+                  setForm(previous => ({
+                    ...previous,
+                    instagram: value,
+                    showInstagram: value.trim()
+                      ? previous.showInstagram
+                      : false,
+                  }))
+                }}
+              />
             </div>
             <div className={styles.formRow}><label className={styles.formLabel}>Bio / badminton lifestyle</label><textarea className={styles.formInput} rows={4} value={form.bio} onChange={set('bio')} placeholder="Write something about your badminton lifestyle, training, goals or playing identity..." style={{ resize: 'vertical', minHeight: 100, fontFamily: 'inherit', lineHeight: 1.5 }} /></div>
 

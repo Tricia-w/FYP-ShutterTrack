@@ -612,8 +612,16 @@ export default function Dashboard() {
             : item.attendance_status || 'scheduled',
         }))
 
+        // Keep Dashboard fitness score consistent with the Fitness page.
+        // Coach-added fitness tests are shown separately on Fitness and
+        // must not replace/influence the player's own fitness indicators.
+        const playerFitnessTests =
+          (fitnessTestsRes.data || []).filter(
+            test => !Boolean(test.added_by_coach)
+          )
+
         const fitnessSummary = calculateFitnessSummary({
-          tests: fitnessTestsRes.data || [],
+          tests: playerFitnessTests,
           sessions: trainingLogsRes.data || [],
           recoveryLogs: fitnessRecoveryRes.data || [],
           injuries: fitnessInjuriesRes.data || [],
@@ -790,7 +798,7 @@ export default function Dashboard() {
         >
           <div>
             <div className={styles.pageTitle}>
-              {getGreeting()}, {name} 👋
+              {getGreeting()}, {name}
             </div>
 
             <div className={styles.pageSub}>
@@ -1074,24 +1082,39 @@ export default function Dashboard() {
       </div>
 
       <div className={styles.tip}>
-        <strong>Tip:</strong>{' '}
+        <strong>Training focus:</strong>{' '}
         {weakness !== 'Not set' ? (
           <>
-            Your weakness is <strong style={{ color: '#1A5FFF' }}>{weakness}</strong>. Focus on
-            targeted drills to improve this area.
+            <strong style={{ color: '#1A5FFF' }}>{weakness}</strong> is currently
+            recorded as an area for improvement. Review suitable drills or discuss
+            this area with your coach.
           </>
         ) : weakestSkill ? (
           <>
-            Your lowest skill is <strong style={{ color: '#1A5FFF' }}>{weakestSkill.name}</strong>.
-            Consider adding drills for this area.
+            <strong style={{ color: '#1A5FFF' }}>{weakestSkill.name}</strong> is
+            currently your lowest self-rated skill. Review your skill assessment
+            and include suitable drills in training.
           </>
         ) : (
-          'Complete your setup and skill ratings to get better tips.'
+          'Complete your skill assessment to identify areas for improvement.'
         )}
       </div>
 
       <div className={styles.g4} style={{ marginBottom: 16 }}>
-        <div className={styles.metricHighlight}>
+        <div
+          className={styles.metricHighlight}
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/performance')}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              navigate('/performance')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+          aria-label="Open performance page for total matches"
+        >
           <div
             style={{
               width: 40,
@@ -1137,7 +1160,20 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className={styles.metric}>
+        <div
+          className={styles.metric}
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/performance')}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              navigate('/performance')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+          aria-label="Open performance page for win rate"
+        >
           <div
             style={{
               width: 40,
@@ -1191,7 +1227,20 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className={styles.metric}>
+        <div
+          className={styles.metric}
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/fitness')}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              navigate('/fitness')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+          aria-label="Open fitness page for fitness score"
+        >
           <div
             style={{
               width: 40,
@@ -1247,30 +1296,51 @@ export default function Dashboard() {
                 ? styles.metricLbl
                 : fitnessScore >= 70
                   ? styles.deltaUp
-                  : styles.deltaDown
+                  : fitnessScore >= 50
+                    ? styles.metricLbl
+                    : styles.deltaDown
             }
             style={{
               color: !hasFitnessData
                 ? 'var(--text-muted, #8892A4)'
                 : fitnessScore >= 70
                   ? '#00C48C'
-                  : '#EF4444',
+                  : fitnessScore >= 50
+                    ? '#F59E0B'
+                    : '#EF4444',
               WebkitTextFillColor: !hasFitnessData
                 ? 'var(--text-muted, #8892A4)'
                 : fitnessScore >= 70
                   ? '#00C48C'
-                  : '#EF4444',
+                  : fitnessScore >= 50
+                    ? '#F59E0B'
+                    : '#EF4444',
             }}
           >
             {!hasFitnessData
               ? 'No fitness data yet'
               : fitnessScore >= 70
                 ? 'Good condition'
-                : 'Needs improvement'}
+                : fitnessScore >= 50
+                  ? 'Moderate'
+                  : 'Needs improvement'}
           </div>
         </div>
 
-        <div className={styles.metric}>
+        <div
+          className={styles.metric}
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/expenses')}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              navigate('/expenses')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+          aria-label="Open expenses page for monthly spend"
+        >
           <div
             style={{
               width: 40,
@@ -1448,7 +1518,7 @@ export default function Dashboard() {
                   display: 'inline-block',
                 }}
               />
-              Player strong ≥75
+              Self-rating ≥75
             </span>
 
             <span
@@ -1469,7 +1539,7 @@ export default function Dashboard() {
                   display: 'inline-block',
                 }}
               />
-              Player needs work
+              Self-rating below 75
             </span>
 
             {coachSkills.length > 0 && (
@@ -1525,7 +1595,7 @@ export default function Dashboard() {
                   letterSpacing: 0.6,
                 }}
               >
-                Coach feedback
+                Latest coach feedback
               </div>
 
               <div

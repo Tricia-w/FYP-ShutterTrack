@@ -16,6 +16,14 @@ const C = {
   line: 'var(--line, #EEF1F8)',
 }
 
+const AUTH_REDIRECT_ORIGIN =
+  String(
+    process.env.REACT_APP_AUTH_REDIRECT_ORIGIN ||
+      window.location.origin,
+  )
+    .trim()
+    .replace(/\/$/, '')
+
 const SKILL_COLUMNS = [
   { name: 'Smash', column: 'smash' },
   { name: 'Defense', column: 'defense' },
@@ -355,6 +363,54 @@ const fmtDate = value => {
   })
 }
 
+const getActionPlanDeadlineStatus = (deadline, completion = 0) => {
+  const completionRate = Math.max(
+    0,
+    Math.min(100, Number(completion) || 0)
+  )
+
+  if (completionRate >= 100) {
+    return {
+      label: 'COMPLETED',
+      color: '#059669',
+      background: '#ECFDF5',
+      border: '#A7F3D0',
+      rotate: '-2deg',
+    }
+  }
+
+  if (!deadline) return null
+
+  const deadlineDate = new Date(`${deadline}T00:00:00`)
+  if (Number.isNaN(deadlineDate.getTime())) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  deadlineDate.setHours(0, 0, 0, 0)
+
+  if (deadlineDate.getTime() < today.getTime()) {
+    return {
+      label: 'OVERDUE',
+      color: '#7F1D1D',
+      background: '#FECACA',
+      border: '#991B1B',
+      rotate: '-3deg',
+    }
+  }
+
+  if (deadlineDate.getTime() === today.getTime()) {
+    return {
+      label: 'DUE TODAY',
+      color: '#7F1D1D',
+      background: '#FECDD3',
+      border: '#9F1239',
+      rotate: '-3deg',
+    }
+  }
+
+  return null
+}
+
 const fmtAddedTime = value => {
   if (!value) return ''
 
@@ -588,6 +644,9 @@ const PERFORMANCE_NOTIFICATION_TYPES = [
   'coach_performance_assessment',
   'coach_performance_feedback',
   'coach_progress',
+  'coach_performance_action_plan_due_tomorrow',
+  'coach_performance_action_plan_due_today',
+  'coach_performance_action_plan_overdue',
 ]
 
 const getSkillAdvice = skillName => {
@@ -639,6 +698,7 @@ export default function Performance() {
 
   const [filterType, setFilterType] = useState('All')
   const [sortOrder, setSortOrder] = useState('Latest')
+  const [showAllMatches, setShowAllMatches] = useState(false)
 
   const [showMatchModal, setShowMatchModal] = useState(false)
   const [showUpcomingModal, setShowUpcomingModal] = useState(false)
@@ -753,7 +813,64 @@ export default function Performance() {
       return
     }
 
-    const verificationRows = rows || []
+    const rawVerificationRows = rows || []
+    const verifierUserIds = [
+      ...new Set(
+        rawVerificationRows
+          .map(row => row.verifier_user_id)
+          .filter(Boolean)
+      ),
+    ]
+
+    let verifierNamesByUserId = {}
+
+    if (verifierUserIds.length > 0) {
+      const [playerProfilesResult, appUsersResult] = await Promise.all([
+        supabase
+          .from('player_profiles')
+          .select('user_id, display_name')
+          .in('user_id', verifierUserIds),
+        supabase
+          .from('app_users')
+          .select('user_id, full_name')
+          .in('user_id', verifierUserIds),
+      ])
+
+      if (playerProfilesResult.error) {
+        console.error(
+          'Verifier player profile load error:',
+          playerProfilesResult.error
+        )
+      }
+
+      if (appUsersResult.error) {
+        console.error('Verifier account name load error:', appUsersResult.error)
+      }
+
+      const accountNames = Object.fromEntries(
+        (appUsersResult.data || []).map(user => [
+          user.user_id,
+          user.full_name?.trim() || '',
+        ])
+      )
+
+      const playerProfileNames = Object.fromEntries(
+        (playerProfilesResult.data || []).map(profile => [
+          profile.user_id,
+          profile.display_name?.trim() || '',
+        ])
+      )
+
+      verifierNamesByUserId = {
+        ...accountNames,
+        ...playerProfileNames,
+      }
+    }
+
+    const verificationRows = rawVerificationRows.map(row => ({
+      ...row,
+      verifier_name: verifierNamesByUserId[row.verifier_user_id] || '',
+    }))
 
     setVerificationAssessments(verificationRows)
     setVerificationSummary({
@@ -1033,6 +1150,14 @@ export default function Performance() {
           : dateA - dateB
       })
   }, [matches, upcomingMatches, filterType, sortOrder])
+
+  const displayedMatches = useMemo(
+    () =>
+      showAllMatches
+        ? visibleMatches
+        : visibleMatches.slice(0, 5),
+    [visibleMatches, showAllMatches]
+  )
 
   const recommendations = useMemo(() => {
     const lowSkills = skills.filter(skill => skill.val < 70)
@@ -1501,7 +1626,7 @@ export default function Performance() {
     if (!verificationRequest?.token) return
 
     const url =
-      `${window.location.origin}/verify-skill/${verificationRequest.token}`
+      `${AUTH_REDIRECT_ORIGIN}/verify-skill/${verificationRequest.token}`
 
     try {
       await navigator.clipboard.writeText(url)
@@ -1840,6 +1965,130 @@ export default function Performance() {
           font-size: 14px !important;
           font-weight: 400 !important;
         }
+
+        .performanceCoachFeedbackGrid {
+          display: grid;
+          grid-template-columns:
+            minmax(160px, 0.75fr)
+            minmax(280px, 1.5fr)
+            minmax(160px, 0.75fr);
+          gap: 10px;
+          margin-top: 12px;
+          width: 100%;
+          min-width: 0;
+        }
+
+        .performanceCoachFeedbackGrid > div {
+          min-width: 0;
+          max-width: 100%;
+          box-sizing: border-box;
+        }
+
+        .performanceCoachFeedbackGrid input[type='range'] {
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+        }
+
+        .performanceCoachActionPlanText {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .performanceDueStamp {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 24px;
+          padding: 3px 9px;
+          border: 2px solid currentColor;
+          border-radius: 7px;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.8px;
+          line-height: 1;
+          text-transform: uppercase;
+          white-space: nowrap;
+          box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
+        }
+
+        @media (max-width: 900px) {
+          .performanceCoachFeedbackGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .performanceCoachActionPlan {
+            grid-column: 1 / -1;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .performanceCoachFeedback {
+            overflow: hidden;
+          }
+
+          .performanceCoachFeedback [aria-label^='Action plan status'] {
+            width: min(76%, 240px) !important;
+            min-height: 64px !important;
+            padding: 8px 12px !important;
+            font-size: 24px !important;
+            letter-spacing: 2.5px !important;
+            border-width: 4px !important;
+          }
+
+          .performanceCoachFeedbackGrid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .performanceCoachActionPlan {
+            grid-column: auto;
+          }
+
+          .performanceCoachFeedback > div,
+          .performanceCoachFeedbackGrid,
+          .performanceCoachFeedbackGrid > div {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+          }
+
+          .performanceMatchModal,
+          .performanceMatchModal > *,
+          .performanceMatchTopGrid,
+          .performanceMatchTopGrid > *,
+          .performanceMatchScoreGrid,
+          .performanceMatchScoreGrid > *,
+          .performanceMatchResultGrid,
+          .performanceMatchResultGrid > * {
+            min-width: 0 !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
+
+          .performanceMatchModal input,
+          .performanceMatchModal select,
+          .performanceMatchModal textarea,
+          .performanceMatchModal button {
+            min-width: 0 !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
+
+          .performanceMatchModal input[type="date"] {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+          }
+
+          .performanceMatchTopGrid,
+          .performanceMatchResultGrid {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+
+          .performanceMatchScoreGrid {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          }
+        }
       `}</style>
 
       <div className={styles.pageHead}>
@@ -1998,11 +2247,71 @@ export default function Performance() {
             flexWrap: 'wrap',
           }}
         >
-          <div className={styles.cardTitle}>
-            Match history — upcoming and completed matches
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (visibleMatches.length > 5) {
+                setShowAllMatches(current => !current)
+              }
+            }}
+            title={
+              visibleMatches.length > 5
+                ? showAllMatches
+                  ? 'Show latest 5 matches'
+                  : 'View all matches'
+                : undefined
+            }
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              margin: 0,
+              textAlign: 'left',
+              cursor:
+                visibleMatches.length > 5
+                  ? 'pointer'
+                  : 'default',
+              color: 'inherit',
+            }}
+          >
+            <div className={styles.cardTitle}>
+              Match history — upcoming and completed matches
+            </div>
+
+            {visibleMatches.length > 5 && (
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: 10,
+                  color: C.muted,
+                  fontWeight: 500,
+                }}
+              >
+                {showAllMatches
+                  ? `Showing all ${visibleMatches.length} matches`
+                  : `Showing latest 5 of ${visibleMatches.length} matches`}
+              </div>
+            )}
+          </button>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {visibleMatches.length > 5 && (
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() =>
+                  setShowAllMatches(current => !current)
+                }
+                style={{
+                  height: 36,
+                  fontSize: 11,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {showAllMatches ? 'Latest 5' : 'View all'}
+              </button>
+            )}
+
             <select
               className={styles.formSelect}
               value={filterType}
@@ -2070,7 +2379,7 @@ export default function Performance() {
                   </td>
                 </tr>
               ) : (
-                visibleMatches.map(match => {
+                displayedMatches.map(match => {
                   if (match.is_upcoming) {
                     return (
                       <tr
@@ -2567,6 +2876,12 @@ export default function Performance() {
             {coachProgress.map(item => {
               const actionPlans = decodeActionPlans(item.coach_comment)
 
+              const deadlineStatus =
+                getActionPlanDeadlineStatus(
+                  actionPlans.performanceDeadline,
+                  actionPlans.performanceCompletion
+                )
+
               const matchingAssessment =
                 coachAssessments.find(
                   assessment =>
@@ -2580,12 +2895,53 @@ export default function Performance() {
                 <div
                   key={item.id}
                   style={{
+                    position: 'relative',
                     padding: 14,
                     background: C.soft,
                     borderRadius: 12,
                     borderLeft: '3px solid #1A5FFF',
+                    overflow: 'hidden',
                   }}
                 >
+                  {deadlineStatus && (
+                    <div
+                      aria-label={`Action plan status: ${deadlineStatus.label}`}
+                      style={{
+                        position: 'absolute',
+                        left: '50%',
+                        top: '50%',
+                        transform: 'translate(-50%, -50%) rotate(-18deg)',
+                        zIndex: 4,
+                        width: 'min(72%, 360px)',
+                        minHeight: 84,
+                        padding: '10px 18px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: `5px double ${deadlineStatus.color}`,
+                        borderRadius: 12,
+                        color: deadlineStatus.color,
+                        background: 'transparent',
+                        fontSize:
+                          deadlineStatus.label === 'DUE TODAY'
+                            ? 34
+                            : 38,
+                        fontWeight: 900,
+                        letterSpacing: 4,
+                        lineHeight: 1,
+                        textTransform: 'uppercase',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        opacity: 0.42,
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      {deadlineStatus.label}
+                    </div>
+                  )}
+
                   <div
                     style={{
                       display: 'flex',
@@ -2623,15 +2979,7 @@ export default function Performance() {
                       'No performance feedback provided.'}
                   </div>
 
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns:
-                        'minmax(160px, 0.75fr) minmax(280px, 1.5fr) minmax(160px, 0.75fr)',
-                      gap: 10,
-                      marginTop: 12,
-                    }}
-                  >
+                  <div className="performanceCoachFeedbackGrid">
                     <div
                       style={{
                         background: C.card,
@@ -2649,11 +2997,15 @@ export default function Performance() {
                     </div>
 
                     <div
+                      className="performanceCoachActionPlan"
                       style={{
+                        position: 'relative',
                         background: C.card,
                         border: `1px solid ${C.line}`,
                         borderRadius: 10,
                         padding: '10px 12px',
+                        minWidth: 0,
+                        overflow: 'hidden',
                       }}
                     >
                       <div
@@ -2667,6 +3019,7 @@ export default function Performance() {
                       </div>
 
                       <div
+                        className="performanceCoachActionPlanText"
                         style={{
                           fontSize: 12,
                           fontWeight: 600,
@@ -2696,34 +3049,48 @@ export default function Performance() {
                               color: C.muted,
                             }}
                           >
-                            <span>
-                              Deadline:{' '}
-                              <strong
-                                style={{
-                                  fontWeight: 700,
-                                  color: C.text,
-                                }}
-                              >
-                                {actionPlans.performanceDeadline
-                                  ? new Date(
-                                      `${actionPlans.performanceDeadline}T00:00:00`
-                                    ).toLocaleDateString(
-                                      'en-MY',
-                                      {
-                                        day: 'numeric',
-                                        month: 'short',
-                                        year: 'numeric',
-                                      }
-                                    )
-                                  : 'Not set'}
-                              </strong>
-                            </span>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                flexWrap: 'wrap',
+                                minWidth: 0,
+                              }}
+                            >
+                              <span>
+                                Deadline:{' '}
+                                <strong
+                                  style={{
+                                    fontWeight: 700,
+                                    color: C.text,
+                                  }}
+                                >
+                                  {actionPlans.performanceDeadline
+                                    ? new Date(
+                                        `${actionPlans.performanceDeadline}T00:00:00`
+                                      ).toLocaleDateString(
+                                        'en-MY',
+                                        {
+                                          day: 'numeric',
+                                          month: 'short',
+                                          year: 'numeric',
+                                        }
+                                      )
+                                    : 'Not set'}
+                                </strong>
+                              </span>
+
+                            </div>
 
                             <span
                               style={{
                                 fontSize: 12,
                                 fontWeight: 700,
-                                color: '#1A5FFF',
+                                color:
+                                  deadlineStatus?.label === 'COMPLETED'
+                                    ? '#059669'
+                                    : '#1A5FFF',
                               }}
                             >
                               {actionPlans.performanceCompletion}%
@@ -3256,7 +3623,7 @@ export default function Performance() {
           }}
         >
           <div
-            className={styles.modal}
+            className={`${styles.modal} performanceMatchModal`}
             style={{
               maxWidth: 580,
               maxHeight: '92vh',
@@ -3333,6 +3700,7 @@ export default function Performance() {
             )}
 
             <div
+              className="performanceMatchTopGrid"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
@@ -3501,6 +3869,7 @@ export default function Performance() {
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Game Score</label>
               <div
+                className="performanceMatchScoreGrid"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 1fr 1fr',
@@ -3537,6 +3906,7 @@ export default function Performance() {
             </div>
 
             <div
+              className="performanceMatchResultGrid"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
@@ -3665,8 +4035,8 @@ export default function Performance() {
                   style={{
                     marginTop: 9,
                     border: 'none',
-                    background: '#FEE2E2',
-                    color: '#DC2626',
+                    background: '#FECACA',
+                    color: '#7F1D1D',
                     borderRadius: 9,
                     padding: '8px 12px',
                     fontSize: 12,
@@ -4292,6 +4662,7 @@ export default function Performance() {
                 {verificationAssessments.map((item, index) => {
                   const isCoachVerification = item.verifier_role === 'coach'
                   const roleLabel = isCoachVerification ? 'Coach' : 'Player'
+                  const verifierName = item.verifier_name?.trim()
                   const accent = isCoachVerification ? '#7C3AED' : '#059669'
 
                   return (
@@ -4324,7 +4695,10 @@ export default function Performance() {
                             padding: '5px 9px',
                           }}
                         >
-                          Verified by {roleLabel}
+                          Verified by{' '}
+                          {verifierName
+                            ? `${verifierName} (${roleLabel})`
+                            : roleLabel}
                         </span>
 
                         <div
@@ -4360,8 +4734,8 @@ export default function Performance() {
                               height: 26,
                               borderRadius: 8,
                               border: '1px solid #FECACA',
-                              background: '#FEF2F2',
-                              color: '#DC2626',
+                              background: '#FECACA',
+                              color: '#7F1D1D',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',

@@ -38,6 +38,69 @@ const SCHEDULE_BADGE = {
   'Completed Training': 'blue',
 }
 
+const VALID_TRAINING_FOCUS = [
+  'Endurance',
+  'Speed',
+  'Strength',
+  'Agility',
+  'Recovery',
+  'Matches',
+  'Defense Drills',
+  'Focus on retuning',
+]
+
+function normalizeTrainingFocus(
+  value,
+  fallbackType = ''
+) {
+  const raw = String(value || '').trim()
+
+  const exact = VALID_TRAINING_FOCUS.find(
+    option =>
+      option.toLowerCase() ===
+      raw.toLowerCase()
+  )
+
+  if (exact) {
+    return exact
+  }
+
+  const source = String(
+    fallbackType || raw || ''
+  )
+    .trim()
+    .toLowerCase()
+
+  const mappings = [
+    ['competition', 'Matches'],
+    ['friendly match', 'Matches'],
+    ['match practice', 'Matches'],
+    ['matches', 'Matches'],
+    ['strategy session', 'Matches'],
+    ['footwork', 'Agility'],
+    ['agility', 'Agility'],
+    ['smash', 'Strength'],
+    ['strength', 'Strength'],
+    ['defense', 'Defense Drills'],
+    ['defence', 'Defense Drills'],
+    ['net play', 'Speed'],
+    ['speed', 'Speed'],
+    ['fitness & conditioning', 'Endurance'],
+    ['conditioning', 'Endurance'],
+    ['endurance', 'Endurance'],
+    ['stamina', 'Endurance'],
+    ['recovery', 'Recovery'],
+  ]
+
+  const matched = mappings.find(
+    ([key]) => source.includes(key)
+  )
+
+  return matched
+    ? matched[1]
+    : 'Endurance'
+}
+
 const todayISO = () => new Date().toISOString().split('T')[0]
 const toKey = d => d?.slice(0, 10)
 const clamp = (n, min = 0, max = 100) => Math.max(min, Math.min(max, Number(n) || 0))
@@ -293,7 +356,6 @@ const FITNESS_COLORS = {
   Endurance: '#10B981',
   Speed: '#2563EB',
   Strength: '#8B5CF6',
-  Flexibility: '#F59E0B',
   Agility: '#F59E0B',
   Recovery: '#06B6D4',
 }
@@ -358,6 +420,84 @@ function fmtTime(value) {
   })
 }
 
+
+function getFitnessActionPlanDeadlineStatus(
+  deadline,
+  completion = 0
+) {
+  const completionRate = Math.max(
+    0,
+    Math.min(
+      100,
+      Number(completion) || 0
+    )
+  )
+
+  if (completionRate >= 100) {
+    return {
+      label: 'COMPLETED',
+      color: '#047857',
+      border: '#059669',
+      opacity: 0.38,
+    }
+  }
+
+  if (!deadline) return null
+
+  const deadlineDate = new Date(
+    `${deadline}T00:00:00`
+  )
+
+  if (
+    Number.isNaN(
+      deadlineDate.getTime()
+    )
+  ) {
+    return null
+  }
+
+  const today = new Date()
+
+  today.setHours(
+    0,
+    0,
+    0,
+    0
+  )
+
+  deadlineDate.setHours(
+    0,
+    0,
+    0,
+    0
+  )
+
+  if (
+    deadlineDate.getTime() <
+    today.getTime()
+  ) {
+    return {
+      label: 'OVERDUE',
+      color: '#7F1D1D',
+      border: '#991B1B',
+      opacity: 0.42,
+    }
+  }
+
+  if (
+    deadlineDate.getTime() ===
+    today.getTime()
+  ) {
+    return {
+      label: 'DUE TODAY',
+      color: '#881337',
+      border: '#9F1239',
+      opacity: 0.42,
+    }
+  }
+
+  return null
+}
 
 function fmtAddedTime(value) {
   if (!value) return ''
@@ -619,6 +759,10 @@ function rowToTest(row) {
     indicator: row.indicator || 'Endurance',
     score: clamp(row.score),
     change: row.change_note || 'Saved',
+    addedByCoach: Boolean(row.added_by_coach),
+    coachUserId: row.coach_user_id || null,
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || '',
   }
 }
 
@@ -1021,10 +1165,27 @@ function InjuryBodyMap({ injuries }) {
   )
 }
 
-function ModalShell({ title, children, onClose }) {
+function ModalShell({
+  title,
+  children,
+  onClose,
+  maxWidth = 560,
+}) {
   return (
-    <div className={styles.modalOverlay} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={styles.modal} style={{ maxWidth: 560 }}>
+    <div
+      className={styles.modalOverlay}
+      onClick={e =>
+        e.target === e.currentTarget &&
+        onClose()
+      }
+    >
+      <div
+        className={`${styles.modal} fitness-mobile-modal`}
+        style={{
+          width: 'min(92vw, 100%)',
+          maxWidth,
+        }}
+      >
         <div className={styles.modalHead}>
           <div className={styles.modalTitle}>{title}</div>
           <button className={styles.modalClose} onClick={onClose}>x</button>
@@ -1198,7 +1359,14 @@ function TrainingModal({ title, form, onChange, onSave, onClose, onDelete, savin
 function TestModal({ title, form, onChange, onSave, onClose, onDelete, saving }) {
   return (
     <ModalShell title={title} onClose={onClose}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div
+        className="fitness-test-top-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 14,
+        }}
+      >
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Date</label>
           <input className={styles.formInput} type="date" value={form.date} onChange={e => onChange('date', e.target.value)} />
@@ -4035,6 +4203,7 @@ function RecoveryModal({
   return (
     <ModalShell title={title} onClose={handleClose}>
       <div
+        className="fitness-recovery-top-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
@@ -4458,6 +4627,7 @@ function RecoveryModal({
       </div>
 
       <div
+        className="fitness-recovery-metrics-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr',
@@ -4939,6 +5109,9 @@ function InjuryModal({
     }
 
     if (file.size > 10 * 1024 * 1024) {
+      alert(
+        'Image is too large. Please upload a photo smaller than 10 MB.'
+      )
       return
     }
 
@@ -5021,11 +5194,11 @@ function InjuryModal({
           }}
         >
           Type a recognised body part to place the dot automatically,
-          tap the body diagram, or use both.
-        </div>
+          tap the body diagram, or use both.</div>
       </div>
 
       <div
+        className="fitness-injury-meta-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr',
@@ -5358,6 +5531,7 @@ function ScheduleModal({
   scheduleItem,
   canChangeStatus = false,
   coachOptions = [],
+  venueHistory = [],
   saving,
   error = '',
 }) {
@@ -5369,6 +5543,18 @@ function ScheduleModal({
   const isFriendly = typeLower.includes('friendly')
   const isRecovery = typeLower.includes('recovery')
   const isTraining = typeLower === 'training'
+
+  const currentScheduleStatus =
+    String(
+      scheduleItem?.scheduleStatus ||
+      'scheduled'
+    ).toLowerCase()
+
+  const isCurrentlyMissed =
+    currentScheduleStatus === 'missed'
+
+  const isCurrentlyCompleted =
+    currentScheduleStatus === 'completed'
 
   const activityLabel = isCompetition
     ? 'Competition name'
@@ -5436,7 +5622,11 @@ function ScheduleModal({
   }
 
   return (
-    <ModalShell title={title} onClose={onClose}>
+    <ModalShell
+      title={title}
+      onClose={onClose}
+      maxWidth={820}
+    >
       {error && (
         <div
           role="alert"
@@ -5462,7 +5652,7 @@ function ScheduleModal({
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
-          gap: 14,
+          gap: 18,
         }}
       >
         <div className={styles.formRow}>
@@ -5487,7 +5677,13 @@ function ScheduleModal({
               onChange('type', nextType)
 
               if (nextType !== 'Training') {
-                onChange('focus', nextType)
+                onChange(
+                  'focus',
+                  normalizeTrainingFocus(
+                    nextType,
+                    nextType
+                  )
+                )
               }
             }}
           >
@@ -5507,7 +5703,7 @@ function ScheduleModal({
             style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
-              gap: 14,
+              gap: 18,
             }}
           >
             <div className={styles.formRow}>
@@ -5542,7 +5738,7 @@ function ScheduleModal({
                 isTraining || isCompetition || isFriendly
                   ? '1fr 1fr'
                   : '1fr',
-              gap: 14,
+              gap: 18,
             }}
           >
             <div className={styles.formRow}>
@@ -5643,10 +5839,21 @@ function ScheduleModal({
               : 'e.g. Sports Arena'
           }
           value={form.venue}
+          list="player-venue-history"
+          autoComplete="off"
           onChange={event =>
             onChange('venue', event.target.value)
           }
         />
+
+        <datalist id="player-venue-history">
+          {venueHistory.map(venue => (
+            <option
+              key={venue}
+              value={venue}
+            />
+          ))}
+        </datalist>
       </div>
 
       {coachOptions.length > 0 && (
@@ -5748,28 +5955,50 @@ function ScheduleModal({
                 flexWrap: 'wrap',
               }}
             >
-              <button
-                type="button"
-                className={styles.btnPrimary}
-                style={{ background: '#10B981' }}
-                disabled={saving}
-                onClick={onComplete}
-              >
-                Mark Completed
-              </button>
+              {!isCurrentlyCompleted && (
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  style={{ background: '#10B981' }}
+                  disabled={saving}
+                  onClick={onComplete}
+                >
+                  {isCurrentlyMissed
+                    ? 'Change to Completed'
+                    : 'Mark Completed'}
+                </button>
+              )}
 
-              <button
-                type="button"
-                className={styles.btnOutline}
-                style={{
-                  borderColor: '#EF4444',
-                  color: '#EF4444',
-                }}
-                disabled={saving}
-                onClick={onMiss}
-              >
-                Mark Missed
-              </button>
+              {!isCurrentlyMissed &&
+                scheduleItem?.type !== 'Rest Day' && (
+                  <button
+                    type="button"
+                    className={styles.btnOutline}
+                    style={{
+                      borderColor: '#EF4444',
+                      color: '#EF4444',
+                    }}
+                    disabled={saving}
+                    onClick={onMiss}
+                  >
+                    {isCurrentlyCompleted
+                      ? 'Change to Missed'
+                      : 'Mark Missed'}
+                  </button>
+                )}
+
+              {isCurrentlyCompleted &&
+                scheduleItem?.type === 'Rest Day' && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#10B981',
+                    }}
+                  >
+                    This rest day is completed.
+                  </div>
+                )}
             </div>
           ) : (
             <div
@@ -5940,10 +6169,11 @@ function ScheduleCalendar({
               sessionFinished &&
               !isAbsent &&
               !isCoachCompleted &&
-              !isMissed &&
               item.source !== 'training_log' &&
-              (item.type === 'Training' ||
-                item.source === 'coach_training')
+              (
+                item.source === 'schedule' ||
+                item.source === 'coach_training'
+              )
 
             const canMarkMissed =
               sessionFinished &&
@@ -6370,6 +6600,528 @@ function TrainingLogDetailModal({
   )
 }
 
+
+function AllFitnessRecordsModal({
+  type,
+  trainingItems = [],
+  tests = [],
+  recoveryLogs = [],
+  injuries = [],
+  onClose,
+  onTraining,
+  onTest,
+  onRecovery,
+  onInjury,
+}) {
+  if (!type) return null
+
+  const titleMap = {
+    training: 'All Training Log Records',
+    tests: 'All Fitness Test Records',
+    recovery: 'All Recovery Check-ins',
+    injuries: 'All Injury Records',
+  }
+
+  const rowStyle = {
+    display: 'grid',
+    alignItems: 'center',
+    gap: 12,
+    padding: '12px 10px',
+    borderBottom: '1px solid var(--line, #E8EEF8)',
+    cursor: 'pointer',
+  }
+
+  const sortedRecovery = [...recoveryLogs].sort(
+    (a, b) => b.date.localeCompare(a.date)
+  )
+
+  const recordCount =
+    type === 'training'
+      ? trainingItems.length
+      : type === 'tests'
+        ? tests.length
+        : type === 'recovery'
+          ? sortedRecovery.length
+          : injuries.length
+
+  const shouldScroll =
+    recordCount >= 10
+
+  const getPlayerTestScoreForIndicator = indicator => {
+    const normalizedIndicator =
+      String(indicator || '')
+        .trim()
+        .toLowerCase()
+
+    const latestPlayerTest =
+      tests
+        .filter(
+          test =>
+            !test.addedByCoach &&
+            String(test.indicator || '')
+              .trim()
+              .toLowerCase() ===
+              normalizedIndicator
+        )
+        .slice()
+        .sort((a, b) => {
+          const aTime =
+            new Date(
+              a.createdAt ||
+                `${a.date || ''}T00:00:00`
+            ).getTime() || 0
+
+          const bTime =
+            new Date(
+              b.createdAt ||
+                `${b.date || ''}T00:00:00`
+            ).getTime() || 0
+
+          return bTime - aTime
+        })[0] || null
+
+    if (
+      !latestPlayerTest ||
+      !Number.isFinite(
+        Number(latestPlayerTest.score)
+      )
+    ) {
+      return null
+    }
+
+    return Number(latestPlayerTest.score)
+  }
+
+  return (
+    <div
+      className={styles.modalOverlay}
+      role="dialog"
+      aria-modal="true"
+      onClick={event => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+    >
+      <div
+        className={styles.modal}
+        style={{
+          width: 'min(92vw, 900px)',
+          maxWidth: 900,
+          maxHeight:
+            shouldScroll
+              ? '82vh'
+              : 'none',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div className={styles.modalHead}>
+          <div className={styles.modalTitle}>
+            {titleMap[type]}
+          </div>
+
+          <button
+            type="button"
+            className={styles.modalClose}
+            onClick={onClose}
+            aria-label="Close all records"
+          >
+            ×
+          </button>
+        </div>
+
+        <div
+          style={{
+            overflowY:
+              shouldScroll
+                ? 'auto'
+                : 'visible',
+            maxHeight:
+              shouldScroll
+                ? '62vh'
+                : 'none',
+            minHeight: 0,
+            paddingRight:
+              shouldScroll
+                ? 4
+                : 0,
+          }}
+        >
+          {type === 'training' && (
+            <>
+              {trainingItems.length === 0 ? (
+                <div
+                  style={{
+                    padding: 20,
+                    color: '#8892A4',
+                    fontSize: 12,
+                  }}
+                >
+                  No training records yet.
+                </div>
+              ) : (
+                trainingItems.map(item => {
+                  const status = String(
+                    item.status || 'Scheduled'
+                  )
+                  const statusLower = status.toLowerCase()
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => onTraining?.(item)}
+                      style={{
+                        ...rowStyle,
+                        gridTemplateColumns:
+                          '90px 150px minmax(160px, 1.2fr) minmax(150px, 1fr) 90px',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700 }}>
+                          {new Date(
+                            `${item.date}T00:00:00`
+                          ).toLocaleDateString('en-MY', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: '#8892A4',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {safeTimeRange(item.time, item.endTime)}
+                      </div>
+
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>
+                        {item.activity}
+                      </div>
+
+                      <div style={{ fontSize: 11, fontWeight: 600 }}>
+                        {item.focus || '-'}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          whiteSpace: 'normal',
+                          lineHeight: 1.2,
+                          textAlign: 'center',
+                          maxWidth: 72,
+                          color:
+                            statusLower === 'awaiting completion'
+                              ? '#7C3AED'
+                              : statusLower === 'completed'
+                                ? '#10B981'
+                                : ['missed', 'absent'].includes(statusLower)
+                                  ? '#EF4444'
+                                  : '#2563EB',
+                        }}
+                      >
+                        {statusLower === 'scheduled'
+                          ? 'Upcoming'
+                          : statusLower === 'awaiting completion'
+                            ? (
+                              <>
+                                Awaiting
+                                <br />
+                                completion
+                              </>
+                            )
+                            : status.charAt(0).toUpperCase() +
+                              status.slice(1).toLowerCase()}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </>
+          )}
+
+          {type === 'tests' && (
+            <>
+              {tests.length === 0 ? (
+                <div
+                  style={{
+                    padding: 20,
+                    color: '#8892A4',
+                    fontSize: 12,
+                  }}
+                >
+                  No fitness test records yet.
+                </div>
+              ) : (
+                tests.map(test => {
+                  const playerScore =
+                    test.addedByCoach
+                      ? getPlayerTestScoreForIndicator(
+                          test.indicator
+                        )
+                      : null
+
+                  const scoreDifference =
+                    playerScore !== null &&
+                    Number.isFinite(
+                      Number(test.score)
+                    )
+                      ? Number(test.score) -
+                        Number(playerScore)
+                      : null
+
+                  return (
+                  <div
+                    key={test.id}
+                    onClick={() => {
+                      if (!test.addedByCoach) {
+                        onTest?.(test)
+                      }
+                    }}
+                    style={{
+                      ...rowStyle,
+                      cursor:
+                        test.addedByCoach
+                          ? 'default'
+                          : 'pointer',
+                      gridTemplateColumns:
+                        'minmax(180px, 1fr) 130px 120px 90px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        {test.test}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: '#8892A4',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span>{fmtDate(test.date)}</span>
+
+                        {test.addedByCoach && (
+                          <span
+                            style={{
+                              padding: '2px 6px',
+                              borderRadius: 999,
+                              background:
+                                'color-mix(in srgb, #7C3AED 10%, var(--card, #FFFFFF))',
+                              color: '#7C3AED',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            Added by Coach
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+                      {test.indicator}
+                    </div>
+
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+                      {test.result}
+                    </div>
+
+                    <div
+                      style={{
+                        textAlign: 'right',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color:
+                            test.addedByCoach
+                              ? '#7C3AED'
+                              : 'var(--text, #0D1B3E)',
+                        }}
+                      >
+                        {clamp(test.score)}
+                      </div>
+
+                      {test.addedByCoach &&
+                        scoreDifference !== null &&
+                        scoreDifference !== 0 && (
+                          <div
+                            style={{
+                              marginTop: 3,
+                              fontSize: 9,
+                              fontWeight: 700,
+                              color:
+                                scoreDifference > 0
+                                  ? '#10B981'
+                                  : '#EF4444',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {scoreDifference > 0
+                              ? `+${scoreDifference}`
+                              : scoreDifference}
+                          </div>
+                        )}
+                    </div>
+
+                  </div>
+                  )
+                })
+              )}
+            </>
+          )}
+
+          {type === 'recovery' && (
+            <>
+              {sortedRecovery.length === 0 ? (
+                <div
+                  style={{
+                    padding: 20,
+                    color: '#8892A4',
+                    fontSize: 12,
+                  }}
+                >
+                  No recovery check-ins yet.
+                </div>
+              ) : (
+                sortedRecovery.map(item => (
+                  <div
+                    key={item.id}
+                    onClick={() => onRecovery?.(item)}
+                    style={{
+                      ...rowStyle,
+                      gridTemplateColumns:
+                        'minmax(170px, 1fr) repeat(4, minmax(90px, auto))',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+                      {fmtDate(item.date)}
+                    </div>
+
+                    <div style={{ fontSize: 11 }}>
+                      Sleep <strong>{item.sleep}h</strong>
+                    </div>
+
+                    <div style={{ fontSize: 11 }}>
+                      Tired <strong>{item.tiredness}/10</strong>
+                    </div>
+
+                    <div style={{ fontSize: 11 }}>
+                      Ache <strong>{item.muscleAche}/10</strong>
+                    </div>
+
+                    <div style={{ fontSize: 11 }}>
+                      HR <strong>{item.hr} bpm</strong>
+                    </div>
+                  </div>
+                ))
+              )}
+            </>
+          )}
+
+          {type === 'injuries' && (
+            <>
+              {injuries.length === 0 ? (
+                <div
+                  style={{
+                    padding: 20,
+                    color: '#8892A4',
+                    fontSize: 12,
+                  }}
+                >
+                  No injury records yet.
+                </div>
+              ) : (
+                injuries.map(injury => {
+                  const severityColor =
+                    injury.severity === 'Severe'
+                      ? '#EF4444'
+                      : injury.severity === 'Moderate'
+                        ? '#F59E0B'
+                        : '#10B981'
+
+                  return (
+                    <div
+                      key={injury.id}
+                      onClick={() => onInjury?.(injury)}
+                      style={{
+                        ...rowStyle,
+                        gridTemplateColumns:
+                          'minmax(200px, 1fr) 120px 120px',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>
+                          {injury.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#8892A4' }}>
+                          {fmtDate(injury.date)}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: severityColor,
+                        }}
+                      >
+                        {injury.severity || 'Mild'} severity
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          textAlign: 'right',
+                          color:
+                            injury.status === 'Recovered'
+                              ? '#10B981'
+                              : '#F59E0B',
+                        }}
+                      >
+                        {injury.status}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </>
+          )}
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginTop: 14,
+          }}
+        >
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FitnessComparisonRow({
   label,
   playerValue,
@@ -6518,6 +7270,10 @@ const FITNESS_NOTIFICATION_TYPES = [
   'coach_training',
   'coach_training_cancelled',
   'coach_relationship_removed',
+  'player_schedule_status_reminder',
+  'coach_fitness_action_plan_due_tomorrow',
+  'coach_fitness_action_plan_due_today',
+  'coach_fitness_action_plan_overdue',
 ]
 
 function DeleteConfirmationModal({
@@ -6676,17 +7432,18 @@ export default function Fitness() {
   const [showInjury, setShowInjury] = useState(false)
   const [editingInjury, setEditingInjury] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [allRecordsView, setAllRecordsView] = useState(null)
   const [hasCoach, setHasCoach] = useState(false)
   const [coachOptions, setCoachOptions] = useState([])
   const [googleSyncEnabled, setGoogleSyncEnabled] = useState(false)
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false)
   const [showFitnessInfo, setShowFitnessInfo] = useState(false)
+  const [showFitnessScoreInfo, setShowFitnessScoreInfo] = useState(false)
   const trainingTableRef = useRef(null)
-  const [
-    fitnessRightColumnNode,
-    setFitnessRightColumnNode,
-  ] = useState(null)
-  const [threeColumnHeight, setThreeColumnHeight] = useState(null)
+  const trainingCardRef = useRef(null)
+  const rightFitnessStackRef = useRef(null)
+  const injuryLogCardRef = useRef(null)
+  const [trainingSectionHeight, setTrainingSectionHeight] = useState(null)
 
   const [scheduleForm, setScheduleForm] = useState(emptySchedule())
   const [trainingForm, setTrainingForm] = useState(emptyTraining())
@@ -6994,76 +7751,129 @@ export default function Fitness() {
       }
     }
 
-    resetTrainingScroll()
-    window.addEventListener('resize', resetTrainingScroll)
+    const frame = requestAnimationFrame(
+      resetTrainingScroll
+    )
+
+    window.addEventListener(
+      'resize',
+      resetTrainingScroll
+    )
 
     return () => {
-      window.removeEventListener('resize', resetTrainingScroll)
+      cancelAnimationFrame(frame)
+
+      window.removeEventListener(
+        'resize',
+        resetTrainingScroll
+      )
     }
-  }, [])
+  }, [
+    refreshKey,
+    filter.status,
+    filter.search,
+  ])
 
   useLayoutEffect(() => {
-    if (!fitnessRightColumnNode) {
-      setThreeColumnHeight(null)
+    const trainingCard =
+      trainingCardRef.current
+    const injuryCard =
+      injuryLogCardRef.current
+
+    if (!trainingCard || !injuryCard) {
+      setTrainingSectionHeight(null)
       return undefined
     }
 
     let frameId = null
 
-    const measureRightStack = () => {
-      if (frameId !== null) {
+    const syncTrainingHeight = () => {
+      if (frameId) {
         cancelAnimationFrame(frameId)
       }
 
       frameId = requestAnimationFrame(() => {
-        if (window.innerWidth <= 900) {
-          setThreeColumnHeight(null)
+        const isStackedLayout =
+          typeof window !== 'undefined' &&
+          window.innerWidth <= 900
+
+        if (isStackedLayout) {
+          setTrainingSectionHeight(null)
           return
         }
 
-        const rect =
-          fitnessRightColumnNode.getBoundingClientRect()
+        const trainingRect =
+          trainingCard.getBoundingClientRect()
 
-        const nextHeight =
-          Math.ceil(rect.height)
+        const injuryRect =
+          injuryCard.getBoundingClientRect()
 
-        setThreeColumnHeight(
-          nextHeight > 0
-            ? nextHeight
-            : null
-        )
+        const exactHeight =
+          Math.round(
+            injuryRect.bottom -
+            trainingRect.top
+          )
+
+        if (
+          Number.isFinite(exactHeight) &&
+          exactHeight > 0
+        ) {
+          setTrainingSectionHeight(
+            current =>
+              current === exactHeight
+                ? current
+                : exactHeight
+          )
+        }
       })
     }
 
-    measureRightStack()
+    syncTrainingHeight()
 
     const observer =
-      new ResizeObserver(
-        measureRightStack
-      )
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(syncTrainingHeight)
+        : null
 
-    observer.observe(
-      fitnessRightColumnNode
-    )
+    /*
+     * IMPORTANT:
+     * Observe only the right-side reference cards.
+     * Do NOT observe the Training Log itself, otherwise changing its
+     * height can trigger another measurement and create a feedback loop.
+     */
+    const rightStack =
+      rightFitnessStackRef.current
+
+    if (rightStack) {
+      observer?.observe(rightStack)
+    }
+
+    observer?.observe(injuryCard)
 
     window.addEventListener(
       'resize',
-      measureRightStack
+      syncTrainingHeight
     )
 
     return () => {
-      if (frameId !== null) {
+      if (frameId) {
         cancelAnimationFrame(frameId)
       }
 
-      observer.disconnect()
+      observer?.disconnect()
 
       window.removeEventListener(
         'resize',
-        measureRightStack
+        syncTrainingHeight
       )
     }
-  }, [fitnessRightColumnNode])
+  }, [
+    loading,
+    showLoader,
+    tests.length,
+    recoveryLogs.length,
+    injuries.length,
+  ])
 
   useEffect(() => {
     if (!userId) return undefined
@@ -7096,6 +7906,16 @@ export default function Fitness() {
           event: '*',
           schema: 'public',
           table: 'fitness_training_logs',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => setRefreshKey(current => current + 1)
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'fitness_tests',
           filter: `user_id=eq.${userId}`,
         },
         () => setRefreshKey(current => current + 1)
@@ -7211,16 +8031,30 @@ export default function Fitness() {
     return data.user.id
   }
 
+  const playerFitnessTests = useMemo(
+    () =>
+      tests.filter(
+        test => !test.addedByCoach
+      ),
+    [tests]
+  )
+
   const fitnessSummary = useMemo(
     () =>
       calculateFitnessSummary({
-        tests,
+        tests: playerFitnessTests,
         sessions,
         recoveryLogs,
         injuries,
         scheduleList,
       }),
-    [tests, sessions, recoveryLogs, injuries, scheduleList]
+    [
+      playerFitnessTests,
+      sessions,
+      recoveryLogs,
+      injuries,
+      scheduleList,
+    ]
   )
 
   const {
@@ -7232,6 +8066,42 @@ export default function Fitness() {
     activeInjuries,
     recoveryScore,
   } = fitnessSummary
+
+  const fitnessScoreBreakdown = useMemo(() => {
+    const items = (indicators || []).map(item => ({
+      name:
+        item.name === 'Flexibility'
+          ? 'Agility'
+          : item.name,
+      value: Math.max(
+        0,
+        Math.min(
+          100,
+          Number(item.val) || 0
+        )
+      ),
+    }))
+
+    const total = items.reduce(
+      (sum, item) => sum + item.value,
+      0
+    )
+
+    const average =
+      items.length > 0
+        ? total / items.length
+        : 0
+
+    return {
+      items,
+      total,
+      average,
+      roundedAverage: Math.round(average),
+      matchesDisplayedScore:
+        Math.round(average) ===
+        Number(fitnessScore),
+    }
+  }, [indicators, fitnessScore])
 
   const hasRecoveryData = Boolean(latestRecovery)
 
@@ -7284,6 +8154,12 @@ export default function Fitness() {
     [latestCoachProgress?.coach_comment]
   )
 
+  const coachFitnessDeadlineStatus =
+    getFitnessActionPlanDeadlineStatus(
+      coachActionPlans.fitnessDeadline,
+      coachActionPlans.fitnessCompletion
+    )
+
   const latestCoachUpdate =
     latestCoachProgress?.updated_at ||
     latestCoachAssessment?.updated_at ||
@@ -7309,17 +8185,51 @@ export default function Fitness() {
           item.endTime
         ) ||
         '-',
-      focus: item.focus || item.type || 'Training',
+      focus: normalizeTrainingFocus(
+        item.focus,
+        item.type ||
+          item.activity ||
+          item.title
+      ),
       venue: item.venue || '',
       createdAt:
         item.createdAt || '',
-      status:
-        item.scheduleStatus === 'missed'
-          ? 'Missed'
-          : item.attendanceStatus ||
-            item.attendance_status ||
-            item.status ||
-            'Scheduled',
+      status: (() => {
+        const scheduleStatus = String(
+          item.scheduleStatus || 'scheduled'
+        ).toLowerCase()
+
+        const attendanceStatus = String(
+          item.attendanceStatus ||
+          item.attendance_status ||
+          ''
+        ).toLowerCase()
+
+        if (scheduleStatus === 'missed') {
+          return 'Missed'
+        }
+
+        if (scheduleStatus === 'completed') {
+          return 'Completed'
+        }
+
+        if (attendanceStatus === 'completed') {
+          return 'Completed'
+        }
+
+        if (attendanceStatus === 'absent') {
+          return 'Absent'
+        }
+
+        if (
+          item.isCoachCreated &&
+          isScheduleFinished(item)
+        ) {
+          return 'Awaiting completion'
+        }
+
+        return 'Scheduled'
+      })(),
       original: item,
     }))
 
@@ -7336,7 +8246,12 @@ export default function Fitness() {
         item.title ||
         'Completed training',
       duration: item.duration || '-',
-      focus: item.focus || item.type || 'Training',
+      focus: normalizeTrainingFocus(
+        item.focus,
+        item.type ||
+          item.activity ||
+          item.title
+      ),
       venue: item.venue || '',
       createdAt:
         item.createdAt || '',
@@ -7423,6 +8338,211 @@ export default function Fitness() {
     filter.search,
   ])
 
+  useEffect(() => {
+    if (!userId || scheduleList.length === 0) {
+      return undefined
+    }
+
+    let cancelled = false
+
+    const updatePastPlayerSchedules = async () => {
+      const overdueItems =
+        scheduleList.filter(item => {
+          const scheduleStatus =
+            String(
+              item.scheduleStatus ||
+              'scheduled'
+            ).toLowerCase()
+
+          return (
+            item.source === 'schedule' &&
+            !item.isCoachCreated &&
+            scheduleStatus === 'scheduled' &&
+            isScheduleFinished(item)
+          )
+        })
+
+      if (overdueItems.length === 0) {
+        return
+      }
+
+      for (const item of overdueItems) {
+        if (cancelled) return
+
+        try {
+          const isRestDay =
+            item.type === 'Rest Day'
+
+          const nextStatus =
+            isRestDay
+              ? 'completed'
+              : 'missed'
+
+          const { data, error } = await supabase
+            .from('player_schedule')
+            .update({
+              notes: encodeScheduleNotes({
+                notes: item.notes || '',
+                endTime: item.endTime || '',
+                focus: normalizeTrainingFocus(
+                  item.focus,
+                  item.type ||
+                    item.activity ||
+                    item.title
+                ),
+                activity:
+                  item.activity ||
+                  item.title ||
+                  item.type ||
+                  'Scheduled activity',
+                matchType:
+                  item.matchType || '',
+                status: nextStatus,
+              }),
+            })
+            .eq('id', item.id)
+            .eq('user_id', userId)
+            .select('*')
+            .single()
+
+          if (error) {
+            console.error(
+              isRestDay
+                ? 'Auto-complete rest day error:'
+                : 'Auto-mark overdue schedule missed error:',
+              error
+            )
+            continue
+          }
+
+          if (cancelled) return
+
+          const updated =
+            rowToSchedule(data)
+
+          setScheduleList(current =>
+            current.map(schedule =>
+              schedule.id === updated.id
+                ? updated
+                : schedule
+            )
+          )
+
+          /*
+           * Rest Day needs no attendance confirmation.
+           * Once its date has passed, simply mark it Completed
+           * and do not create a reminder notification.
+           */
+          if (isRestDay) {
+            continue
+          }
+
+          const activityName =
+            item.activity ||
+            item.title ||
+            item.type ||
+            'Scheduled activity'
+
+          const scheduleEndTime =
+            String(
+              item.endTime ||
+              item.time ||
+              '23:59'
+            ).slice(0, 5)
+
+          const scheduleEndedAt =
+            new Date(
+              `${item.date}T${scheduleEndTime}:00`
+            )
+
+          const notificationTime =
+            Number.isFinite(
+              scheduleEndedAt.getTime()
+            )
+              ? scheduleEndedAt.toISOString()
+              : new Date().toISOString()
+
+          const notificationTitle =
+            `Missed schedule: ${activityName}`
+
+          const message =
+            `${activityName} ended on ${fmtDate(item.date)} at ${fmtTime(scheduleEndTime)}. ` +
+            'It was marked as Missed because no status was selected. ' +
+            'If you attended, open the schedule and change it to Completed.'
+
+          const {
+            data: existingNotifications,
+            error: notificationLoadError,
+          } = await supabase
+            .from('notifications')
+            .select('id')
+            .eq('user_id', userId)
+            .eq(
+              'source_type',
+              'player_schedule_status_reminder'
+            )
+            .eq('title', notificationTitle)
+            .eq('message', message)
+            .limit(1)
+
+          if (notificationLoadError) {
+            console.error(
+              'Load schedule reminder notification error:',
+              notificationLoadError
+            )
+          }
+
+          if (
+            !notificationLoadError &&
+            (
+              existingNotifications ||
+              []
+            ).length === 0
+          ) {
+            const {
+              error: notificationInsertError,
+            } = await supabase
+              .from('notifications')
+              .insert({
+                user_id: userId,
+                title:
+                  notificationTitle,
+                message,
+                type: 'warning',
+                source_type:
+                  'player_schedule_status_reminder',
+                action_url:
+                  '/player/fitness',
+                is_read: false,
+                created_at:
+                  notificationTime,
+              })
+
+            if (
+              notificationInsertError
+            ) {
+              console.error(
+                'Create schedule reminder notification error:',
+                notificationInsertError
+              )
+            }
+          }
+        } catch (error) {
+          console.error(
+            'Past player schedule status update error:',
+            error
+          )
+        }
+      }
+    }
+
+    updatePastPlayerSchedules()
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId, scheduleList])
+
   const calendarItems = useMemo(() => {
     return [
       ...scheduleList,
@@ -7435,6 +8555,67 @@ export default function Fitness() {
       })),
     ]
   }, [scheduleList, sessions])
+
+  const venueHistory = useMemo(() => {
+    const seen = new Set()
+
+    return [
+      ...scheduleList.map(item => item.venue),
+      ...sessions.map(item => item.venue),
+    ]
+      .map(venue => String(venue || '').trim())
+      .filter(Boolean)
+      .filter(venue => {
+        const key = venue.toLowerCase()
+
+        if (seen.has(key)) {
+          return false
+        }
+
+        seen.add(key)
+        return true
+      })
+      .sort((a, b) =>
+        a.localeCompare(b, 'en', {
+          sensitivity: 'base',
+        })
+      )
+  }, [scheduleList, sessions])
+
+  const upcomingActivitiesCount = useMemo(
+    () =>
+      scheduleList.filter(item => {
+        const status = String(
+          item.scheduleStatus || 'scheduled'
+        ).toLowerCase()
+
+        return (
+          status === 'scheduled' &&
+          !isScheduleFinished(item)
+        )
+      }).length,
+    [scheduleList]
+  )
+
+  const completedTrainingThisMonth = useMemo(() => {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth()
+
+    return sessions.filter(session => {
+      if (!session?.date) return false
+
+      const date = new Date(
+        `${session.date}T00:00:00`
+      )
+
+      return (
+        Number.isFinite(date.getTime()) &&
+        date.getFullYear() === currentYear &&
+        date.getMonth() === currentMonth
+      )
+    }).length
+  }, [sessions])
 
   const setForm = setter => (k, v) => setter(f => ({ ...f, [k]: v }))
 
@@ -7592,7 +8773,10 @@ export default function Fitness() {
         notes: encodeScheduleNotes({
           notes: scheduleForm.notes.trim(),
           endTime: scheduleForm.endTime,
-          focus: scheduleForm.focus,
+          focus: normalizeTrainingFocus(
+            scheduleForm.focus,
+            scheduleForm.type
+          ),
           activity: scheduleTitle,
           matchType:
             ['Competition', 'Friendly Match'].includes(
@@ -7789,11 +8973,19 @@ export default function Fitness() {
         notes: encodeScheduleNotes({
           notes: item.notes || '',
           endTime: item.endTime || '',
-          focus: item.focus || 'Endurance',
+          focus: normalizeTrainingFocus(
+            item.focus,
+            item.type ||
+              item.activity ||
+              item.title
+          ),
           activity:
             item.activity ||
             item.title ||
-            'Training',
+            item.type ||
+            'Scheduled activity',
+          matchType:
+            item.matchType || '',
           status: 'missed',
         }),
       }
@@ -7844,13 +9036,6 @@ export default function Fitness() {
       return
     }
 
-    if (item?.scheduleStatus === 'missed') {
-      setLoadError(
-        'This session was marked as missed.'
-      )
-      return
-    }
-
     if (!item?.date || !item?.time) {
       setLoadError(
         'This scheduled training does not have enough time information. Open it and add the missing details first.'
@@ -7872,7 +9057,12 @@ export default function Fitness() {
           item.title ||
           'Training',
         duration: '',
-        focus: item.focus || 'Endurance',
+        focus: normalizeTrainingFocus(
+          item.focus,
+          item.type ||
+            item.activity ||
+            item.title
+        ),
         notes: [
           item.venue ? `Venue: ${item.venue}` : '',
           item.notes || '',
@@ -7918,7 +9108,12 @@ export default function Fitness() {
           'Training',
         duration: calculatedDuration,
         intensity: 'Medium',
-        focus: item.focus || 'Endurance',
+        focus: normalizeTrainingFocus(
+          item.focus,
+          item.type ||
+            item.activity ||
+            item.title
+        ),
         notes: [
           item.venue ? `Venue: ${item.venue}` : '',
           item.notes || '',
@@ -8037,6 +9232,126 @@ export default function Fitness() {
     }
   }
 
+  const completePlayerAddedSchedule = async item => {
+    if (
+      saving ||
+      !item ||
+      item.source !== 'schedule'
+    ) {
+      return
+    }
+
+    if (item.type === 'Training') {
+      await completeScheduledTraining(item)
+      return
+    }
+
+    if (item.type === 'Rest Day') {
+      setSaving(true)
+      setLoadError('')
+
+      try {
+        const uid = await getUserId()
+
+        const { data, error } = await supabase
+          .from('player_schedule')
+          .update({
+            notes: encodeScheduleNotes({
+              notes: item.notes || '',
+              endTime: item.endTime || '',
+              focus: item.focus || 'Rest Day',
+              activity:
+                item.activity ||
+                item.title ||
+                'Rest Day',
+              matchType: '',
+              status: 'completed',
+            }),
+          })
+          .eq('id', item.id)
+          .eq('user_id', uid)
+          .select('*')
+          .single()
+
+        if (error) throw error
+
+        const updated =
+          rowToSchedule(data)
+
+        setScheduleList(current =>
+          current.map(schedule =>
+            schedule.id === updated.id
+              ? updated
+              : schedule
+          )
+        )
+      } catch (error) {
+        setLoadError(
+          error.message ||
+            'Unable to complete the rest day.'
+        )
+      } finally {
+        setSaving(false)
+      }
+
+      return
+    }
+
+    setSaving(true)
+    setLoadError('')
+
+    try {
+      const uid = await getUserId()
+
+      const payload = {
+        notes: encodeScheduleNotes({
+          notes: item.notes || '',
+          endTime: item.endTime || '',
+          focus: normalizeTrainingFocus(
+        item.focus,
+        item.type ||
+          item.activity ||
+          item.title
+      ),
+          activity:
+            item.activity ||
+            item.title ||
+            item.type ||
+            'Scheduled activity',
+          matchType: item.matchType || '',
+          status: 'completed',
+        }),
+      }
+
+      const { data, error } = await supabase
+        .from('player_schedule')
+        .update(payload)
+        .eq('id', item.id)
+        .eq('user_id', uid)
+        .select('*')
+        .single()
+
+      if (error) throw error
+
+      const updated = rowToSchedule(data)
+
+      setScheduleList(current =>
+        current.map(schedule =>
+          schedule.id === updated.id
+            ? updated
+            : schedule
+        )
+      )
+    } catch (error) {
+      setLoadError(
+        error.message ||
+          'Unable to mark the schedule as completed.'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const openEditTraining = row => {
     setCompletingSchedule(null)
     setEditingTraining(row)
@@ -8062,6 +9377,10 @@ export default function Fitness() {
   }
 
   const openEditTest = row => {
+    if (row?.addedByCoach) {
+      return
+    }
+
     setEditingTest(row)
     setTestForm({
       date: row.date,
@@ -8159,7 +9478,11 @@ export default function Fitness() {
         activity: trainingForm.activity.trim(),
         duration: calculatedDuration,
         intensity: 'Medium',
-        focus: trainingForm.focus,
+        focus: normalizeTrainingFocus(
+          trainingForm.focus,
+          completingSchedule?.type ||
+            trainingForm.activity
+        ),
         notes: trainingForm.notes.trim(),
         updated_at: new Date().toISOString(),
       }
@@ -8303,6 +9626,13 @@ export default function Fitness() {
   }
 
   const saveTest = async () => {
+    if (editingTest?.addedByCoach) {
+      setLoadError(
+        'Coach-added fitness tests are read-only for players.'
+      )
+      return
+    }
+
     if (!testForm.test.trim() || !testForm.result.trim() || saving) return
 
     setSaving(true)
@@ -8343,6 +9673,13 @@ export default function Fitness() {
   }
 
   const deleteTest = async () => {
+    if (editingTest?.addedByCoach) {
+      setLoadError(
+        'Coach-added fitness tests cannot be deleted by players.'
+      )
+      return
+    }
+
     if (!editingTest || saving) return
 
     setSaving(true)
@@ -8916,8 +10253,8 @@ export default function Fitness() {
       `Fitness score: ${fitnessScore}/100`,
       `Recovery status: ${recoveryStatus} (${recoveryScore}/100)`,
       `Weekly training load: ${weeklyHours}h`,
-      `Scheduled events: ${scheduleList.length}`,
-      `Completed training records: ${sessions.length}`,
+      `Upcoming activities: ${upcomingActivitiesCount}`,
+      `Completed training this month: ${completedTrainingThisMonth}`,
       `Fitness tests: ${tests.length}`,
       `Active injuries: ${activeInjuries}`,
       `Suggestion: ${suggestion}`,
@@ -9110,7 +10447,53 @@ export default function Fitness() {
                 </div>
                 <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: 700, marginBottom: 5 }}>/100</div>
               </div>
-              <div className={styles.metricLbl} style={{ color: 'rgba(255,255,255,0.72)' }}>Fitness score</div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 1,
+                }}
+              >
+                <div
+                  className={styles.metricLbl}
+                  style={{
+                    color: 'rgba(255,255,255,0.72)',
+                  }}
+                >
+                  Fitness score
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowFitnessScoreInfo(true)
+                  }
+                  aria-label="How fitness score is calculated"
+                  title="How fitness score is calculated"
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    border:
+                      '1px solid rgba(255,255,255,0.55)',
+                    background:
+                      'rgba(255,255,255,0.12)',
+                    color: '#FFFFFF',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  i
+                </button>
+              </div>
               <div
                 style={{
                   marginTop: 6,
@@ -9151,12 +10534,12 @@ export default function Fitness() {
                 WebkitTextFillColor: '#1A5FFF',
               }}
             >
-              {scheduleList.length}
+              {upcomingActivitiesCount}
             </div>
 
-            <div className={styles.metricLbl}>Scheduled events</div>
+            <div className={styles.metricLbl}>Upcoming activities</div>
             <div style={{ marginTop: 5, fontSize: 11, color: '#8892A4' }}>
-              planned sessions & events
+              planned training, matches & events
             </div>
           </div>
         </div>
@@ -9186,12 +10569,12 @@ export default function Fitness() {
                 WebkitTextFillColor: '#10B981',
               }}
             >
-              {sessions.length}
+              {completedTrainingThisMonth}
             </div>
 
             <div className={styles.metricLbl}>Completed training</div>
             <div style={{ marginTop: 5, fontSize: 11, color: '#8892A4' }}>
-              saved training records
+              this month
             </div>
           </div>
         </div>
@@ -9348,7 +10731,14 @@ export default function Fitness() {
             onDayClick={key => setSelectedDate(selectedDate === key ? null : key)}
             onEditSchedule={openEditSchedule}
             onEditTraining={openEditTraining}
-            onCompleteSchedule={completeScheduledTraining}
+            onCompleteSchedule={async item => {
+              if (item.source === 'coach_training') {
+                await completeScheduledTraining(item)
+                return
+              }
+
+              await completePlayerAddedSchedule(item)
+            }}
             onMissSchedule={markScheduledTrainingMissed}
             saving={saving}
           />
@@ -9542,7 +10932,7 @@ export default function Fitness() {
           })}
 
           <div style={{ fontSize: 12, color: '#8892A4', marginTop: 8 }}>
-            Player values come from training logs, fitness tests, recovery check-ins and injury status. A purple marker shows the coach assessment only when it is different.
+            Player values use your own fitness records. Coach-added test results stay separate and are reflected by the purple coach assessment marker.
           </div>
         </div>
       </div>
@@ -9688,6 +11078,7 @@ export default function Fitness() {
 
             <div
               style={{
+                position: 'relative',
                 marginTop: 12,
                 padding: '13px 14px',
                 borderRadius: 12,
@@ -9695,8 +11086,53 @@ export default function Fitness() {
                   'color-mix(in srgb, #1A5FFF 6%, var(--soft, #F6F8FF))',
                 border:
                   '1px solid color-mix(in srgb, #1A5FFF 16%, var(--line, #EEF1F8))',
+                overflow: 'hidden',
               }}
             >
+              {coachFitnessDeadlineStatus && (
+                <div
+                  aria-label={`Fitness action plan status: ${coachFitnessDeadlineStatus.label}`}
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    transform:
+                      'translate(-50%, -50%) rotate(-18deg)',
+                    zIndex: 4,
+                    width: 'min(72%, 330px)',
+                    minHeight: 78,
+                    padding: '10px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border:
+                      `5px double ${coachFitnessDeadlineStatus.border}`,
+                    borderRadius: 12,
+                    color:
+                      coachFitnessDeadlineStatus.color,
+                    background:
+                      'transparent',
+                    fontSize:
+                      coachFitnessDeadlineStatus.label ===
+                      'DUE TODAY'
+                        ? 30
+                        : 36,
+                    fontWeight: 900,
+                    letterSpacing: 4,
+                    lineHeight: 1,
+                    textTransform: 'uppercase',
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    opacity:
+                      coachFitnessDeadlineStatus.opacity,
+                    pointerEvents: 'none',
+                    userSelect: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  {coachFitnessDeadlineStatus.label}
+                </div>
+              )}
               <div
                 style={{
                   fontSize: 11,
@@ -9761,7 +11197,11 @@ export default function Fitness() {
                       style={{
                         fontSize: 12,
                         fontWeight: 700,
-                        color: '#7C3AED',
+                        color:
+                          coachFitnessDeadlineStatus?.label ===
+                          'COMPLETED'
+                            ? '#047857'
+                            : '#7C3AED',
                       }}
                     >
                       {coachActionPlans.fitnessCompletion}%
@@ -10003,27 +11443,47 @@ export default function Fitness() {
         }}
       >
         <div
-          className={styles.card}
+          ref={trainingCardRef}
+          className={`${styles.card} fitness-training-card`}
           style={{
+            gridColumn: '1',
+
             height:
-              threeColumnHeight
-                ? `${threeColumnHeight}px`
+              trainingSectionHeight
+                ? `${trainingSectionHeight}px`
                 : 'auto',
+            minHeight:
+              trainingSectionHeight
+                ? `${trainingSectionHeight}px`
+                : 0,
             maxHeight:
-              threeColumnHeight
-                ? `${threeColumnHeight}px`
+              trainingSectionHeight
+                ? `${trainingSectionHeight}px`
                 : 'none',
-            minHeight: 0,
             boxSizing: 'border-box',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
+            alignSelf: 'start',
           }}
         >
           <div style={{ marginBottom: 14, flexShrink: 0 }}>
-            <div className={styles.cardTitle} style={{ marginBottom: 4 }}>
+            <button
+              type="button"
+              className={styles.cardTitle}
+              onClick={() => setAllRecordsView('training')}
+              title="View all training records"
+              style={{
+                marginBottom: 4,
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
               Training Log
-            </div>
+            </button>
             <div style={{ fontSize: 11, color: 'var(--text-muted, #8892A4)' }}>
               Upcoming schedules are highlighted in blue. Completed sessions remain as training history.
             </div>
@@ -10066,6 +11526,7 @@ export default function Fitness() {
               <option value="All">All status</option>
               <option value="scheduled">Upcoming</option>
               <option value="completed">Completed</option>
+              <option value="awaiting completion">Awaiting completion</option>
               <option value="missed">Missed</option>
               <option value="absent">Absent</option>
             </select>
@@ -10105,7 +11566,11 @@ export default function Fitness() {
               maxHeight: '100%',
               display: 'flex',
               flexDirection: 'column',
-              overflow: 'hidden',
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              WebkitOverflowScrolling: 'touch',
+              width: '100%',
+              maxWidth: '100%',
             }}
           >
             <div
@@ -10113,21 +11578,22 @@ export default function Fitness() {
               style={{
                 display: 'grid',
                 gridTemplateColumns:
-                  '66px 118px minmax(125px, 1.35fr) 70px minmax(90px, 0.9fr) 82px',
+                  '64px 114px minmax(160px, 1.3fr) minmax(190px, 1.7fr) 110px',
                 gap: 10,
                 padding: '0 10px 8px',
                 color: '#8892A4',
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: 700,
                 alignItems: 'center',
                 boxSizing: 'border-box',
                 flexShrink: 0,
+                width: 700,
+                minWidth: 700,
               }}
             >
               <div>Date</div>
               <div>Time</div>
               <div>Training</div>
-              <div>Duration</div>
               <div>Focus</div>
               <div>Status</div>
             </div>
@@ -10148,12 +11614,13 @@ export default function Fitness() {
               <div
                 className="fitness-training-body"
                 style={{
-                  width: '100%',
+                  width: 700,
+                  minWidth: 700,
                   flex: 1,
                   minHeight: 0,
                   maxHeight: '100%',
                   overflowY: 'auto',
-                  overflowX: 'hidden',
+                  overflowX: 'visible',
                   overscrollBehavior: 'contain',
                 }}
               >
@@ -10175,13 +11642,13 @@ export default function Fitness() {
                       title="View training details"
                       style={{
                         cursor: 'pointer',
-                        width: '100%',
+                        width: 700,
+                        minWidth: 700,
                         display: 'grid',
                         gridTemplateColumns:
-                          '66px 118px minmax(125px, 1.35fr) 70px minmax(90px, 0.9fr) 82px',
+                          '64px 114px minmax(160px, 1.3fr) minmax(190px, 1.7fr) 110px',
                         gap: 10,
                         alignItems: 'center',
-                        minWidth: 0,
                         boxSizing: 'border-box',
                         borderRadius: 10,
                         padding: '10px 10px',
@@ -10207,7 +11674,7 @@ export default function Fitness() {
                       <div>
                         <div
                           style={{
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: 700,
                             color: 'var(--text, #0D1B3E)',
                           }}
@@ -10219,7 +11686,7 @@ export default function Fitness() {
                             month: 'short',
                           })}
                         </div>
-                        <div style={{ fontSize: 11, color: '#8892A4' }}>
+                        <div style={{ fontSize: 10, color: '#8892A4' }}>
                           {new Date(
                             `${t.date}T00:00:00`
                           ).toLocaleDateString('en-MY', {
@@ -10228,14 +11695,14 @@ export default function Fitness() {
                         </div>
                       </div>
 
-                      <div style={{ fontSize: 12, color: '#8892A4', fontWeight: 700 }}>
+                      <div style={{ fontSize: 11, color: '#8892A4', fontWeight: 700 }}>
                         {safeTimeRange(t.time, t.endTime)}
                       </div>
 
                       <div
                         style={{
                           minWidth: 0,
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: 700,
                           lineHeight: 1.2,
                           overflowWrap: 'anywhere',
@@ -10247,19 +11714,8 @@ export default function Fitness() {
                       <div
                         style={{
                           minWidth: 0,
-                          fontSize: 12,
-                          color: '#8892A4',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {t.duration || '-'}
-                      </div>
-
-                      <div
-                        style={{
-                          minWidth: 0,
                           maxWidth: '100%',
-                          fontSize: 12,
+                          fontSize: 11,
                           color: 'var(--text, #0D1B3E)',
                           fontWeight: 600,
                           lineHeight: 1.25,
@@ -10274,24 +11730,36 @@ export default function Fitness() {
                         style={{
                           minWidth: 0,
                           maxWidth: '100%',
-                          fontSize: 11,
+                          fontSize: 10,
                           fontWeight: 700,
                           textAlign: 'left',
-                          whiteSpace: 'normal',
-                          overflowWrap: 'anywhere',
+                          whiteSpace:
+                            statusLower === 'awaiting completion'
+                              ? 'normal'
+                              : 'nowrap',
                           lineHeight: 1.2,
                           color:
-                            statusLower === 'completed'
-                              ? '#10B981'
-                              : ['missed', 'absent'].includes(statusLower)
-                                ? '#EF4444'
-                                : '#2563EB',
+                            statusLower === 'awaiting completion'
+                              ? '#7C3AED'
+                              : statusLower === 'completed'
+                                ? '#10B981'
+                                : ['missed', 'absent'].includes(statusLower)
+                                  ? '#EF4444'
+                                  : '#2563EB',
                         }}
                       >
                         {statusLower === 'scheduled'
                           ? 'Upcoming'
-                          : statusText.charAt(0).toUpperCase() +
-                            statusText.slice(1).toLowerCase()}
+                          : statusLower === 'awaiting completion'
+                            ? (
+                              <>
+                                Awaiting
+                                <br />
+                                completion
+                              </>
+                            )
+                            : statusText.charAt(0).toUpperCase() +
+                              statusText.slice(1).toLowerCase()}
                       </div>
                     </div>
                   )
@@ -10302,16 +11770,25 @@ export default function Fitness() {
         </div>
 
         <div
-          className={styles.card}
+          ref={rightFitnessStackRef}
+          className="fitness-right-stack"
           style={{
-            height:
-              threeColumnHeight
-                ? `${threeColumnHeight}px`
-                : 'auto',
-            maxHeight:
-              threeColumnHeight
-                ? `${threeColumnHeight}px`
-                : 'none',
+            gridColumn: '2 / 4',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            gridTemplateRows: 'auto auto',
+            gap: 16,
+            minWidth: 0,
+            alignContent: 'start',
+            alignSelf: 'start',
+            height: 'fit-content',
+          }}
+        >
+        <div
+          className={`${styles.card} fitness-tests-card`}
+          style={{
+            gridColumn: '1',
+            gridRow: '1',
             minHeight: 0,
             boxSizing: 'border-box',
             display: 'flex',
@@ -10320,7 +11797,22 @@ export default function Fitness() {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Fitness Test Records</div>
+            <button
+              type="button"
+              className={styles.cardTitle}
+              onClick={() => setAllRecordsView('tests')}
+              title="View all fitness test records"
+              style={{
+                marginBottom: 0,
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Fitness Test Records
+            </button>
             <button className={styles.btnOutline} style={{ fontSize: 12, padding: '7px 14px' }} onClick={openAddTest}>Add</button>
           </div>
 
@@ -10349,15 +11841,22 @@ export default function Fitness() {
                 overflow: 'hidden',
               }}
             >
-              {tests.slice(0, 7).map(test => (
+              {tests.slice(0, 5).map(test => (
             <div
               key={test.id}
               className={styles.listRow}
-              onClick={() => openEditTest(test)}
+              onClick={() => {
+                if (!test.addedByCoach) {
+                  openEditTest(test)
+                }
+              }}
               style={{
-                cursor: 'pointer',
+                cursor:
+                  test.addedByCoach
+                    ? 'default'
+                    : 'pointer',
                 display: 'grid',
-                gridTemplateColumns: '1fr 75px 65px 20px',
+                gridTemplateColumns: 'minmax(0, 1fr) 90px 20px',
                 gap: 10,
                 alignItems: 'center',
                 paddingTop: 12,
@@ -10365,12 +11864,55 @@ export default function Fitness() {
               }}
             >
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{test.test}</div>
-                <div style={{ fontSize: 11, color: '#8892A4' }}>{fmtDate(test.date)} · {test.indicator}</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>
+                  {test.test}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: '#8892A4',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span>
+                    {fmtDate(test.date)} · {test.indicator}
+                  </span>
+
+                  {test.addedByCoach && (
+                    <span
+                      style={{
+                        padding: '2px 6px',
+                        borderRadius: 999,
+                        background:
+                          'color-mix(in srgb, #7C3AED 10%, var(--card, #FFFFFF))',
+                        color: '#7C3AED',
+                        fontSize: 9,
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Added by Coach
+                    </span>
+                  )}
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: '#0D1B3E', fontWeight: 700 }}>{test.result}</div>
-              <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, textAlign: 'right' }}>{test.change}</div>
-              {pencilIcon}
+
+              <div
+                style={{
+                  fontSize: 12,
+                  color: '#0D1B3E',
+                  fontWeight: 700,
+                }}
+              >
+                {test.result}
+              </div>
+
+              {test.addedByCoach
+                ? <span />
+                : pencilIcon}
             </div>
               ))}
 
@@ -10379,17 +11921,30 @@ export default function Fitness() {
         </div>
 
         <div
-          ref={setFitnessRightColumnNode}
+          className={`${styles.card} fitness-recovery-card`}
           style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 16,
+            gridColumn: '2',
+            gridRow: '1',
             minWidth: 0,
           }}
         >
-          <div className={styles.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Recovery Check-in</div>
+              <button
+                type="button"
+                className={styles.cardTitle}
+                onClick={() => setAllRecordsView('recovery')}
+                title="View all recovery check-ins"
+                style={{
+                  marginBottom: 0,
+                  padding: 0,
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                Recovery Check-in
+              </button>
               <button className={styles.btnOutline} style={{ fontSize: 12, padding: '7px 14px' }} onClick={openAddRecovery}>Add</button>
             </div>
 
@@ -10431,26 +11986,65 @@ export default function Fitness() {
                 </div>
               ))}
             </div>
-          </div>
+        </div>
 
-          <div className={styles.card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Injury Log</div>
+        <div
+          ref={injuryLogCardRef}
+          className={`${styles.card} fitness-injury-card`}
+          style={{
+            gridColumn: '1 / 3',
+            gridRow: '2',
+            minWidth: 0,
+            height: 'fit-content',
+            alignSelf: 'start',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <button
+              type="button"
+              className={styles.cardTitle}
+              onClick={() => setAllRecordsView('injuries')}
+              title="View all injury records"
+              style={{
+                marginBottom: 0,
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Injury Log
+            </button>
               <button className={styles.btnOutline} style={{ fontSize: 12, padding: '7px 14px' }} onClick={openAddInjury}>Add</button>
             </div>
 
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) 145px',
+                gap: 18,
+                alignItems: 'center',
+              }}
+            >
               <div
                 style={{
-                  flex: 1,
                   minWidth: 0,
-                  minHeight: 170,
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent: 'center',
                 }}
               >
-                {injuries.length === 0 && <div style={{ padding: '18px 0', color: '#8892A4', fontSize: 12 }}>No injury records yet.</div>}
+                {injuries.length === 0 && (
+                  <div
+                    style={{
+                      padding: '18px 0',
+                      color: '#8892A4',
+                      fontSize: 12,
+                    }}
+                  >
+                    No injury records yet.
+                  </div>
+                )}
 
                 {injuries.slice(0, 3).map(injury => {
                   const severityColor =
@@ -10463,14 +12057,22 @@ export default function Fitness() {
                   return (
                     <div
                       key={injury.id}
-                      className={styles.listRow}
                       onClick={() =>
                         openEditInjury(injury)
                       }
                       style={{
-                        cursor: 'pointer',
-                        borderRadius: 8,
+                        display: 'grid',
+                        gridTemplateColumns:
+                          injury.imageUrl
+                            ? '42px minmax(0, 1fr) 112px'
+                            : 'minmax(0, 1fr) 112px',
                         gap: 10,
+                        alignItems: 'center',
+                        minHeight: 68,
+                        padding: '10px 0',
+                        cursor: 'pointer',
+                        borderBottom:
+                          '1px solid var(--line, #E8EEF8)',
                       }}
                     >
                       {injury.imageUrl && (
@@ -10482,7 +12084,6 @@ export default function Fitness() {
                             height: 42,
                             borderRadius: 8,
                             objectFit: 'cover',
-                            flexShrink: 0,
                             background: '#F7F9FF',
                           }}
                         />
@@ -10490,7 +12091,6 @@ export default function Fitness() {
 
                       <div
                         style={{
-                          flex: 1,
                           minWidth: 0,
                         }}
                       >
@@ -10498,6 +12098,9 @@ export default function Fitness() {
                           style={{
                             fontSize: 13,
                             fontWeight: 700,
+                            color: 'var(--text, #0D1B3E)',
+                            lineHeight: 1.3,
+                            overflowWrap: 'anywhere',
                           }}
                         >
                           {injury.name}
@@ -10505,6 +12108,7 @@ export default function Fitness() {
 
                         <div
                           style={{
+                            marginTop: 2,
                             fontSize: 11,
                             color: '#8892A4',
                           }}
@@ -10524,21 +12128,45 @@ export default function Fitness() {
                         </div>
                       </div>
 
-                      <span
-                        className={getBadgeClass(
-                          injury.color
-                        )}
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'flex-end',
+                          alignItems: 'center',
+                          minWidth: 0,
+                        }}
                       >
-                        {injury.status}
-                      </span>
+                        <span
+                          className={getBadgeClass(
+                            injury.color
+                          )}
+                          style={{
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {injury.status}
+                        </span>
+                      </div>
                     </div>
                   )
                 })}
               </div>
 
-              <InjuryBodyMap injuries={injuries} />
+              <div
+                style={{
+                  minWidth: 145,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderLeft:
+                    '1px solid var(--line, #E8EEF8)',
+                  paddingLeft: 14,
+                }}
+              >
+                <InjuryBodyMap injuries={injuries} />
+              </div>
             </div>
-          </div>
+        </div>
         </div>
       </div>
 
@@ -10556,21 +12184,24 @@ export default function Fitness() {
           .fitness-training-table-wrap {
             width: 100%;
             min-width: 0;
+            max-width: 100%;
             direction: ltr;
-            overflow: visible;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
           }
 
           .fitness-training-header,
           .fitness-training-body,
           .fitness-training-row {
-            width: 100%;
-            min-width: 0;
             box-sizing: border-box;
           }
 
           .fitness-training-body {
             padding-right: 0 !important;
             scrollbar-gutter: auto !important;
+            overflow-x: hidden !important;
           }
 
           @media (max-width: 1200px) {
@@ -10584,6 +12215,32 @@ export default function Fitness() {
             .fitness-mobile-two-column,
             .fitness-mobile-three-column {
               grid-template-columns: 1fr !important;
+              grid-template-rows: auto !important;
+            }
+
+            .fitness-right-stack {
+              grid-column: auto !important;
+              grid-template-columns: 1fr !important;
+              grid-template-rows: auto !important;
+            }
+
+            .fitness-training-card,
+            .fitness-tests-card,
+            .fitness-recovery-card,
+            .fitness-injury-card {
+              grid-column: auto !important;
+              grid-row: auto !important;
+            }
+
+            .fitness-injury-card > div:last-child {
+              grid-template-columns: 1fr !important;
+            }
+
+            .fitness-injury-card > div:last-child > div:last-child {
+              border-left: 0 !important;
+              border-top: 1px solid var(--line, #E8EEF8) !important;
+              padding-left: 0 !important;
+              padding-top: 12px !important;
             }
 
             .fitness-training-filters {
@@ -10593,6 +12250,14 @@ export default function Fitness() {
           }
 
           @media (max-width: 640px) {
+            [aria-label^='Fitness action plan status'] {
+              width: min(76%, 220px) !important;
+              min-height: 60px !important;
+              padding: 8px 10px !important;
+              font-size: 22px !important;
+              letter-spacing: 2.5px !important;
+              border-width: 4px !important;
+            }
             .fitness-training-filters {
               grid-template-columns: 1fr !important;
             }
@@ -10631,27 +12296,45 @@ export default function Fitness() {
               overflow-y: hidden;
               -webkit-overflow-scrolling: touch;
               scrollbar-width: thin;
-              padding-bottom: 7px;
+              padding-bottom: 0;
+              touch-action: pan-x pan-y;
+              overscroll-behavior-x: contain;
             }
 
             .fitness-training-header,
             .fitness-training-body {
-              width: 700px;
-              min-width: 700px;
+              width: 700px !important;
+              min-width: 700px !important;
+              max-width: 700px !important;
             }
 
             .fitness-training-body {
-              overflow-x: visible !important;
+              overflow-x: hidden !important;
               overflow-y: auto !important;
             }
 
             .fitness-training-row {
-              width: 700px;
-              min-width: 700px;
+              width: 700px !important;
+              min-width: 700px !important;
+              max-width: 700px !important;
             }
 
-            .fitness-training-header > :nth-child(6),
-            .fitness-training-row > :nth-child(6) {
+            /*
+             * Mobile only:
+             * Keep the main Training Log compact by showing the latest
+             * 10 filtered records. The Training Log heading already opens
+             * the existing All Training Log Records modal, so no extra
+             * View All button is needed.
+             *
+             * Desktop is intentionally unchanged.
+             */
+            .fitness-training-body
+              .fitness-training-row:nth-child(n + 11) {
+              display: none !important;
+            }
+
+            .fitness-training-header > :nth-child(5),
+            .fitness-training-row > :nth-child(5) {
               text-align: left !important;
               justify-self: stretch;
             }
@@ -10667,8 +12350,132 @@ export default function Fitness() {
               padding: 13px !important;
             }
           }
+
+          @media (max-width: 640px) {
+            .fitness-mobile-modal {
+              width: min(94vw, 100%) !important;
+              max-height: calc(100dvh - 24px) !important;
+              overflow-y: auto !important;
+              overflow-x: hidden !important;
+              -webkit-overflow-scrolling: touch;
+              overscroll-behavior: contain;
+              padding-bottom:
+                calc(20px + env(safe-area-inset-bottom)) !important;
+              box-sizing: border-box !important;
+            }
+
+            .fitness-mobile-modal input,
+            .fitness-mobile-modal select,
+            .fitness-mobile-modal textarea {
+              min-width: 0 !important;
+              max-width: 100% !important;
+              box-sizing: border-box !important;
+              font-size: 16px !important;
+            }
+
+            .fitness-recovery-top-grid,
+            .fitness-recovery-metrics-grid,
+            .fitness-injury-meta-grid,
+            .fitness-test-top-grid {
+              min-width: 0 !important;
+              width: 100% !important;
+            }
+
+            .fitness-recovery-top-grid > *,
+            .fitness-recovery-metrics-grid > *,
+            .fitness-injury-meta-grid > *,
+            .fitness-test-top-grid > * {
+              min-width: 0 !important;
+              max-width: 100% !important;
+            }
+
+            .fitness-recovery-top-grid input,
+            .fitness-recovery-top-grid select,
+            .fitness-recovery-metrics-grid input,
+            .fitness-recovery-metrics-grid select,
+            .fitness-injury-meta-grid input,
+            .fitness-injury-meta-grid select,
+            .fitness-test-top-grid input,
+            .fitness-test-top-grid select {
+              display: block !important;
+              width: 100% !important;
+              min-width: 0 !important;
+              max-width: 100% !important;
+              box-sizing: border-box !important;
+            }
+
+            .fitness-recovery-top-grid,
+            .fitness-test-top-grid {
+              grid-template-columns:
+                repeat(2, minmax(0, 1fr)) !important;
+              column-gap: 14px !important;
+              row-gap: 10px !important;
+            }
+
+            .fitness-recovery-metrics-grid {
+              grid-template-columns:
+                repeat(2, minmax(0, 1fr)) !important;
+              column-gap: 14px !important;
+              row-gap: 10px !important;
+            }
+
+            .fitness-recovery-metrics-grid > :nth-child(3) {
+              grid-column: 1 / -1 !important;
+            }
+
+            .fitness-injury-meta-grid {
+              grid-template-columns:
+                repeat(2, minmax(0, 1fr)) !important;
+              column-gap: 14px !important;
+              row-gap: 10px !important;
+            }
+
+            .fitness-injury-meta-grid > :nth-child(3) {
+              grid-column: 1 / -1 !important;
+            }
+          }
+
+          @media (max-width: 390px) {
+            .fitness-recovery-top-grid,
+            .fitness-test-top-grid,
+            .fitness-injury-meta-grid {
+              grid-template-columns: 1fr !important;
+            }
+
+            .fitness-injury-meta-grid > :nth-child(3) {
+              grid-column: auto !important;
+            }
+          }
+
         `}
       </style>
+
+      {allRecordsView && (
+        <AllFitnessRecordsModal
+          type={allRecordsView}
+          trainingItems={trainingLogItems}
+          tests={tests}
+          recoveryLogs={recoveryLogs}
+          injuries={injuries}
+          onClose={() => setAllRecordsView(null)}
+          onTraining={item => {
+            setAllRecordsView(null)
+            setSelectedTrainingDetail(item)
+          }}
+          onTest={item => {
+            setAllRecordsView(null)
+            openEditTest(item)
+          }}
+          onRecovery={item => {
+            setAllRecordsView(null)
+            openEditRecovery(item)
+          }}
+          onInjury={item => {
+            setAllRecordsView(null)
+            openEditInjury(item)
+          }}
+        />
+      )}
 
       {selectedTrainingDetail && (
         <TrainingLogDetailModal
@@ -10722,6 +12529,7 @@ export default function Fitness() {
             setLoadError('')
           }}
           coachOptions={coachOptions}
+          venueHistory={venueHistory}
           saving={saving}
           error={loadError}
         />
@@ -10746,7 +12554,7 @@ export default function Fitness() {
             const item = editingSchedule
             setEditingSchedule(null)
             setScheduleForm(emptySchedule())
-            await completeScheduledTraining(item)
+            await completePlayerAddedSchedule(item)
           }}
           onMiss={async () => {
             const item = editingSchedule
@@ -10857,6 +12665,230 @@ export default function Fitness() {
           onDelete={requestDeleteInjury}
           saving={saving}
         />
+      )}
+
+      {showFitnessScoreInfo && (
+        <div
+          className={styles.modalOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="fitness-score-info-title"
+          onClick={event => {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
+              setShowFitnessScoreInfo(false)
+            }
+          }}
+        >
+          <div
+            className={styles.modal}
+            style={{ maxWidth: 540 }}
+          >
+            <div className={styles.modalHead}>
+              <div>
+                <div
+                  id="fitness-score-info-title"
+                  className={styles.modalTitle}
+                >
+                  How the Fitness Score is calculated
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 5,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    color:
+                      'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  The score summarises the five fitness indicators shown on this page into one value out of 100.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() =>
+                  setShowFitnessScoreInfo(false)
+                }
+                aria-label="Close fitness score information"
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gap: 8,
+              }}
+            >
+              {fitnessScoreBreakdown.items.map(
+                item => (
+                  <div
+                    key={item.name}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent:
+                        'space-between',
+                      gap: 14,
+                      padding: '9px 11px',
+                      borderRadius: 10,
+                      background:
+                        'var(--soft, #F7F9FF)',
+                      border:
+                        '1px solid var(--line, #E8EEF8)',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color:
+                          'var(--text, #0D1B3E)',
+                      }}
+                    >
+                      {item.name}
+                    </span>
+
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: '#1A5FFF',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {Math.round(item.value)} /100
+                    </span>
+                  </div>
+                )
+              )}
+            </div>
+
+            {fitnessScoreBreakdown.items.length > 0 && (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 13,
+                  borderRadius: 12,
+                  background:
+                    'color-mix(in srgb, #1A5FFF 7%, var(--card, #FFFFFF))',
+                  border:
+                    '1px solid color-mix(in srgb, #1A5FFF 20%, var(--line, #E8EEF8))',
+                }}
+              >
+                {fitnessScoreBreakdown.matchesDisplayedScore ? (
+                  <>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color:
+                          'var(--text, #0D1B3E)',
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      Formula
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        color:
+                          'var(--text-muted, #64748B)',
+                      }}
+                    >
+                      (
+                      {fitnessScoreBreakdown.items
+                        .map(item =>
+                          Math.round(item.value)
+                        )
+                        .join(' + ')}
+                      ) ÷{' '}
+                      {fitnessScoreBreakdown.items.length}
+                      {' '}= {' '}
+                      {fitnessScoreBreakdown.average.toFixed(1)}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 5,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: '#1A5FFF',
+                      }}
+                    >
+                      Rounded Fitness Score = {fitnessScore}/100
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      lineHeight: 1.6,
+                      color:
+                        'var(--text-muted, #64748B)',
+                    }}
+                  >
+                    ShuttleTrack calculates this score through the fitness summary using fitness-test results, completed training, recovery check-ins, injury status and schedule information.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 11,
+                lineHeight: 1.55,
+                color:
+                  'var(--text-muted, #8892A4)',
+              }}
+            >
+              Endurance, Speed, Strength and Agility are based on the player's fitness-test records. Recovery reflects the player's latest recovery information. Coach assessment markers are shown separately and do not replace the player's own indicator values.
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                paddingTop: 10,
+                borderTop:
+                  '1px solid var(--line, #E8EEF8)',
+                fontSize: 11,
+                lineHeight: 1.6,
+                color:
+                  'var(--text-muted, #8892A4)',
+              }}
+            >
+              Score interpretation: 70–100 = Good condition, 50–69 = Moderate, below 50 = Needs improvement.
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+                display: 'flex',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={() =>
+                  setShowFitnessScoreInfo(false)
+                }
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {deleteConfirm && (
