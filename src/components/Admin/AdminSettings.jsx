@@ -311,7 +311,7 @@ export default function AdminSettings() {
       throw new Error("Please log in again.");
     }
 
-    const cleanName = currentForm.name.trim();
+    const cleanName = currentForm.trim();
 
     if (!cleanName) {
       throw new Error(
@@ -419,7 +419,7 @@ export default function AdminSettings() {
     accountSaveTimerRef.current =
       window.setTimeout(async () => {
         try {
-          await saveAdminAccount(form);
+          await saveAdminAccount(form.name);
 
           setAccountSaveStatus(
             "Saved automatically"
