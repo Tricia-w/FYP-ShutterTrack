@@ -177,7 +177,7 @@ function getFriendlyAuthMessage(error, fallback) {
     return 'We could not complete this request. Reason: the account service is temporarily unavailable. Please try again in a moment.'
   }
 
-  return 'We could not complete the registration. Please try again. If the problem continues, check your internet connection or try logging in to see whether the account was already created.'
+  return 'We could not confirm that registration finished correctly. Please check your internet connection and try again. If this email is already registered, use Login or Add Role instead.'
 }
 
 function isExistingSignupResponse(error, user) {
@@ -192,6 +192,17 @@ function isExistingSignupResponse(error, user) {
     (Boolean(user) &&
       Array.isArray(user.identities) &&
       user.identities.length === 0)
+  )
+}
+
+function isEmailNotConfirmedError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  const code = String(error?.code || '').toLowerCase()
+
+  return (
+    code === 'email_not_confirmed' ||
+    message.includes('email not confirmed') ||
+    message.includes('email_not_confirmed')
   )
 }
 
@@ -678,6 +689,21 @@ export default function Register() {
       },
     })
 
+    if (signupError && data?.user?.id) {
+      console.warn(
+        'Signup created the account but returned an error afterwards:',
+        signupError,
+      )
+
+      setVerificationEmail(cleanEmail)
+      setRegistrationComplete(true)
+      setError('')
+      setSuccess(
+        'Your account was created, but ShuttleTrack could not confirm that the verification email was sent. Use "Resend verification email" below if you do not receive it.',
+      )
+      return
+    }
+
     if (signupError || isExistingSignupResponse(signupError, data?.user)) {
       if (isExistingSignupResponse(signupError, data?.user)) {
         setAccountMode('existing')
@@ -688,12 +714,46 @@ export default function Register() {
         return
       }
 
+      try {
+        const {
+          data: recoveryLoginData,
+          error: recoveryLoginError,
+        } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: form.password,
+        })
+
+        if (recoveryLoginData?.user?.id && recoveryLoginData?.session) {
+          window.location.replace(
+            role === 'coach'
+              ? '/coach/profile?newRole=1'
+              : '/setup',
+          )
+          return
+        }
+
+        if (isEmailNotConfirmedError(recoveryLoginError)) {
+          setVerificationEmail(cleanEmail)
+          setRegistrationComplete(true)
+          setError('')
+          setSuccess(
+            'Your account was created successfully. Please verify your email before logging in. If the email is not visible, use "Resend verification email" below.',
+          )
+          return
+        }
+      } catch (recoveryError) {
+        console.warn(
+          'Unable to verify whether the signup already created the account:',
+          recoveryError,
+        )
+      }
+
       throw signupError
     }
 
     if (!data?.user) {
       throw new Error(
-        'We could not finish setting up your account. Reason: ShuttleTrack did not receive the account information needed to complete registration. Please try again. If you already created an account, try logging in instead.'
+        'We could not finish setting up your account. Reason: ShuttleTrack did not receive the account information needed to complete registration. Please try again. If this email is already registered, use Login or Add Role instead.'
       )
     }
 
@@ -897,7 +957,7 @@ export default function Register() {
           err,
           accountMode === 'existing'
             ? 'We could not verify your account or add the new role. Reason: the account details could not be confirmed. Please check your details and try again.'
-            : 'We could not complete the registration. Please try again. If the problem continues, check your internet connection or try logging in to see whether the account was already created.',
+            : 'We could not confirm that registration finished correctly. Please check your internet connection and try again. If this email is already registered, use Login or Add Role instead.',
         ),
       )
     } finally {
