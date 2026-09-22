@@ -44,6 +44,10 @@ export default function Layout() {
   const [showAccessDenied, setShowAccessDenied] =
     useState(false)
 
+  // Tablet / small-laptop sidebar can be minimised.
+  // Desktop stays fully open, while mobile keeps the existing top navigation.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
   const [hasPlayerProfile, setHasPlayerProfile] =
     useState(false)
   const [hasCoachProfile, setHasCoachProfile] =
@@ -395,7 +399,11 @@ export default function Layout() {
 
   return (
     <div className={styles.app}>
-      <aside className={styles.sidebar}>
+      <aside
+        className={`${styles.sidebar} ${
+          sidebarCollapsed ? styles.sidebarCollapsed : ''
+        }`}
+      >
         {/* Logo */}
         <div className={styles.sidebarLogo}>
           <div className={styles.logoMark}>
@@ -435,6 +443,44 @@ export default function Layout() {
               ? 'Coach Mode'
               : 'Player Monitor'}
           </div>
+
+          <button
+            type="button"
+            className={styles.sidebarCollapseBtn}
+            onClick={() =>
+              setSidebarCollapsed((previous) => !previous)
+            }
+            aria-label={
+              sidebarCollapsed
+                ? 'Expand navigation'
+                : 'Minimise navigation'
+            }
+            title={
+              sidebarCollapsed
+                ? 'Expand navigation'
+                : 'Minimise navigation'
+            }
+          >
+            <svg
+              viewBox="0 0 20 20"
+              fill="none"
+              width="16"
+              height="16"
+              aria-hidden="true"
+            >
+              <path
+                d={
+                  sidebarCollapsed
+                    ? 'M7 4l6 6-6 6'
+                    : 'M13 4l-6 6 6 6'
+                }
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
 
         {/* Role switcher — only when both profiles exist */}
@@ -446,6 +492,7 @@ export default function Layout() {
             hasCoachAccess === true ||
             profile?.has_coach_access === true) && (
           <div
+            className={styles.roleSwitcherWrap}
             style={{
               padding: '0 12px 16px',
               borderBottom: '1px solid #1e2d50',
@@ -1061,7 +1108,7 @@ export default function Layout() {
             )}
           </div>
 
-          <div>
+          <div className={styles.userMeta}>
             <div className={styles.userName}>
               {displayName}
             </div>
@@ -1093,7 +1140,7 @@ export default function Layout() {
                 strokeLinejoin="round"
               />
             </svg>
-            Log out
+            <span className={styles.logoutText}>Log out</span>
           </button>
         </div>
       </aside>

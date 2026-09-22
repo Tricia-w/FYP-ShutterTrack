@@ -40,11 +40,15 @@
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  transition:
+    width 0.2s ease,
+    min-width 0.2s ease;
 }
 
 .sidebarLogo {
   padding: 24px 20px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
 }
 
 .logoMark {
@@ -72,6 +76,14 @@
   margin-top: 2px;
   letter-spacing: 1px;
   text-transform: uppercase;
+}
+
+.sidebarCollapseBtn {
+  display: none;
+}
+
+.roleSwitcherWrap {
+  transition: opacity 0.15s ease;
 }
 
 .navSection {
@@ -147,6 +159,10 @@
   font-weight: 700;
   color: #ffffff;
   flex-shrink: 0;
+}
+
+.userMeta {
+  min-width: 0;
 }
 
 .userName {
@@ -303,6 +319,115 @@
   margin-top: 5px;
 }
 
+/* Tablet / smaller laptop only:
+   769px–1200px can minimise the sidebar.
+   Larger desktop stays fully expanded.
+   Mobile keeps the existing top navigation. */
+@media (min-width: 769px) and (max-width: 1200px) {
+  .sidebarCollapseBtn {
+    display: flex;
+    position: absolute;
+    top: 18px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.78);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition:
+      background 0.15s ease,
+      color 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .sidebarCollapseBtn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .sidebarCollapsed {
+    width: 72px;
+    min-width: 72px;
+  }
+
+  .sidebarCollapsed .sidebarLogo {
+    padding: 16px 10px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .sidebarCollapsed .logoMark {
+    width: 36px;
+    height: 36px;
+    margin: 0;
+  }
+
+  .sidebarCollapsed .logoName,
+  .sidebarCollapsed .logoSub,
+  .sidebarCollapsed .navLabel,
+  .sidebarCollapsed .roleSwitcherWrap,
+  .sidebarCollapsed .userMeta,
+  .sidebarCollapsed .logoutText {
+    display: none;
+  }
+
+  .sidebarCollapsed .sidebarCollapseBtn {
+    position: static;
+    margin-top: 10px;
+  }
+
+  .sidebarCollapsed .navSection {
+    padding: 14px 10px 8px;
+  }
+
+  .sidebarCollapsed .navItem {
+    width: 52px;
+    min-width: 52px;
+    height: 44px;
+    padding: 0;
+    margin: 0 auto 6px;
+    justify-content: center;
+    gap: 0;
+    font-size: 0;
+  }
+
+  .sidebarCollapsed .navItem svg {
+    width: 20px;
+    height: 20px;
+    flex-basis: 20px;
+  }
+
+  .sidebarCollapsed .sidebarUser {
+    padding: 12px 0;
+    justify-content: center;
+  }
+
+  .sidebarCollapsed .sidebarLogout {
+    padding: 0 10px 14px;
+  }
+
+  .sidebarCollapsed .logoutBtn {
+    width: 52px;
+    height: 42px;
+    padding: 0;
+    margin: 0 auto;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .sidebarCollapsed .logoutBtn svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
 @media (max-width: 768px) {
   .app {
     display: block;
@@ -319,6 +444,10 @@
     z-index: 100;
     background: var(--sidebar-bg);
     overflow: hidden;
+  }
+
+  .sidebarCollapseBtn {
+    display: none !important;
   }
 
   .sidebarLogo {
