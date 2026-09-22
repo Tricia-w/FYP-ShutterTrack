@@ -3535,10 +3535,13 @@ export default function CoachPlayers() {
                     label="Strength"
                     value={profilePlayer.setupStrength}
                   />
-                  <ProfileInfoItem
-                    label="Weakness"
-                    value={profilePlayer.setupWeakness}
-                  />
+                  {profilePlayer.assigned && (
+                    <ProfileInfoItem
+                      label="Weakness"
+                      value={profilePlayer.setupWeakness}
+                    />
+                  )}
+
                   <ProfileInfoItem
                     label="What player are you?"
                     value={
@@ -3577,7 +3580,7 @@ export default function CoachPlayers() {
                       lineHeight: 1.5,
                     }}
                   >
-                    Endurance level is only shown here for players
+                    Weakness and endurance level are only shown here for players
                     connected to this coach.
                   </div>
                 )}
