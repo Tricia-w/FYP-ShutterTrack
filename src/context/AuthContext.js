@@ -438,6 +438,42 @@ export function AuthProvider({ children }) {
         const currentUser = session?.user || null
 
         /*
+         * PASSWORD RECOVERY
+         *
+         * Supabase password-reset links create a temporary authenticated
+         * session. This must not be treated as a normal player/coach login,
+         * otherwise the router can send the user straight to Dashboard.
+         *
+         * Keep a short recovery flag so the router/reset page can recognise
+         * the flow, then force the browser onto /reset-password.
+         */
+        if (
+          event === 'PASSWORD_RECOVERY' &&
+          currentUser
+        ) {
+          sessionStorage.setItem(
+            'shuttlePasswordRecoveryActive',
+            'true'
+          )
+
+          if (mounted) {
+            setUser(currentUser)
+            setLoading(false)
+          }
+
+          if (
+            window.location.pathname !==
+            '/reset-password'
+          ) {
+            window.location.replace(
+              `${window.location.origin}/reset-password`
+            )
+          }
+
+          return
+        }
+
+        /*
          * Token refreshes do not change the ShuttleTrack profile,
          * so do not query app_users again.
          */
@@ -821,6 +857,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem(SESSION_HEARTBEAT_KEY)
     sessionStorage.removeItem('shuttleAddingRole')
     sessionStorage.removeItem('shuttleBrowserSession')
+    sessionStorage.removeItem('shuttlePasswordRecoveryActive')
 
     const { error } = await supabase.auth.signOut({
       scope: 'local',
