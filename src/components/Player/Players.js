@@ -18,12 +18,9 @@ const C = {
   line: "var(--line, #EEF1F8)",
 };
 
-// Use the address that ShuttleTrack is currently opened with.
-// This keeps the QR correct when the laptop IP changes between networks,
-// without needing to edit .env just for the player QR.
-const APP_ORIGIN = String(window.location.origin)
-  .trim()
-  .replace(/\/$/, "");
+// Always use the public ShuttleTrack URL for player QR codes so they
+// can be opened from another phone, Wi-Fi network, or mobile data.
+const APP_ORIGIN = "https://fyp-shutter-track.vercel.app";
 
 const CURRENT_PLAYER = {
   level: "Intermediate",
@@ -361,6 +358,84 @@ function getHeadToHeadFromTargetMatches(matches = [], currentPlayerName = "") {
   };
 }
 
+
+function getMainEquipmentFromEquipment(equipment = null, player = {}) {
+  const rackets = Array.isArray(equipment?.rackets)
+    ? equipment.rackets
+    : [];
+
+  if (rackets.length > 0) {
+    const mainRacket =
+      rackets.find((racket) => racket?.isMain === true) ||
+      rackets[0];
+
+    return {
+      racket:
+        String(mainRacket?.name || "").trim() ||
+        String(equipment?.racket || "").trim() ||
+        String(player?.racket || "").trim() ||
+        "—",
+      stringName:
+        String(mainRacket?.string || "").trim() ||
+        String(equipment?.string || "").trim() ||
+        String(player?.string || player?.string_name || "").trim() ||
+        "—",
+      stringTension:
+        mainRacket?.tension !== null &&
+        mainRacket?.tension !== undefined &&
+        mainRacket?.tension !== ""
+          ? Number(mainRacket.tension)
+          : equipment?.tension_lbs !== null &&
+              equipment?.tension_lbs !== undefined &&
+              equipment?.tension_lbs !== ""
+            ? Number(equipment.tension_lbs)
+            : player?.tension_lbs !== null &&
+                player?.tension_lbs !== undefined &&
+                player?.tension_lbs !== ""
+              ? Number(player.tension_lbs)
+              : player?.string_tension !== null &&
+                  player?.string_tension !== undefined &&
+                  player?.string_tension !== ""
+                ? Number(player.string_tension)
+                : null,
+      shoes:
+        String(equipment?.shoes || player?.shoes || "").trim() ||
+        "—",
+    };
+  }
+
+  // Backward compatibility with the previous single-racket equipment fields.
+  return {
+    racket:
+      String(equipment?.racket || player?.racket || "").trim() ||
+      "—",
+    stringName:
+      String(
+        equipment?.string ||
+          player?.string ||
+          player?.string_name ||
+          ""
+      ).trim() || "—",
+    stringTension:
+      equipment?.tension_lbs !== null &&
+      equipment?.tension_lbs !== undefined &&
+      equipment?.tension_lbs !== ""
+        ? Number(equipment.tension_lbs)
+        : player?.tension_lbs !== null &&
+            player?.tension_lbs !== undefined &&
+            player?.tension_lbs !== ""
+          ? Number(player.tension_lbs)
+          : player?.string_tension !== null &&
+              player?.string_tension !== undefined &&
+              player?.string_tension !== ""
+            ? Number(player.string_tension)
+            : null,
+    shoes:
+      String(equipment?.shoes || player?.shoes || "").trim() ||
+      "—",
+  };
+}
+
 function ReportModal({ target, submitting, onClose, onSubmit }) {
   const [reason, setReason] = useState(REPORT_REASON_OPTIONS[0]);
   const [details, setDetails] = useState("");
@@ -426,6 +501,14 @@ function ReportModal({ target, submitting, onClose, onSubmit }) {
 function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPartner, onCancelPartnerRequest, onRemovePartner, onAddFavourite, onRemoveFavourite, onReport }) {
   const streakColor = p.streak?.startsWith("W") ? "#16a34a" : "#DC2626";
   const [showVerificationDetails, setShowVerificationDetails] = useState(false);
+  const [showPlayingVideos, setShowPlayingVideos] = useState(false);
+
+  const playingVideos =
+    Array.isArray(p.playingVideos) && p.playingVideos.length > 0
+      ? p.playingVideos.slice(0, 3)
+      : p.videoUrl
+        ? [{ url: p.videoUrl, title: p.videoTitle || "Playing video" }]
+        : [];
 
   const verificationPlayerCount = Number(p.verificationPlayerCount || 0);
   const verificationCoachCount = Number(p.verificationCoachCount || 0);
@@ -849,7 +932,6 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
         >
           <SmallInfo label="Style" value={p.setupStyle || p.style} />
           <SmallInfo label="Strength" value={p.setupStrength} />
-          <SmallInfo label="Weakness" value={p.setupWeakness} />
           <SmallInfo label="What player are you?" value={p.setupPlayerType} />
         </div>
       </div>
@@ -880,27 +962,32 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
 
           <div>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
-              Playing video
+              Playing videos
             </div>
-            {p.videoUrl ? (
-              <video
-                src={p.videoUrl}
-                controls
-                preload="metadata"
-                title={p.videoTitle || "Playing video"}
+            {playingVideos.length > 0 ? (
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => setShowPlayingVideos(true)}
                 style={{
                   width: "100%",
-                  maxHeight: 150,
-                  borderRadius: 10,
-                  background: "#0F172A",
-                  display: "block",
-                  objectFit: "cover",
+                  minHeight: 42,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 7,
+                  borderColor: "#BFDBFE",
+                  background: "#EFF6FF",
+                  color: "#1A5FFF",
+                  fontWeight: 800,
                 }}
-              />
+              >
+                ▶ View Playing Videos ({playingVideos.length})
+              </button>
             ) : (
               <div
                 style={{
-                  minHeight: 72,
+                  minHeight: 42,
                   borderRadius: 10,
                   border: `1px dashed ${C.line}`,
                   background: C.soft,
@@ -913,7 +1000,7 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
                   textAlign: "center",
                 }}
               >
-                No featured playing video
+                No playing videos shared
               </div>
             )}
           </div>
@@ -922,11 +1009,36 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
 
       <div className={styles.card}>
         <div className={styles.cardTitle}>Equipment</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 12,
+          }}
+        >
           <SmallInfo label="Racket" value={p.racket} />
           <SmallInfo label="String" value={p.stringName} />
-          <SmallInfo label="String tension" value={p.stringTension !== null && p.stringTension !== undefined && p.stringTension !== "" ? `${p.stringTension} lbs` : "—"} />
+          <SmallInfo
+            label="String tension"
+            value={
+              p.stringTension !== null &&
+              p.stringTension !== undefined &&
+              p.stringTension !== ""
+                ? `${p.stringTension} lbs`
+                : "—"
+            }
+          />
           <SmallInfo label="Shoes" value={p.shoes} />
+        </div>
+
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 10,
+            color: C.muted,
+          }}
+        >
+          Main racket setup
         </div>
       </div>
 
@@ -953,6 +1065,122 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
       )}
 
       <button type="button" className={styles.btnOutline} onClick={() => onReport(p)} style={{ width: "100%", color: "#DC2626", borderColor: "#FECACA", background: "#FFF7F7" }}>Report player</button>
+
+      {showPlayingVideos && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowPlayingVideos(false);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 3500,
+            background: "rgba(13, 27, 62, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+        >
+          <div
+            style={{
+              width: "min(900px, 100%)",
+              maxHeight: "88vh",
+              overflowY: "auto",
+              background: C.card,
+              border: `1px solid ${C.line}`,
+              borderRadius: 20,
+              padding: 20,
+              boxShadow: "0 24px 60px rgba(13,27,62,0.28)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>
+                  {p.name}&apos;s Playing Videos
+                </div>
+                <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
+                  Videos selected by the player to show on the public profile.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Close playing videos"
+                onClick={() => setShowPlayingVideos(false)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  border: `1px solid ${C.line}`,
+                  background: C.soft,
+                  color: C.muted,
+                  cursor: "pointer",
+                  fontSize: 18,
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                gap: 14,
+              }}
+            >
+              {playingVideos.map((video, index) => (
+                <div
+                  key={video.id || video.url || index}
+                  style={{
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    background: C.soft,
+                  }}
+                >
+                  <video
+                    src={video.url}
+                    controls
+                    preload="metadata"
+                    title={video.title || `Playing video ${index + 1}`}
+                    style={{
+                      width: "100%",
+                      aspectRatio: "16 / 9",
+                      background: "#0F172A",
+                      display: "block",
+                      objectFit: "cover",
+                    }}
+                  />
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: C.text,
+                    }}
+                  >
+                    {video.title || `Playing video ${index + 1}`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1244,7 +1472,7 @@ export default function Players() {
       ] = await Promise.all([
         supabase.from("public_players").select("*").order("created_at", { ascending: true }),
         supabase.from("player_profiles").select("*").order("display_name", { ascending: true }),
-        supabase.from("player_equipment").select("player_id, racket, string, tension_lbs, shoes"),
+        supabase.from("player_equipment").select("player_id, racket, string, tension_lbs, shoes, rackets"),
         supabase.from("player_skill_ratings").select("*"),
         supabase.from("player_profile_media").select("*").order("created_at", { ascending: false }),
         supabase.from("coach_profiles").select("*").order("display_name", { ascending: true }),
@@ -1268,16 +1496,9 @@ export default function Players() {
           `)
           .order("match_date", { ascending: false }),
         supabase.rpc("get_directory_visible_accounts"),
-        supabase
-          .from("player_setup")
-          .select(`
-            user_id,
-            preferred_event,
-            play_style,
-            biggest_strength,
-            current_weakness,
-            pressure_reaction
-          `),
+        // Read only the public-safe setup fields through an RPC.
+        // This avoids player_setup RLS hiding other players' setup rows.
+        supabase.rpc("get_public_player_setup_directory"),
         supabase
           .from("skill_verification_requests")
           .select("id, player_user_id, player_profile_id, is_active, created_at")
@@ -1315,7 +1536,7 @@ export default function Players() {
       if (playerMatchesResult.error) console.error("Failed to load player matches:", playerMatchesResult.error);
       if (publicPlayerMatchesResult.error) console.error("Failed to load public player matches:", publicPlayerMatchesResult.error);
       if (directoryAccountsResult.error) console.error("Failed to load visible directory accounts:", directoryAccountsResult.error);
-      if (playerSetupResult.error) console.error("Failed to load player setup profiles:", playerSetupResult.error);
+      if (playerSetupResult.error) console.error("Failed to load public player setup directory:", playerSetupResult.error);
       if (verificationRequestResult.error) console.error("Failed to load skill verification requests:", verificationRequestResult.error);
       if (verificationResult.error) console.error("Failed to load skill verifications:", verificationResult.error);
 
@@ -1335,8 +1556,36 @@ export default function Players() {
 
       const setupByUserId = new Map();
       (playerSetupResult.data || []).forEach((setupRow) => {
-        if (!setupRow?.user_id) return;
-        setupByUserId.set(String(setupRow.user_id), setupRow);
+        const setupUserId =
+          setupRow?.user_id ||
+          setupRow?.player_user_id ||
+          null;
+
+        if (!setupUserId) return;
+
+        setupByUserId.set(String(setupUserId), setupRow);
+      });
+
+      // Player Profile fields can come from either player_setup or public_players.
+      // player_setup has priority because it is the player's latest setup answers.
+      const publicPlayerByUserId = new Map();
+      const publicPlayerByName = new Map();
+
+      (publicPlayerResult.data || []).forEach((publicPlayer) => {
+        if (publicPlayer?.user_id) {
+          publicPlayerByUserId.set(
+            String(publicPlayer.user_id),
+            publicPlayer
+          );
+        }
+
+        const publicName = String(publicPlayer?.name || "")
+          .trim()
+          .toLowerCase();
+
+        if (publicName && !publicPlayerByName.has(publicName)) {
+          publicPlayerByName.set(publicName, publicPlayer);
+        }
       });
 
       const matchesByProfileId = new Map();
@@ -1469,16 +1718,30 @@ export default function Players() {
         });
       });
 
-      const videoByPlayerId = new Map();
+      // is_featured is used as the player's "show on public profile" flag.
+      // Up to 3 selected videos are displayed in the Playing Videos popup.
+      const publicVideosByPlayerId = new Map();
       (playerMediaResult.data || []).forEach((media) => {
         const playerId = media.player_id;
         const mediaUrl = media.media_url || media.file_url || "";
         const fileType = String(media.file_type || media.mime_type || "").toLowerCase();
         const fileName = String(media.file_name || "").toLowerCase();
         const isVideo = fileType.startsWith("video/") || /\.(mp4|mov|webm|m4v|avi)$/i.test(fileName) || /\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(mediaUrl);
-        if (playerId && mediaUrl && isVideo && media.is_featured === true) {
-          videoByPlayerId.set(String(playerId), { url: mediaUrl, title: media.title || media.file_name || "Playing video" });
-        }
+
+        if (!playerId || !mediaUrl || !isVideo || media.is_featured !== true) return;
+
+        const key = String(playerId);
+        const currentVideos = publicVideosByPlayerId.get(key) || [];
+
+        if (currentVideos.length >= 3) return;
+
+        currentVideos.push({
+          id: media.id,
+          url: mediaUrl,
+          title: media.title || media.file_name || `Playing video ${currentVideos.length + 1}`,
+        });
+
+        publicVideosByPlayerId.set(key, currentVideos);
       });
 
       let connectionData = [];
@@ -1507,6 +1770,29 @@ export default function Players() {
       const allRegisteredProfiles = profilePlayerResult.data || [];
       const allRegisteredNames = new Set(allRegisteredProfiles.map((player) => String(player.display_name || "").trim().toLowerCase()).filter(Boolean));
       const allRegisteredUserIds = new Set(allRegisteredProfiles.map((player) => player.user_id && String(player.user_id)).filter(Boolean));
+
+      // Extra fallback: connect player_setup to a player by profile name.
+      // This helps older/legacy directory rows where the direct user_id link
+      // is missing from public_players or a profile row.
+      const setupByPlayerName = new Map();
+
+      allRegisteredProfiles.forEach((profile) => {
+        const profileName = String(profile?.display_name || "")
+          .trim()
+          .toLowerCase();
+
+        const profileUserId = profile?.user_id
+          ? String(profile.user_id)
+          : "";
+
+        const setupRow = profileUserId
+          ? setupByUserId.get(profileUserId) || null
+          : null;
+
+        if (profileName && setupRow && !setupByPlayerName.has(profileName)) {
+          setupByPlayerName.set(profileName, setupRow);
+        }
+      });
 
       const currentPlayerProfile = user
         ? allRegisteredProfiles.find(
@@ -1589,9 +1875,27 @@ export default function Players() {
         .map((player) => {
           const rating = ratingsByPlayerId.get(String(player.user_id)) || ratingsByPlayerId.get(String(player.id)) || null;
           const equipment = equipmentByPlayerId.get(String(player.id)) || null;
-          const setup = player.user_id
-            ? setupByUserId.get(String(player.user_id)) || null
-            : null;
+          const playerNameKey = String(player.display_name || "")
+            .trim()
+            .toLowerCase();
+
+          const publicPlayer =
+            (player.user_id
+              ? publicPlayerByUserId.get(String(player.user_id))
+              : null) ||
+            publicPlayerByName.get(playerNameKey) ||
+            null;
+
+          const setup =
+            (player.user_id
+              ? setupByUserId.get(String(player.user_id))
+              : null) ||
+            (publicPlayer?.user_id
+              ? setupByUserId.get(String(publicPlayer.user_id))
+              : null) ||
+            setupByPlayerName.get(playerNameKey) ||
+            null;
+
           const playerMatchRecords = matchesByProfileId.get(String(player.id)) || [];
           const matchStats = matchStatsByProfileId.get(String(player.id)) || null;
           const latestMatches = playerMatchRecords.slice(0, 3);
@@ -1613,6 +1917,10 @@ export default function Players() {
           const opponent = connectionData.find((connection) => (connection.target_player_id === player.id || connection.target_player_id === player.user_id) && connection.type === "opponent");
           const favourite = connectionData.find((connection) => (connection.target_player_id === player.id || connection.target_player_id === player.user_id) && connection.type === "favourite");
           const verificationInfo = getVerificationInfo(player.user_id, player.id);
+          const mainEquipment = getMainEquipmentFromEquipment(
+            equipment,
+            player
+          );
 
           return {
             id: player.id,
@@ -1632,16 +1940,47 @@ export default function Players() {
               player.play_style ||
               player.style ||
               "All-round",
-            setupStyle: setup?.play_style || null,
-            setupStrength: setup?.biggest_strength || "—",
-            setupWeakness: setup?.current_weakness || "—",
-            setupPlayerType: setup?.pressure_reaction
-              ? `${setup.pressure_reaction}${
-                  String(setup.pressure_reaction).toLowerCase().includes("player")
-                    ? ""
-                    : " Player"
-                }`
-              : "—",
+            setupStyle:
+              setup?.play_style ||
+              setup?.playing_style ||
+              publicPlayer?.play_style ||
+              publicPlayer?.playing_style ||
+              publicPlayer?.style ||
+              player.playing_style ||
+              player.play_style ||
+              player.style ||
+              null,
+
+            setupStrength:
+              setup?.biggest_strength ||
+              setup?.strength ||
+              publicPlayer?.biggest_strength ||
+              publicPlayer?.strength ||
+              player.biggest_strength ||
+              player.strength ||
+              "—",
+
+            setupPlayerType: (() => {
+              const playerType =
+                setup?.pressure_reaction ||
+                setup?.player_type ||
+                publicPlayer?.pressure_reaction ||
+                publicPlayer?.player_type ||
+                player.pressure_reaction ||
+                player.player_type ||
+                "";
+
+              if (!playerType) return "—";
+
+              return `${playerType}${
+                String(playerType)
+                  .toLowerCase()
+                  .includes("player")
+                  ? ""
+                  : " Player"
+              }`;
+            })(),
+
             hand: player.dominant_hand || player.playing_hand || player.hand || "-",
             gender:
               player.show_gender === true
@@ -1650,13 +1989,14 @@ export default function Players() {
             showGender: player.show_gender === true,
             startedPlayingAge: player.started_playing_age !== null && player.started_playing_age !== undefined ? Number(player.started_playing_age) : null,
             experienceYears: calculatePlayerExperience(player),
-            videoUrl: videoByPlayerId.get(String(player.id))?.url || null,
-            videoTitle: videoByPlayerId.get(String(player.id))?.title || "Playing video",
+            playingVideos: publicVideosByPlayerId.get(String(player.id)) || [],
+            videoUrl: publicVideosByPlayerId.get(String(player.id))?.[0]?.url || null,
+            videoTitle: publicVideosByPlayerId.get(String(player.id))?.[0]?.title || "Playing video",
             ig: player.instagram || null,
-            racket: equipment?.racket || player.racket || "—",
-            stringName: equipment?.string || player.string || player.string_name || "—",
-            stringTension: equipment?.tension_lbs !== null && equipment?.tension_lbs !== undefined && equipment?.tension_lbs !== "" ? Number(equipment.tension_lbs) : player.tension_lbs !== null && player.tension_lbs !== undefined && player.tension_lbs !== "" ? Number(player.tension_lbs) : player.string_tension !== null && player.string_tension !== undefined && player.string_tension !== "" ? Number(player.string_tension) : null,
-            shoes: equipment?.shoes || player.shoes || "—",
+            racket: mainEquipment.racket,
+            stringName: mainEquipment.stringName,
+            stringTension: mainEquipment.stringTension,
+            shoes: mainEquipment.shoes,
             smash: Number(rating?.smash ?? 0),
             defense: Number(rating?.defense ?? 0),
             footwork: Number(rating?.footwork ?? 0),
@@ -1708,6 +2048,18 @@ export default function Players() {
         .map((player) => {
           const rating = ratingsByPlayerId.get(String(player.id)) || (player.user_id ? ratingsByPlayerId.get(String(player.user_id)) : null);
           const equipment = equipmentByPlayerId.get(String(player.id)) || null;
+
+          const publicNameKey = String(player.name || "")
+            .trim()
+            .toLowerCase();
+
+          const setup =
+            (player.user_id
+              ? setupByUserId.get(String(player.user_id))
+              : null) ||
+            setupByPlayerName.get(publicNameKey) ||
+            null;
+
           const playerIdKey =
             String(player.id);
 
@@ -1746,6 +2098,10 @@ export default function Players() {
           const opponent = connectionData.find((connection) => connection.target_player_id === player.id && connection.type === "opponent");
           const favourite = connectionData.find((connection) => connection.target_player_id === player.id && connection.type === "favourite");
           const verificationInfo = getVerificationInfo(player.user_id, player.id);
+          const mainEquipment = getMainEquipmentFromEquipment(
+            equipment,
+            player
+          );
 
           return {
             id: player.id,
@@ -1757,13 +2113,40 @@ export default function Players() {
             state: player.state || "-",
             level: player.level || "Beginner",
             style: player.style || "All-round",
-            setupStyle: player.style || null,
-            setupStrength: player.biggest_strength || player.strength || "—",
-            setupWeakness: player.current_weakness || player.weakness || "—",
-            setupPlayerType:
-              player.pressure_reaction ||
-              player.player_type ||
+            setupStyle:
+              setup?.play_style ||
+              setup?.playing_style ||
+              player.play_style ||
+              player.playing_style ||
+              player.style ||
+              null,
+
+            setupStrength:
+              setup?.biggest_strength ||
+              setup?.strength ||
+              player.biggest_strength ||
+              player.strength ||
               "—",
+
+            setupPlayerType: (() => {
+              const playerType =
+                setup?.pressure_reaction ||
+                setup?.player_type ||
+                player.pressure_reaction ||
+                player.player_type ||
+                "";
+
+              if (!playerType) return "—";
+
+              return `${playerType}${
+                String(playerType)
+                  .toLowerCase()
+                  .includes("player")
+                  ? ""
+                  : " Player"
+              }`;
+            })(),
+
             hand: player.hand || "-",
             gender:
               player.show_gender === true
@@ -1772,13 +2155,28 @@ export default function Players() {
             showGender: player.show_gender === true,
             startedPlayingAge: player.started_playing_age !== null && player.started_playing_age !== undefined ? Number(player.started_playing_age) : null,
             experienceYears: calculatePlayerExperience(player),
-            videoUrl: player.video_url || player.playing_video_url || null,
-            videoTitle: player.video_title || "Playing video",
+            playingVideos:
+              publicVideosByPlayerId.get(String(player.id)) ||
+              ((player.video_url || player.playing_video_url)
+                ? [{
+                    url: player.video_url || player.playing_video_url,
+                    title: player.video_title || "Playing video",
+                  }]
+                : []),
+            videoUrl:
+              publicVideosByPlayerId.get(String(player.id))?.[0]?.url ||
+              player.video_url ||
+              player.playing_video_url ||
+              null,
+            videoTitle:
+              publicVideosByPlayerId.get(String(player.id))?.[0]?.title ||
+              player.video_title ||
+              "Playing video",
             ig: player.instagram || null,
-            racket: equipment?.racket || player.racket || "—",
-            stringName: equipment?.string || player.string || player.string_name || "—",
-            stringTension: equipment?.tension_lbs !== null && equipment?.tension_lbs !== undefined && equipment?.tension_lbs !== "" ? Number(equipment.tension_lbs) : player.tension_lbs !== null && player.tension_lbs !== undefined && player.tension_lbs !== "" ? Number(player.tension_lbs) : player.string_tension !== null && player.string_tension !== undefined && player.string_tension !== "" ? Number(player.string_tension) : null,
-            shoes: equipment?.shoes || player.shoes || "—",
+            racket: mainEquipment.racket,
+            stringName: mainEquipment.stringName,
+            stringTension: mainEquipment.stringTension,
+            shoes: mainEquipment.shoes,
             smash: Number(player.smash ?? rating?.smash ?? 0),
             defense: Number(player.defense ?? rating?.defense ?? 0),
             footwork: Number(player.footwork ?? rating?.footwork ?? 0),
@@ -2338,10 +2736,76 @@ export default function Players() {
     }
 
     // ------------------------------------------------------
-    // TYPE 2: PLAYER QR
+    // TYPE 2: COACH QR
+    // Supports:
+    //   https://fyp-shutter-track.vercel.app/players?tab=coach&coach=<user-id>
+    //   SHUTTLETRACK_COACH:<user-id>
+    // ------------------------------------------------------
+    let scannedCoachId = "";
+
+    if (rawValue.startsWith("SHUTTLETRACK_COACH:")) {
+      scannedCoachId = rawValue
+        .slice("SHUTTLETRACK_COACH:".length)
+        .trim();
+    } else {
+      try {
+        const scannedUrl = rawValue.startsWith("/")
+          ? new URL(rawValue, window.location.origin)
+          : new URL(rawValue);
+
+        scannedCoachId =
+          scannedUrl.searchParams.get("coach") || "";
+      } catch {
+        scannedCoachId = "";
+      }
+    }
+
+    if (scannedCoachId) {
+      const scannedCoach = coaches.find(
+        (coach) =>
+          String(coach.userId || "") === String(scannedCoachId) ||
+          String(coach.id || "") === String(scannedCoachId)
+      );
+
+      if (!scannedCoach) {
+        setScanError(
+          "Coach profile not found. The profile may be private or unavailable."
+        );
+        return;
+      }
+
+      setScanError("");
+      setScanSuccess(true);
+      setScanSuccessLabel("Coach found");
+      setTab("coach");
+      setSelected(null);
+      setSelectedCoach(scannedCoach);
+
+      if (isMobileDirectory) {
+        setShowMobileCoachDetail(true);
+        setShowMobilePlayerDetail(false);
+      }
+
+      if (qrScannerRef.current?.isScanning) {
+        try {
+          await qrScannerRef.current.pause(true);
+        } catch (error) {
+          console.warn("Unable to pause scanner after coach QR:", error);
+        }
+      }
+
+      scanCloseTimerRef.current = window.setTimeout(async () => {
+        await closeScanner();
+      }, 900);
+
+      return;
+    }
+
+    // ------------------------------------------------------
+    // TYPE 3: PLAYER QR
     // Supports:
     //   SHUTTLETRACK_PLAYER:<user-id>
-    //   URLs containing /player/, /p/, or /scan/
+    //   URLs containing ?player=<user-id>, /player/, /p/, or /scan/
     // ------------------------------------------------------
     let scannedUserId = "";
 
@@ -2426,6 +2890,7 @@ export default function Players() {
     }, 900);
   }, [
     closeScanner,
+    coaches,
     currentUserId,
     isMobileDirectory,
     players,

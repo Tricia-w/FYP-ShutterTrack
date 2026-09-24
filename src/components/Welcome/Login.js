@@ -43,14 +43,20 @@ const SESSION_HEARTBEAT_KEY = 'shuttleSessionHeartbeat'
 const SESSION_HEARTBEAT_MAX_AGE_MS = 10000
 
 const AUTH_REDIRECT_ORIGIN =
-  String(
-    process.env.REACT_APP_AUTH_REDIRECT_ORIGIN ||
-      window.location.origin,
-  )
+  String(window.location.origin || '')
     .trim()
     .replace(/\/$/, '')
 
-const MOBILE_QR_URL = AUTH_REDIRECT_ORIGIN
+// The QR code should always open the public ShuttleTrack site so it works
+// on mobile data, another Wi-Fi network, or a friend's phone.
+// You can override this later with REACT_APP_PUBLIC_APP_URL if the domain changes.
+const MOBILE_QR_URL =
+  String(
+    process.env.REACT_APP_PUBLIC_APP_URL ||
+      'https://fyp-shutter-track.vercel.app',
+  )
+    .trim()
+    .replace(/\/$/, '')
 
 function getSafePostLoginRedirect(location) {
   const from = location.state?.from

@@ -3,10 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 
 const AUTH_REDIRECT_ORIGIN =
-  String(
-    process.env.REACT_APP_AUTH_REDIRECT_ORIGIN ||
-      window.location.origin,
-  )
+  String(window.location.origin || '')
     .trim()
     .replace(/\/$/, '')
 

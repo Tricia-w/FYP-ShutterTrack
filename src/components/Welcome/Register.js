@@ -10,10 +10,7 @@ const MAX_PASSWORD_LENGTH = 128
 const CONSENT_VERSION = '1.0'
 
 const AUTH_REDIRECT_ORIGIN =
-  String(
-    process.env.REACT_APP_AUTH_REDIRECT_ORIGIN ||
-      window.location.origin,
-  )
+  String(window.location.origin || '')
     .trim()
     .replace(/\/$/, '')
 

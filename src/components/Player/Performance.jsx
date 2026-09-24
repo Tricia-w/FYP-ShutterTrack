@@ -16,14 +16,6 @@ const C = {
   line: 'var(--line, #EEF1F8)',
 }
 
-const AUTH_REDIRECT_ORIGIN =
-  String(
-    process.env.REACT_APP_AUTH_REDIRECT_ORIGIN ||
-      window.location.origin,
-  )
-    .trim()
-    .replace(/\/$/, '')
-
 const SKILL_COLUMNS = [
   { name: 'Smash', column: 'smash' },
   { name: 'Defense', column: 'defense' },
@@ -33,7 +25,7 @@ const SKILL_COLUMNS = [
   { name: 'Serve', column: 'serve' },
 ]
 
-const defaultSkills = SKILL_COLUMNS.map(skill => ({ ...skill, val: 50 }))
+const defaultSkills = SKILL_COLUMNS.map(skill => ({ ...skill, val: 0 }))
 
 const SKILL_COLORS = {
   Smash: '#2563EB',
@@ -300,6 +292,47 @@ const mapUpcomingSchedule = row => {
   }
 }
 
+const normaliseEquipmentOptions = equipmentData => {
+  const savedRackets = Array.isArray(equipmentData?.rackets)
+    ? equipmentData.rackets
+    : []
+
+  if (savedRackets.length > 0) {
+    return savedRackets
+      .slice(0, 3)
+      .map((racket, index) => ({
+        name: String(racket?.name || '').trim(),
+        isMain:
+          savedRackets.some(item => item?.isMain)
+            ? Boolean(racket?.isMain)
+            : index === 0,
+      }))
+      .filter(racket => racket.name)
+  }
+
+  // Backward compatibility with the previous single-racket equipment row.
+  if (equipmentData?.racket) {
+    return [
+      {
+        name: String(equipmentData.racket).trim(),
+        isMain: true,
+      },
+    ].filter(racket => racket.name)
+  }
+
+  return []
+}
+
+const getDefaultEquipment = options =>
+  options.find(item => item.isMain) ||
+  options[0] ||
+  null
+
+const getEquipmentLabel = equipment => {
+  if (!equipment?.name) return 'Saved racket'
+  return equipment.name
+}
+
 const emptyForm = {
   type: 'Singles',
   date: new Date().toISOString().split('T')[0],
@@ -315,6 +348,7 @@ const emptyForm = {
   result: 'Win',
   roundName: '',
   notes: '',
+  equipmentUsed: null,
   videoFile: null,
   videoUrl: '',
   videoFileName: '',
@@ -458,6 +492,11 @@ const mapDbMatch = (row, coachNotes = []) => ({
   source_schedule_id: row.source_schedule_id || null,
   round_name: row.round_name || '',
   notes: row.notes || '',
+  equipment_used:
+    row.equipment_used &&
+    typeof row.equipment_used === 'object'
+      ? row.equipment_used
+      : null,
   video_url: row.video_url || '',
   video_file_name: row.video_file_name || '',
   created_at: row.created_at || '',
@@ -545,7 +584,7 @@ function PerformanceComparisonRow({
   verifierLabel = 'Coach',
   verifierColor = '#7C3AED',
 }) {
-  const playerScore = Number(playerValue ?? 50)
+  const playerScore = Number(playerValue ?? 0)
   const hasCoachValue =
     coachValue !== null &&
     coachValue !== undefined &&
@@ -676,6 +715,7 @@ export default function Performance() {
   const [isSaving, setIsSaving] = useState(false)
   const [matches, setMatches] = useState([])
   const [upcomingMatches, setUpcomingMatches] = useState([])
+  const [equipmentOptions, setEquipmentOptions] = useState([])
   const [skills, setSkills] = useState(defaultSkills)
   const [hasSkillRecord, setHasSkillRecord] = useState(false)
   const [coachProgress, setCoachProgress] = useState([])
@@ -891,6 +931,27 @@ export default function Performance() {
       const currentProfileId = await getOrCreateProfile(authUser)
       setProfileId(currentProfileId)
 
+      const {
+        data: equipmentRow,
+        error: equipmentError,
+      } = await supabase
+        .from('player_equipment')
+        .select('*')
+        .eq('player_id', currentProfileId)
+        .maybeSingle()
+
+      if (equipmentError) {
+        console.error(
+          'Player equipment load error:',
+          equipmentError
+        )
+        setEquipmentOptions([])
+      } else {
+        setEquipmentOptions(
+          normaliseEquipmentOptions(equipmentRow)
+        )
+      }
+
       const { data: matchRows, error: matchError } = await supabase
         .from('player_matches')
         .select('*')
@@ -981,7 +1042,7 @@ export default function Performance() {
         setSkills(
           SKILL_COLUMNS.map(skill => ({
             ...skill,
-            val: Number(rating[skill.column] ?? 50),
+            val: Number(rating[skill.column] ?? 0),
           }))
         )
       } else {
@@ -1160,6 +1221,10 @@ export default function Performance() {
   )
 
   const recommendations = useMemo(() => {
+    // Do not generate recommendations from placeholder/default values.
+    // Recommendations begin only after the player saves a self-assessment.
+    if (!hasSkillRecord) return []
+
     const lowSkills = skills.filter(skill => skill.val < 70)
 
     const output = lowSkills.slice(0, 2).map(skill => ({
@@ -1191,7 +1256,7 @@ export default function Performance() {
     }
 
     return output
-  }, [skills, matches.length, stats.losses, stats.wins])
+  }, [hasSkillRecord, skills, matches.length, stats.losses, stats.wins])
 
   const getMatchesForSchedule = scheduleId =>
     matches.filter(match => match.source_schedule_id === scheduleId)
@@ -1253,6 +1318,8 @@ export default function Performance() {
       date,
       roundName: getSuggestedNextRound(item?.schedule_id),
       notes: '',
+      equipmentUsed:
+        getDefaultEquipment(equipmentOptions),
     })
 
     setShowUpcomingModal(false)
@@ -1381,13 +1448,17 @@ export default function Performance() {
     setEditingId(null)
     setSourceUpcomingMatch(null)
     setRemoveVideo(false)
-    setForm(emptyForm)
+    setForm({
+      ...emptyForm,
+      equipmentUsed:
+        getDefaultEquipment(equipmentOptions),
+    })
     if (videoInputRef.current) videoInputRef.current.value = ''
     setShowMatchModal(true)
   }
 
   const openEdit = (match, event) => {
-    event.stopPropagation()
+    event?.stopPropagation?.()
     setSourceUpcomingMatch(null)
     setRemoveVideo(false)
     if (videoInputRef.current) videoInputRef.current.value = ''
@@ -1407,6 +1478,7 @@ export default function Performance() {
       result: match.result || 'Win',
       roundName: match.round_name || '',
       notes: match.notes || '',
+      equipmentUsed: match.equipment_used || null,
       videoFile: null,
       videoUrl: match.video_url || '',
       videoFileName: match.video_file_name || '',
@@ -1424,8 +1496,8 @@ export default function Performance() {
       return
     }
 
-    if (file.size > 100 * 1024 * 1024) {
-      alert('Match video must be below 100MB.')
+    if (file.size > 50 * 1024 * 1024) {
+      alert('Match video must be below 50MB.')
       event.target.value = ''
       return
     }
@@ -1520,6 +1592,12 @@ export default function Performance() {
         source_schedule_id: sourceUpcomingMatch?.schedule_id || null,
         round_name: form.roundName.trim() || null,
         notes: form.notes.trim() || null,
+        equipment_used: form.equipmentUsed?.name
+          ? {
+              name: form.equipmentUsed.name,
+              isMain: Boolean(form.equipmentUsed.isMain),
+            }
+          : null,
         video_url: finalVideoUrl,
         video_file_name: finalVideoFileName,
         updated_at: new Date().toISOString(),
@@ -1590,12 +1668,12 @@ export default function Performance() {
       const payload = {
         player_user_id: authUser.id,
         player_profile_id: currentProfileId,
-        smash: Number(skills[0]?.val ?? 50),
-        defense: Number(skills[1]?.val ?? 50),
-        footwork: Number(skills[2]?.val ?? 50),
-        drop_shot: Number(skills[3]?.val ?? 50),
-        net_play: Number(skills[4]?.val ?? 50),
-        serve: Number(skills[5]?.val ?? 50),
+        smash: Number(skills[0]?.val ?? 0),
+        defense: Number(skills[1]?.val ?? 0),
+        footwork: Number(skills[2]?.val ?? 0),
+        drop_shot: Number(skills[3]?.val ?? 0),
+        net_play: Number(skills[4]?.val ?? 0),
+        serve: Number(skills[5]?.val ?? 0),
         is_active: true,
       }
 
@@ -1625,8 +1703,16 @@ export default function Performance() {
   const copyVerificationLink = async () => {
     if (!verificationRequest?.token) return
 
+    // Always build the verification link from the address currently used
+    // to open ShuttleTrack. This prevents localhost and LAN-IP sessions
+    // from being mixed accidentally.
+    const currentOrigin =
+      String(window.location.origin || '')
+        .trim()
+        .replace(/\/$/, '')
+
     const url =
-      `${AUTH_REDIRECT_ORIGIN}/verify-skill/${verificationRequest.token}`
+      `${currentOrigin}/verify-skill/${verificationRequest.token}`
 
     try {
       await navigator.clipboard.writeText(url)
@@ -2346,14 +2432,13 @@ export default function Performance() {
                 <th style={{ width: 180 }}>Score</th>
                 <th style={{ width: 80, textAlign: 'center' }}>Result</th>
                 <th style={{ width: 60 }}>Video</th>
-                <th style={{ width: 90 }}>Actions</th>
               </tr>
             </thead>
 
             <tbody>
               {visibleMatches.length === 0 ? (
                 <tr>
-                  <td colSpan="7">
+                  <td colSpan="6">
                     <div
                       style={{
                         padding: 38,
@@ -2453,22 +2538,6 @@ export default function Performance() {
                           —
                         </td>
 
-                        <td onClick={event => event.stopPropagation()}>
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <button
-                              className={styles.btnIcon}
-                              onClick={() => openUpcomingEdit(match)}
-                              title="Edit upcoming match"
-                            >
-                              ✎
-                            </button>
-                          </div>
-                        </td>
                       </tr>
                     )
                   }
@@ -2589,23 +2658,6 @@ export default function Performance() {
                         )}
                       </td>
 
-                      <td onClick={event => event.stopPropagation()}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: 6,
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <button
-                            className={styles.btnIcon}
-                            onClick={event => openEdit(match, event)}
-                            title="Edit"
-                          >
-                            ✎
-                          </button>
-                        </div>
-                      </td>
                     </tr>
                   )
                 })
@@ -2745,11 +2797,15 @@ export default function Performance() {
                   className={styles.btnOutline}
                   style={{ fontSize: 12, padding: '7px 14px' }}
                   onClick={() => {
-                    setSkillVals(skills.map(skill => skill.val))
+                    setSkillVals(
+                      hasSkillRecord
+                        ? skills.map(skill => skill.val)
+                        : SKILL_COLUMNS.map(() => 1)
+                    )
                     setShowSkillModal(true)
                   }}
                 >
-                  Update skills
+                  {hasSkillRecord ? 'Update skills' : 'Assess skills'}
                 </button>
 
                 {verificationAssessments.length > 0 && (
@@ -2795,7 +2851,7 @@ export default function Performance() {
 
         </div>
 
-        {(hasSkillRecord || matches.length > 0) && (
+        {hasSkillRecord && (
           <div className={styles.card}>
             <div className={styles.cardTitle}>Recommendations</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -4005,66 +4061,121 @@ export default function Performance() {
               </div>
             </div>
 
-            {form.videoUrl && (
-              <div className={styles.formRow}>
-                <video
-                  src={form.videoUrl}
-                  controls
-                  style={{
-                    width: '100%',
-                    borderRadius: 10,
-                    maxHeight: 180,
-                    background: '#000',
-                  }}
-                />
+            <div
+              className={styles.formRow}
+              style={{
+                marginTop: 2,
+                marginBottom: 16,
+                padding: 14,
+                borderRadius: 12,
+                border: `1px solid ${C.line}`,
+                background: C.soft,
+              }}
+            >
+              <label className={styles.formLabel}>
+                Racket Used optional
+              </label>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRemoveVideo(true)
-                    setForm(prev => ({
-                      ...prev,
-                      videoFile: null,
-                      videoUrl: '',
-                      videoFileName: '',
-                    }))
-                    if (videoInputRef.current) {
-                      videoInputRef.current.value = ''
+              {equipmentOptions.length > 0 ? (
+                <>
+                  <select
+                    className={styles.formSelect}
+                    value={
+                      form.equipmentUsed
+                        ? JSON.stringify(form.equipmentUsed)
+                        : ''
                     }
-                  }}
+                    onChange={event => {
+                      if (!event.target.value) {
+                        setForm(previous => ({
+                          ...previous,
+                          equipmentUsed: null,
+                        }))
+                        return
+                      }
+
+                      try {
+                        const selected = JSON.parse(
+                          event.target.value
+                        )
+
+                        setForm(previous => ({
+                          ...previous,
+                          equipmentUsed: selected,
+                        }))
+                      } catch {
+                        setForm(previous => ({
+                          ...previous,
+                          equipmentUsed: null,
+                        }))
+                      }
+                    }}
+                  >
+                    <option value="">Not recorded</option>
+
+                    {form.equipmentUsed &&
+                      !equipmentOptions.some(
+                        item =>
+                          JSON.stringify(item) ===
+                          JSON.stringify(form.equipmentUsed)
+                      ) && (
+                        <option
+                          value={JSON.stringify(
+                            form.equipmentUsed
+                          )}
+                        >
+                          Previous racket —{' '}
+                          {getEquipmentLabel(
+                            form.equipmentUsed
+                          )}
+                        </option>
+                      )}
+
+                    {equipmentOptions.map(
+                      (equipment, index) => (
+                        <option
+                          key={`${equipment.name}-${index}`}
+                          value={JSON.stringify(equipment)}
+                        >
+                          {equipment.isMain
+                            ? 'Main racket — '
+                            : `Racket ${index + 1} — `}
+                          {getEquipmentLabel(equipment)}
+                        </option>
+                      )
+                    )}
+                  </select>
+
+                  <div
+                    style={{
+                      marginTop: 7,
+                      fontSize: 10,
+                      lineHeight: 1.5,
+                      color: C.muted,
+                    }}
+                  >
+                    Select the racket used for this match. Only the
+                    racket name is recorded here.
+                  </div>
+                </>
+              ) : (
+                <div
                   style={{
-                    marginTop: 9,
-                    border: 'none',
-                    background: '#FECACA',
-                    color: '#7F1D1D',
-                    borderRadius: 9,
-                    padding: '8px 12px',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: 'pointer',
+                    padding: '10px 11px',
+                    borderRadius: 10,
+                    background: C.card,
+                    border: `1px solid ${C.line}`,
+                    fontSize: 11,
+                    lineHeight: 1.5,
+                    color: C.muted,
                   }}
                 >
-                  Remove video
-                </button>
-              </div>
-            )}
-
-            {removeVideo && (
-              <div
-                style={{
-                  marginTop: -4,
-                  marginBottom: 14,
-                  padding: '9px 12px',
-                  borderRadius: 10,
-                  background: '#FFF7ED',
-                  color: '#C2410C',
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                Video will be removed after you save this match.
-              </div>
-            )}
+                  No rackets are saved in My Profile yet.
+                  Add a racket in Profile first if you want to
+                  record which racket was used.
+                </div>
+              )}
+            </div>
 
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Notes</label>
@@ -4241,6 +4352,36 @@ export default function Performance() {
               </span>
             </div>
 
+            {viewMatch.equipment_used?.name && (
+              <div className={styles.statRow}>
+                <span className={styles.statLabel}>
+                  Racket used
+                </span>
+                <span
+                  className={styles.statVal}
+                  style={{
+                    textAlign: 'right',
+                    maxWidth: '65%',
+                  }}
+                >
+                  {viewMatch.equipment_used.name}
+                  {viewMatch.equipment_used.isMain && (
+                    <span
+                      style={{
+                        display: 'block',
+                        marginTop: 2,
+                        fontSize: 9,
+                        color: '#1A5FFF',
+                        fontWeight: 700,
+                      }}
+                    >
+                      Main racket
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+
             {viewMatch.added_by_role && (
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Added by</span>
@@ -4408,9 +4549,20 @@ export default function Performance() {
               style={{
                 display: 'flex',
                 justifyContent: 'flex-end',
+                gap: 10,
                 marginTop: 20,
               }}
             >
+              <button
+                className={styles.btnOutline}
+                onClick={() => {
+                  setShowViewModal(false)
+                  openEdit(viewMatch)
+                }}
+              >
+                Edit Match
+              </button>
+
               <button
                 className={styles.btnPrimary}
                 onClick={() => setShowViewModal(false)}
@@ -4767,7 +4919,7 @@ export default function Performance() {
                       >
                         {SKILL_COLUMNS.map(skill => {
                           const playerScore = Number(
-                            skills.find(current => current.column === skill.column)?.val ?? 50
+                            skills.find(current => current.column === skill.column)?.val ?? 0
                           )
                           const verifierScore = Number(item[skill.column] ?? playerScore)
                           const difference = verifierScore - playerScore

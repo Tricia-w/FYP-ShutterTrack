@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
+import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
 import styles from '../Layout/Pages.module.css'
@@ -9,7 +10,12 @@ import useLoadingDelay from '../Loader/LoadingDelay'
 import { Avatar, CoachPageHeader, LevelBadge } from './CoachShared'
 import CoachNotificationBell from '../Notifications/CoachNotificationBell'
 
-const DEFAULT_SKILL = 50
+const DEFAULT_SKILL = 0
+
+// Coach QR codes should always open the public ShuttleTrack deployment,
+// so they work from another phone, Wi-Fi network, or mobile data.
+const PUBLIC_APP_ORIGIN = 'https://fyp-shutter-track.vercel.app'
+
 const REPORT_REASON_OPTIONS = [
   'Harassment or bullying',
   'Fake or misleading profile',
@@ -932,6 +938,7 @@ export default function CoachPlayers() {
   const [reportPlayer, setReportPlayer] = useState(null)
   const [submittingReport, setSubmittingReport] = useState(false)
 
+  const [showMyQr, setShowMyQr] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [scannerStarting, setScannerStarting] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
@@ -2147,7 +2154,24 @@ export default function CoachPlayers() {
         {
           fps: 10,
           qrbox: (width, height) => {
-            const size = Math.floor(Math.min(width, height) * 0.72)
+            const shortestSide = Math.min(
+              Number(width) || 0,
+              Number(height) || 0
+            )
+
+            const calculatedSize = Math.floor(shortestSide * 0.72)
+
+            // html5-qrcode requires the QR box to be at least 50px.
+            // Some mobile browsers briefly report a very small viewfinder
+            // while the camera is starting, so always enforce a valid size.
+            const size = Math.max(
+              50,
+              Math.min(
+                calculatedSize > 0 ? calculatedSize : 220,
+                shortestSide >= 50 ? shortestSide : 220
+              )
+            )
+
             return { width: size, height: size }
           },
           aspectRatio: 1,
@@ -2312,6 +2336,15 @@ export default function CoachPlayers() {
               gap: 8,
             }}
           >
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              onClick={() => setShowMyQr(true)}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              My QR
+            </button>
+
             <button
               type="button"
               className={styles.btnOutline}
@@ -3744,6 +3777,121 @@ export default function CoachPlayers() {
                   )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+
+      {showMyQr && (
+        <div
+          role="presentation"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) {
+              setShowMyQr(false)
+            }
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10055,
+            background: 'rgba(13,27,62,.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 18,
+          }}
+        >
+          <div
+            className={styles.card}
+            style={{
+              width: 'min(420px,100%)',
+              padding: 24,
+              borderRadius: 20,
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 18,
+                textAlign: 'left',
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 700,
+                    color: '#0D1B3E',
+                  }}
+                >
+                  My Coach QR
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 12,
+                    color: '#8892A4',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Let a ShuttleTrack player scan this code to view your coach
+                  profile and send a coaching request.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.btnOutline}
+                aria-label="Close coach QR"
+                onClick={() => setShowMyQr(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            {!user?.id ? (
+              <div style={{ padding: 30, color: '#8892A4' }}>
+                Loading your QR code...
+              </div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: 'inline-block',
+                    padding: 14,
+                    background: '#FFFFFF',
+                    border: '1px solid #EEF1F8',
+                    borderRadius: 16,
+                  }}
+                >
+                  <QRCodeCanvas
+                    value={`${PUBLIC_APP_ORIGIN}/players?tab=coach&coach=${encodeURIComponent(
+                      user.id
+                    )}`}
+                    size={240}
+                    level="H"
+                    includeMargin
+                  />
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 16,
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    color: '#8892A4',
+                  }}
+                >
+                  The QR contains only the ShuttleTrack coach identifier. It
+                  does not contain the account password or private login
+                  information.
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

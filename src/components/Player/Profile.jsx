@@ -24,6 +24,66 @@ const defaultSkills = skillColumns.map(skill => ({
   updatedAt: 'Not updated',
 }))
 
+const MAX_RACKETS = 3
+const MAX_PUBLIC_VIDEOS = 3
+
+const createEmptyRacket = () => ({
+  name: '',
+  string: '',
+  tension: '',
+  lastStringing: '',
+  isMain: false,
+})
+
+const normaliseSavedRackets = equipmentData => {
+  const savedRackets = Array.isArray(equipmentData?.rackets)
+    ? equipmentData.rackets
+    : []
+
+  if (savedRackets.length > 0) {
+    return savedRackets.slice(0, MAX_RACKETS).map((racket, index) => ({
+      name: racket?.name || '',
+      string: racket?.string || '',
+      tension:
+        racket?.tension !== null &&
+        racket?.tension !== undefined
+          ? String(racket.tension)
+          : '',
+      lastStringing:
+        normaliseDateForSupabase(racket?.lastStringing) || '',
+      isMain:
+        savedRackets.some(item => item?.isMain)
+          ? Boolean(racket?.isMain)
+          : index === 0,
+    }))
+  }
+
+  // Backward compatibility with the previous single-racket columns.
+  if (
+    equipmentData?.racket ||
+    equipmentData?.string ||
+    equipmentData?.tension_lbs ||
+    equipmentData?.last_stringing_date
+  ) {
+    return [
+      {
+        name: equipmentData?.racket || '',
+        string: equipmentData?.string || '',
+        tension: equipmentData?.tension_lbs
+          ? String(equipmentData.tension_lbs)
+          : '',
+        lastStringing:
+          normaliseDateForSupabase(
+            equipmentData?.last_stringing_date,
+          ) || '',
+        isMain: true,
+      },
+    ]
+  }
+
+  return [{ ...createEmptyRacket(), isMain: true }]
+}
+
 const PROFILE_SKILL_COLORS = {
   Smash: '#2563EB',
   Defense: '#14B8A6',
@@ -179,6 +239,7 @@ export default function Profile() {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showEquipmentModal, setShowEquipmentModal] = useState(false)
   const [showMediaModal, setShowMediaModal] = useState(false)
+  const [showAllMediaModal, setShowAllMediaModal] = useState(false)
   const [mediaTitle, setMediaTitle] = useState('')
   const [selectedMediaFile, setSelectedMediaFile] = useState(null)
   const [setupData, setSetupData] = useState(null)
@@ -187,9 +248,18 @@ export default function Profile() {
 
   const avatarInputRef = useRef(null)
   const mediaInputRef = useRef(null)
+  const personalInfoCardRef = useRef(null)
+  const profileMediaSectionRef = useRef(null)
 
   const [avatarUrl, setAvatarUrl] = useState('')
   const [mediaItems, setMediaItems] = useState([])
+  const [profileMediaDesktopHeight, setProfileMediaDesktopHeight] = useState(null)
+
+  // Keep only the player's main / frequently used rackets.
+  // Maximum 3 rackets to keep the profile simple.
+  const [rackets, setRackets] = useState([
+    { ...createEmptyRacket(), isMain: true },
+  ])
 
   const [profileId, setProfileId] = useState(null)
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
@@ -439,6 +509,8 @@ export default function Profile() {
           lastStringing: normaliseDateForSupabase(equipmentData?.last_stringing_date) || '',
         }))
 
+        setRackets(normaliseSavedRackets(equipmentData))
+
         if (rating) {
           setSkillsData(
             skillColumns.map(item => {
@@ -669,6 +741,44 @@ export default function Profile() {
     form.clubId,
     form.externalClub,
   ])
+
+  // On desktop, keep the Profile Media card ending at the same level
+  // as the Personal Info card. This avoids a long empty media section.
+  useEffect(() => {
+    const syncProfileMediaHeight = () => {
+      if (typeof window === 'undefined' || window.innerWidth <= 900) {
+        setProfileMediaDesktopHeight(null)
+        return
+      }
+
+      const personalInfoCard = personalInfoCardRef.current
+      const mediaSection = profileMediaSectionRef.current
+      if (!personalInfoCard || !mediaSection) return
+
+      const personalInfoRect = personalInfoCard.getBoundingClientRect()
+      const mediaRect = mediaSection.getBoundingClientRect()
+      const availableHeight = Math.round(personalInfoRect.bottom - mediaRect.top)
+
+      // Keep enough room for the heading, helper text and one row of thumbnails.
+      setProfileMediaDesktopHeight(Math.max(350, availableHeight))
+    }
+
+    const frame = window.requestAnimationFrame(syncProfileMediaHeight)
+    window.addEventListener('resize', syncProfileMediaHeight)
+
+    let resizeObserver = null
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(syncProfileMediaHeight)
+      if (personalInfoCardRef.current) resizeObserver.observe(personalInfoCardRef.current)
+      if (profileMediaSectionRef.current) resizeObserver.observe(profileMediaSectionRef.current)
+    }
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('resize', syncProfileMediaHeight)
+      resizeObserver?.disconnect()
+    }
+  }, [mediaItems.length, rackets, form.shoes])
 
   const set = key => e => {
     setForm(prev => ({ ...prev, [key]: e.target.value }))
@@ -981,21 +1091,24 @@ export default function Profile() {
     if (!profileId || !item?.id || isSavingProfile) return
 
     if (!String(item.fileType || '').startsWith('video/')) {
-      alert('Only videos can be selected as the featured playing video.')
+      alert('Only videos can be shown on the public Player Profile.')
+      return
+    }
+
+    const selectedPublicVideos = mediaItems.filter(
+      media =>
+        media.isFeatured &&
+        String(media.fileType || '').startsWith('video/')
+    )
+
+    if (selectedPublicVideos.length >= MAX_PUBLIC_VIDEOS) {
+      alert(`You can only show up to ${MAX_PUBLIC_VIDEOS} videos on your Player Profile.`)
       return
     }
 
     setIsSavingProfile(true)
 
     try {
-      const { error: clearError } = await supabase
-        .from('player_profile_media')
-        .update({ is_featured: false })
-        .eq('player_id', profileId)
-        .eq('is_featured', true)
-
-      if (clearError) throw clearError
-
       const { error: featureError } = await supabase
         .from('player_profile_media')
         .update({ is_featured: true })
@@ -1005,14 +1118,15 @@ export default function Profile() {
       if (featureError) throw featureError
 
       setMediaItems(current =>
-        current.map(media => ({
-          ...media,
-          isFeatured: media.id === item.id,
-        }))
+        current.map(media =>
+          media.id === item.id
+            ? { ...media, isFeatured: true }
+            : media
+        )
       )
     } catch (error) {
-      console.error('Set featured video error:', error)
-      alert(error.message || 'Failed to set the featured playing video')
+      console.error('Show video on profile error:', error)
+      alert(error.message || 'Failed to show the video on the Player Profile')
     } finally {
       setIsSavingProfile(false)
     }
@@ -1040,8 +1154,8 @@ export default function Profile() {
         )
       )
     } catch (error) {
-      console.error('Remove featured video error:', error)
-      alert(error.message || 'Failed to remove the featured playing video')
+      console.error('Remove public video error:', error)
+      alert(error.message || 'Failed to remove the video from the Player Profile')
     } finally {
       setIsSavingProfile(false)
     }
@@ -1207,32 +1321,192 @@ export default function Profile() {
     }
   }
 
+  const updateRacket = (index, field, value) => {
+    setRackets(current =>
+      current.map((racket, racketIndex) =>
+        racketIndex === index
+          ? { ...racket, [field]: value }
+          : racket
+      )
+    )
+  }
+
+  const addRacket = () => {
+    setRackets(current => {
+      if (current.length >= MAX_RACKETS) return current
+
+      return [
+        ...current,
+        {
+          ...createEmptyRacket(),
+          isMain: current.length === 0,
+        },
+      ]
+    })
+  }
+
+  const removeRacket = index => {
+    setRackets(current => {
+      if (current.length <= 1) {
+        return [{ ...createEmptyRacket(), isMain: true }]
+      }
+
+      const removedWasMain = current[index]?.isMain
+      const next = current.filter(
+        (_, racketIndex) => racketIndex !== index
+      )
+
+      if (removedWasMain && next.length > 0) {
+        next[0] = { ...next[0], isMain: true }
+      }
+
+      return next
+    })
+  }
+
+  const setMainRacket = index => {
+    setRackets(current =>
+      current.map((racket, racketIndex) => ({
+        ...racket,
+        isMain: racketIndex === index,
+      }))
+    )
+  }
+
   const handleSaveEquipment = async () => {
+    const cleanedRackets = rackets
+      .map(racket => ({
+        name: String(racket.name || '').trim(),
+        string: String(racket.string || '').trim(),
+        tension:
+          racket.tension !== ''
+            ? parseInt(racket.tension, 10)
+            : null,
+        lastStringing:
+          normaliseDateForSupabase(racket.lastStringing),
+        isMain: Boolean(racket.isMain),
+      }))
+      .filter(
+        racket =>
+          racket.name ||
+          racket.string ||
+          racket.tension !== null ||
+          racket.lastStringing
+      )
+      .slice(0, MAX_RACKETS)
+
+    if (cleanedRackets.length === 0) {
+      alert('Please add at least one racket, or close the equipment editor without saving.')
+      return
+    }
+
+    if (
+      cleanedRackets.some(
+        racket =>
+          racket.tension !== null &&
+          (!Number.isFinite(racket.tension) ||
+            racket.tension < 1 ||
+            racket.tension > 50)
+      )
+    ) {
+      alert('Racket tension must be between 1 and 50 lbs.')
+      return
+    }
+
+    if (!cleanedRackets.some(racket => racket.isMain)) {
+      cleanedRackets[0].isMain = true
+    }
+
+    // Only one racket can be the main racket.
+    let mainFound = false
+    const safeRackets = cleanedRackets.map(racket => {
+      if (racket.isMain && !mainFound) {
+        mainFound = true
+        return racket
+      }
+
+      return {
+        ...racket,
+        isMain: false,
+      }
+    })
+
+    const mainRacket =
+      safeRackets.find(racket => racket.isMain) ||
+      safeRackets[0]
+
     setIsSavingProfile(true)
+
     try {
       const authUser = await getSupabaseUser()
-      const currentProfileId = profileId || (await saveMainProfileToSupabase(authUser))
+      const currentProfileId =
+        profileId || (await saveMainProfileToSupabase(authUser))
 
       const { error } = await supabase
         .from('player_equipment')
         .upsert(
           {
             player_id: currentProfileId,
-            racket: form.racket || null,
-            string: form.string || null,
-            tension_lbs: form.tension ? parseInt(form.tension, 10) : null,
+
+            // New multi-racket storage.
+            rackets: safeRackets,
+
+            // Keep the old fields filled using the main racket so
+            // older parts of ShuttleTrack remain compatible.
+            racket: mainRacket?.name || null,
+            string: mainRacket?.string || null,
+            tension_lbs:
+              mainRacket?.tension !== null
+                ? mainRacket.tension
+                : null,
+            last_stringing_date:
+              mainRacket?.lastStringing || null,
+
             shoes: form.shoes || null,
-            last_stringing_date: normaliseDateForSupabase(form.lastStringing),
           },
           { onConflict: 'player_id' }
         )
 
       if (error) throw error
+
+      setRackets(
+        safeRackets.map(racket => ({
+          ...racket,
+          tension:
+            racket.tension !== null
+              ? String(racket.tension)
+              : '',
+          lastStringing: racket.lastStringing || '',
+        }))
+      )
+
+      setForm(previous => ({
+        ...previous,
+        racket: mainRacket?.name || '',
+        string: mainRacket?.string || '',
+        tension:
+          mainRacket?.tension !== null
+            ? String(mainRacket.tension)
+            : '',
+        lastStringing: mainRacket?.lastStringing || '',
+      }))
+
       setShowEquipmentModal(false)
       alert('Equipment saved successfully')
     } catch (error) {
       console.error('Equipment save error:', error)
-      alert(error.message || 'Failed to save equipment')
+
+      if (
+        String(error?.message || '')
+          .toLowerCase()
+          .includes('rackets')
+      ) {
+        alert(
+          'The racket list could not be saved because the player_equipment.rackets column is missing. Run the supplied SQL update once in Supabase, then try again.'
+        )
+      } else {
+        alert(error.message || 'Failed to save equipment')
+      }
     } finally {
       setIsSavingProfile(false)
     }
@@ -1269,13 +1543,44 @@ export default function Profile() {
     },
   ]
 
+  const filledRackets = rackets.filter(
+    racket =>
+      racket.name ||
+      racket.string ||
+      racket.tension ||
+      racket.lastStringing
+  )
+
+  const sortedRackets = [...filledRackets].sort(
+    (a, b) => Number(b.isMain) - Number(a.isMain)
+  )
+
   const equipment = [
-    { label: 'Racket', value: form.racket || '-' },
-    { label: 'String', value: form.string || '-' },
-    { label: 'Tension', value: form.tension ? `${form.tension} lbs` : '-' },
-    { label: 'Shoes', value: form.shoes || '-' },
-    { label: 'Last stringing', value: form.lastStringing ? formatDate(form.lastStringing) : '-' },
+    ...sortedRackets.map((racket, index) => ({
+      label:
+        racket.isMain
+          ? 'Main racket'
+          : `Racket ${index + 1}`,
+      value: [
+        racket.name,
+        racket.string,
+        racket.tension
+          ? `${racket.tension} lbs`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || '-',
+      subValue: racket.lastStringing
+        ? `Last stringing: ${formatDate(racket.lastStringing)}`
+        : '',
+    })),
+    { label: 'Shoes', value: form.shoes || '-', subValue: '' },
   ]
+
+  // Keep the Profile Media card compact so its bottom stays close to
+  // the Personal Info card on desktop. Extra uploads are opened with View more.
+  const compactMediaItems = mediaItems.slice(0, 3)
+  const hasMoreMedia = mediaItems.length > compactMediaItems.length
 
   const modalStyle = {
     background: 'var(--card, #FFFFFF)',
@@ -1440,10 +1745,107 @@ export default function Profile() {
           margin-bottom: 12px;
         }
 
+        .profileMediaSectionCard {
+          overflow: hidden;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+        }
+
         .profileMediaGrid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-          gap: 10px;
+          /* Maximum 3 media cards across the row. */
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 18px;
+          width: 100%;
+          flex: 1;
+          min-height: 0;
+          align-items: stretch;
+        }
+
+        .profileMediaCard {
+          width: 100%;
+          height: 100%;
+          min-width: 0;
+          min-height: 0;
+          justify-self: stretch;
+          background: var(--soft);
+          border-radius: 12px;
+          overflow: hidden;
+          border: 1px solid var(--line);
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .profileMediaPreview {
+          width: 100%;
+          /* Let the preview use the spare vertical space instead of leaving
+             a large blank area below the media card. */
+          flex: 1 1 auto;
+          min-height: 118px;
+          background: color-mix(in srgb, #1A5FFF 10%, var(--soft, #F6F8FF));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+        }
+
+        .profileMediaPreview img,
+        .profileMediaPreview video {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .profileMediaCardBody {
+          padding: 8px 10px 9px;
+          min-height: 70px;
+          box-sizing: border-box;
+          flex: 0 0 auto;
+        }
+
+        .profileMediaCardTitle {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--text);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .profileMediaCardMeta {
+          font-size: 9px;
+          color: var(--text-muted);
+          margin-top: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .profileMediaCompactBody {
+          min-height: 0;
+          overflow: hidden;
+          flex: 1;
+          display: flex;
+        }
+
+        .profileMediaViewMoreRow {
+          display: flex;
+          justify-content: flex-start;
+          align-items: center;
+          margin-top: 10px;
+        }
+
+        .profileMediaAllGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 12px;
+        }
+
+        .profileMediaAllGrid .profileMediaCard {
+          width: 100%;
         }
 
         @media (max-width: 900px) {
@@ -1518,7 +1920,16 @@ export default function Profile() {
           }
 
           .profileMediaGrid {
-            grid-template-columns: minmax(0, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+          }
+
+          .profileMediaCard {
+            width: 100%;
+          }
+
+          .profileMediaAllGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
           .profileResponsivePage .${styles.g2} {
@@ -1564,6 +1975,14 @@ export default function Profile() {
         }
 
         @media (max-width: 380px) {
+          .profileMediaGrid {
+            grid-template-columns: 160px;
+          }
+
+          .profileMediaAllGrid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
           .profileTraitsGrid {
             grid-template-columns: minmax(0, 1fr);
           }
@@ -1575,6 +1994,10 @@ export default function Profile() {
           .profileHeroActions button {
             width: 100%;
             min-height: 42px;
+          }
+
+          .profileMediaGrid {
+            grid-template-columns: minmax(0, 220px);
           }
 
           .profileSkillRow {
@@ -1698,7 +2121,7 @@ export default function Profile() {
             </div>
           </div>
 
-          <div className={styles.card}>
+          <div ref={personalInfoCardRef} className={styles.card}>
             <div className={styles.cardTitle}>Personal info</div>
             {[
               { label: 'Age', value: form.dateOfBirth ? `${calculateAge(form.dateOfBirth)} years` : '-' },
@@ -1840,125 +2263,162 @@ export default function Profile() {
               <button className={styles.btnOutline} onClick={() => setShowEquipmentModal(true)}>Edit equipment</button>
             </div>
             {equipment.map(item => (
-              <div key={item.label} className={styles.statRow}>
+              <div key={`${item.label}-${item.value}`} className={styles.statRow}>
                 <span className={styles.statLabel}>{item.label}</span>
-                <span className={styles.statVal}>{item.value}</span>
+                <span
+                  className={styles.statVal}
+                  style={{ textAlign: 'right' }}
+                >
+                  <span>{item.value}</span>
+                  {item.subValue && (
+                    <span
+                      style={{
+                        display: 'block',
+                        marginTop: 3,
+                        fontSize: 10,
+                        fontWeight: 500,
+                        color: 'var(--text-muted, #8892A4)',
+                      }}
+                    >
+                      {item.subValue}
+                    </span>
+                  )}
+                </span>
               </div>
             ))}
           </div>
 
-          <div className={styles.card}>
+          <div
+            ref={profileMediaSectionRef}
+            className={`${styles.card} profileMediaSectionCard`}
+            style={
+              profileMediaDesktopHeight
+                ? { height: `${profileMediaDesktopHeight}px` }
+                : undefined
+            }
+          >
             <div className="profileMediaHeader">
               <div className={styles.cardTitle}>Profile media</div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {hasMoreMedia && (
+                  <button
+                    type="button"
+                    className={styles.btnOutline}
+                    onClick={() => setShowAllMediaModal(true)}
+                    style={{ padding: '7px 10px', fontSize: 10 }}
+                  >
+                    View more
+                  </button>
+                )}
                 <button className={styles.btnPrimary} onClick={() => setShowMediaModal(true)}>Upload</button>
               </div>
             </div>
 
             <div
               style={{
-                marginBottom: 12,
+                marginBottom: 8,
                 fontSize: 11,
-                lineHeight: 1.5,
+                lineHeight: 1.4,
                 color: 'var(--text-muted, #8892A4)',
               }}
             >
-              Upload multiple media items, then star one video to show it as your public Playing Video.
+              Upload multiple media items. Choose up to {MAX_PUBLIC_VIDEOS} videos to show on your public Player Profile.
             </div>
 
-            {mediaItems.length === 0 ? (
-              <div style={{ padding: 22, background: 'var(--soft)', borderRadius: 14, color: 'var(--text-muted)', fontSize: 13, textAlign: 'center' }}>No media uploaded yet. Add images or videos.</div>
-            ) : (
-              <div className="profileMediaGrid">
-                {mediaItems.map(item => (
-                  <div key={item.id} style={{ background: 'var(--soft)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--line)' }}>
-                    <div
-                      style={{
-                        height: 110,
-                        background:
-                          'color-mix(in srgb, #1A5FFF 10%, var(--soft, #F6F8FF))',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {item.fileType.startsWith('image/') ? <img src={item.url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <video src={item.url} controls style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                    </div>
-                    <div style={{ padding: 10 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || item.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>{item.name} · {item.date}</div>
+            <div className="profileMediaCompactBody">
+              {mediaItems.length === 0 ? (
+                <div style={{ padding: 18, background: 'var(--soft)', borderRadius: 12, color: 'var(--text-muted)', fontSize: 12, textAlign: 'center' }}>No media uploaded yet. Add images or videos.</div>
+              ) : (
+                <>
+                  <div className="profileMediaGrid">
+                    {compactMediaItems.map(item => (
+                      <div key={item.id} className="profileMediaCard">
+                        <div className="profileMediaPreview">
+                          {item.fileType.startsWith('image/') ? (
+                            <img src={item.url} alt={item.name} />
+                          ) : (
+                            <video src={item.url} controls preload="metadata" />
+                          )}
+                        </div>
 
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                          marginTop: 9,
-                        }}
-                      >
-                        {item.fileType.startsWith('video/') ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              item.isFeatured
-                                ? handleRemoveFeaturedVideo(item)
-                                : handleSetFeaturedVideo(item)
-                            }
-                            disabled={isSavingProfile}
-                            title={
-                              item.isFeatured
-                                ? 'Remove as featured playing video'
-                                : 'Show this video on your public player profile'
-                            }
+                        <div className="profileMediaCardBody">
+                          <div className="profileMediaCardTitle">{item.title || item.name}</div>
+                          <div className="profileMediaCardMeta">{item.name} · {item.date}</div>
+
+                          <div
                             style={{
-                              border: item.isFeatured
-                                ? '1px solid #F59E0B'
-                                : '1px solid var(--line, #D8E1EF)',
-                              background: item.isFeatured
-                                ? '#FFF7E6'
-                                : 'var(--card, #FFFFFF)',
-                              color: item.isFeatured
-                                ? '#B45309'
-                                : 'var(--text-muted, #64748B)',
-                              borderRadius: 9,
-                              padding: '6px 9px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: isSavingProfile ? 'wait' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 6,
+                              marginTop: 7,
                             }}
                           >
-                            {item.isFeatured ? '★ Featured' : '☆ Feature'}
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                            Images cannot be featured
-                          </span>
-                        )}
+                            {item.fileType.startsWith('video/') ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  item.isFeatured
+                                    ? handleRemoveFeaturedVideo(item)
+                                    : handleSetFeaturedVideo(item)
+                                }
+                                disabled={isSavingProfile}
+                                title={
+                                  item.isFeatured
+                                    ? 'Remove this video from your public Player Profile'
+                                    : 'Show this video on your public Player Profile'
+                                }
+                                style={{
+                                  border: item.isFeatured
+                                    ? '1px solid #22C55E'
+                                    : '1px solid var(--line, #D8E1EF)',
+                                  background: item.isFeatured
+                                    ? '#F0FDF4'
+                                    : 'var(--card, #FFFFFF)',
+                                  color: item.isFeatured
+                                    ? '#15803D'
+                                    : 'var(--text-muted, #64748B)',
+                                  borderRadius: 8,
+                                  padding: '5px 7px',
+                                  fontSize: 9,
+                                  lineHeight: 1.15,
+                                  fontWeight: 700,
+                                  cursor: isSavingProfile ? 'wait' : 'pointer',
+                                  minWidth: 0,
+                                }}
+                              >
+                                {item.isFeatured ? '✓ Shown' : 'Show'}
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Image</span>
+                            )}
 
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMedia(item.id)}
-                          disabled={isSavingProfile}
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            color: '#EF4444',
-                            fontSize: 11,
-                            fontWeight: 600,
-                            cursor: isSavingProfile ? 'wait' : 'pointer',
-                            padding: 0,
-                          }}
-                        >
-                          Remove
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMedia(item.id)}
+                              disabled={isSavingProfile}
+                              title="Remove media"
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                color: '#EF4444',
+                                fontSize: 9,
+                                fontWeight: 700,
+                                cursor: isSavingProfile ? 'wait' : 'pointer',
+                                padding: 0,
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -2335,24 +2795,402 @@ export default function Profile() {
       )}
 
       {showEquipmentModal && (
-        <div className={styles.modalOverlay} onClick={e => e.target === e.currentTarget && setShowEquipmentModal(false)}>
-          <div className={styles.modal} style={{ ...modalStyle, maxWidth: 640, width: '92vw' }}>
+        <div
+          className={styles.modalOverlay}
+          onClick={e =>
+            e.target === e.currentTarget &&
+            setShowEquipmentModal(false)
+          }
+        >
+          <div
+            className={styles.modal}
+            style={{
+              ...modalStyle,
+              maxWidth: 720,
+              width: '92vw',
+              maxHeight: '86vh',
+              overflowY: 'auto',
+            }}
+          >
             <div className={styles.modalHead}>
-              <div className={styles.modalTitle}>Edit Equipment</div>
-              <button className={styles.modalClose} onClick={() => setShowEquipmentModal(false)}>✕</button>
+              <div>
+                <div className={styles.modalTitle}>
+                  Edit Equipment
+                </div>
+                <div
+                  style={{
+                    marginTop: 5,
+                    fontSize: 11,
+                    lineHeight: 1.5,
+                    color: 'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  Add only the rackets you use most often. 2–3 main rackets are enough.
+                </div>
+              </div>
+
+              <button
+                className={styles.modalClose}
+                onClick={() => setShowEquipmentModal(false)}
+              >
+                ✕
+              </button>
             </div>
-            <div className={styles.g2} style={{ marginBottom: 0 }}>
-              <div className={styles.formRow}><label className={styles.formLabel}>Racket</label><input className={styles.formInput} value={form.racket} onChange={set('racket')} /></div>
-              <div className={styles.formRow}><label className={styles.formLabel}>String</label><input className={styles.formInput} value={form.string} onChange={set('string')} /></div>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14,
+              }}
+            >
+              {rackets.map((racket, index) => (
+                <div
+                  key={index}
+                  style={{
+                    padding: 16,
+                    borderRadius: 14,
+                    border: racket.isMain
+                      ? '1.5px solid #1A5FFF'
+                      : '1px solid var(--line, #D9E2F0)',
+                    background: racket.isMain
+                      ? 'color-mix(in srgb, #1A5FFF 5%, var(--card, #FFFFFF))'
+                      : 'var(--soft, #F8FAFC)',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 10,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <strong
+                        style={{
+                          fontSize: 13,
+                          color: 'var(--text, #0D1B3E)',
+                        }}
+                      >
+                        Racket {index + 1}
+                      </strong>
+
+                      {racket.isMain && (
+                        <span
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: 999,
+                            background: '#E8EFFE',
+                            color: '#1A5FFF',
+                            fontSize: 10,
+                            fontWeight: 700,
+                          }}
+                        >
+                          Main racket
+                        </span>
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      {!racket.isMain && (
+                        <button
+                          type="button"
+                          className={styles.btnOutline}
+                          onClick={() => setMainRacket(index)}
+                          style={{
+                            padding: '6px 9px',
+                            fontSize: 11,
+                          }}
+                        >
+                          Set as main
+                        </button>
+                      )}
+
+                      {rackets.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeRacket(index)}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: '#EF4444',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            padding: 4,
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div
+                    className={styles.g2}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <div className={styles.formRow}>
+                      <label className={styles.formLabel}>
+                        Racket
+                      </label>
+                      <input
+                        className={styles.formInput}
+                        value={racket.name}
+                        onChange={e =>
+                          updateRacket(
+                            index,
+                            'name',
+                            e.target.value,
+                          )
+                        }
+                        placeholder="e.g. Lining Axforce"
+                      />
+                    </div>
+
+                    <div className={styles.formRow}>
+                      <label className={styles.formLabel}>
+                        String
+                      </label>
+                      <input
+                        className={styles.formInput}
+                        value={racket.string}
+                        onChange={e =>
+                          updateRacket(
+                            index,
+                            'string',
+                            e.target.value,
+                          )
+                        }
+                        placeholder="e.g. Yonex Exbolt 65"
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    className={styles.g2}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <div className={styles.formRow}>
+                      <label className={styles.formLabel}>
+                        Tension (lbs)
+                      </label>
+                      <input
+                        className={styles.formInput}
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={racket.tension}
+                        onChange={e =>
+                          updateRacket(
+                            index,
+                            'tension',
+                            e.target.value,
+                          )
+                        }
+                        placeholder="e.g. 25"
+                      />
+                    </div>
+
+                    <div className={styles.formRow}>
+                      <label className={styles.formLabel}>
+                        Last stringing
+                      </label>
+                      <input
+                        className={styles.formInput}
+                        type="date"
+                        value={racket.lastStringing || ''}
+                        onChange={e =>
+                          updateRacket(
+                            index,
+                            'lastStringing',
+                            e.target.value,
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className={styles.g2} style={{ marginBottom: 0 }}>
-              <div className={styles.formRow}><label className={styles.formLabel}>Tension</label><input className={styles.formInput} value={form.tension} onChange={set('tension')} /></div>
-              <div className={styles.formRow}><label className={styles.formLabel}>Shoes</label><input className={styles.formInput} value={form.shoes} onChange={set('shoes')} /></div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                marginTop: 14,
+                flexWrap: 'wrap',
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={addRacket}
+                disabled={rackets.length >= MAX_RACKETS}
+                style={{
+                  opacity:
+                    rackets.length >= MAX_RACKETS ? 0.5 : 1,
+                  cursor:
+                    rackets.length >= MAX_RACKETS
+                      ? 'not-allowed'
+                      : 'pointer',
+                }}
+              >
+                + Add Racket
+              </button>
+
+              <span
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-muted, #8892A4)',
+                }}
+              >
+                {rackets.length}/{MAX_RACKETS} rackets
+              </span>
             </div>
-            <div className={styles.formRow}><label className={styles.formLabel}>Last stringing</label><input className={styles.formInput} type="date" value={form.lastStringing || ''} onChange={set('lastStringing')} /></div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
-              <button className={styles.btnOutline} onClick={() => setShowEquipmentModal(false)}>Cancel</button>
-              <button className={styles.btnPrimary} onClick={handleSaveEquipment} disabled={isSavingProfile}>{isSavingProfile ? 'Saving...' : 'Save Equipment'}</button>
+
+            <div
+              className={styles.formRow}
+              style={{
+                marginTop: 16,
+                paddingTop: 16,
+                borderTop: '1px solid var(--line, #D9E2F0)',
+              }}
+            >
+              <label className={styles.formLabel}>Shoes</label>
+              <input
+                className={styles.formInput}
+                value={form.shoes}
+                onChange={set('shoes')}
+                placeholder="e.g. Victor"
+              />
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 10,
+                marginTop: 12,
+              }}
+            >
+              <button
+                className={styles.btnOutline}
+                onClick={() => setShowEquipmentModal(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                className={styles.btnPrimary}
+                onClick={handleSaveEquipment}
+                disabled={isSavingProfile}
+              >
+                {isSavingProfile
+                  ? 'Saving...'
+                  : 'Save Equipment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAllMediaModal && (
+        <div
+          className={styles.modalOverlay}
+          onClick={e => e.target === e.currentTarget && setShowAllMediaModal(false)}
+        >
+          <div
+            className={styles.modal}
+            style={{
+              ...modalStyle,
+              width: 'min(920px, 94vw)',
+              maxWidth: 920,
+              maxHeight: '86vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div className={styles.modalHead}>
+              <div>
+                <div className={styles.modalTitle}>All Profile Media</div>
+                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted, #8892A4)' }}>
+                  {mediaItems.length} uploaded item{mediaItems.length === 1 ? '' : 's'}
+                </div>
+              </div>
+              <button className={styles.modalClose} onClick={() => setShowAllMediaModal(false)}>✕</button>
+            </div>
+
+            <div className="profileMediaAllGrid">
+              {mediaItems.map(item => (
+                <div key={item.id} className="profileMediaCard">
+                  <div className="profileMediaPreview">
+                    {item.fileType.startsWith('image/') ? (
+                      <img src={item.url} alt={item.name} />
+                    ) : (
+                      <video src={item.url} controls preload="metadata" />
+                    )}
+                  </div>
+
+                  <div style={{ padding: 9 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || item.name}</div>
+                    <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name} · {item.date}</div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
+                      {item.fileType.startsWith('video/') ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            item.isFeatured
+                              ? handleRemoveFeaturedVideo(item)
+                              : handleSetFeaturedVideo(item)
+                          }
+                          disabled={isSavingProfile}
+                          style={{
+                            border: item.isFeatured ? '1px solid #22C55E' : '1px solid var(--line, #D8E1EF)',
+                            background: item.isFeatured ? '#F0FDF4' : 'var(--card, #FFFFFF)',
+                            color: item.isFeatured ? '#15803D' : 'var(--text-muted, #64748B)',
+                            borderRadius: 8,
+                            padding: '5px 7px',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            cursor: isSavingProfile ? 'wait' : 'pointer',
+                          }}
+                        >
+                          {item.isFeatured ? '✓ Shown on profile' : 'Show on profile'}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Image</span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMedia(item.id)}
+                        disabled={isSavingProfile}
+                        style={{ border: 'none', background: 'transparent', color: '#EF4444', fontSize: 9, fontWeight: 700, cursor: isSavingProfile ? 'wait' : 'pointer', padding: 0 }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

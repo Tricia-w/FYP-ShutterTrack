@@ -645,8 +645,8 @@ const emptyTest = (date = todayISO()) => ({
   date,
   test: '',
   result: '',
-  indicator: 'Endurance',
-  score: 70,
+  indicator: '',
+  score: 0,
 })
 
 const emptyRecovery = (date = todayISO()) => ({
@@ -759,7 +759,10 @@ function rowToTest(row) {
     indicator: row.indicator || 'Endurance',
     score: clamp(row.score),
     change: row.change_note || 'Saved',
-    addedByCoach: Boolean(row.added_by_coach),
+    addedByCoach: Boolean(
+      row.added_by_coach &&
+      row.coach_user_id
+    ),
     coachUserId: row.coach_user_id || null,
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || '',
@@ -1375,6 +1378,7 @@ function TestModal({ title, form, onChange, onSave, onClose, onDelete, saving })
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Indicator updated</label>
           <select className={styles.formSelect} value={form.indicator} onChange={e => onChange('indicator', e.target.value)}>
+            <option value="">Select indicator</option>
             <option>Endurance</option>
             <option>Speed</option>
             <option>Strength</option>
@@ -7125,15 +7129,16 @@ function AllFitnessRecordsModal({
 function FitnessComparisonRow({
   label,
   playerValue,
+  playerHasData = true,
   coachValue,
 }) {
-  const playerScore = Number(playerValue ?? 50)
+  const playerScore = Number(playerValue ?? 0)
   const hasCoachValue =
     coachValue !== null &&
     coachValue !== undefined &&
     Number.isFinite(Number(coachValue))
   const coachScore = hasCoachValue ? Number(coachValue) : playerScore
-  const hasChange = hasCoachValue && coachScore !== playerScore
+  const hasChange = hasCoachValue
   const playerColor = getMetricColor(label, playerScore)
 
   return (
@@ -7245,19 +7250,29 @@ function FitnessComparisonRow({
           textAlign: 'right',
           fontSize: 11,
           fontWeight: 700,
-          color: playerColor.text,
+          color: playerHasData
+            ? playerColor.text
+            : 'var(--text-muted, #94A3B8)',
           whiteSpace: 'nowrap',
         }}
       >
-        {playerScore}
-        <span
-          style={{
-            color: 'var(--text-muted, #8892A4)',
-            fontWeight: 500,
-          }}
-        >
-          {' '} /100
-        </span>
+        {playerHasData ? (
+          <>
+            {playerScore}
+            <span
+              style={{
+                color: 'var(--text-muted, #8892A4)',
+                fontWeight: 500,
+              }}
+            >
+              {' '} /100
+            </span>
+          </>
+        ) : (
+          label === 'Recovery'
+            ? 'Not checked'
+            : 'Not tested'
+        )}
       </div>
     </div>
   )
@@ -8034,7 +8049,9 @@ export default function Fitness() {
   const playerFitnessTests = useMemo(
     () =>
       tests.filter(
-        test => !test.addedByCoach
+        test =>
+          !test.addedByCoach ||
+          !test.coachUserId
       ),
     [tests]
   )
@@ -8058,8 +8075,8 @@ export default function Fitness() {
   )
 
   const {
-    fitnessScore,
-    indicators,
+    fitnessScore: calculatedFitnessScore,
+    indicators: calculatedIndicators,
     latestRecovery,
     weeklyMinutes,
     weeklyHours,
@@ -8067,20 +8084,134 @@ export default function Fitness() {
     recoveryScore,
   } = fitnessSummary
 
-  const fitnessScoreBreakdown = useMemo(() => {
-    const items = (indicators || []).map(item => ({
-      name:
-        item.name === 'Flexibility'
+  // Build player-facing fitness indicators directly from the player's
+  // actual saved records. This prevents calculateFitnessSummary defaults
+  // (such as 70) from appearing when a test does not exist.
+  const latestPlayerTestFor = useMemo(
+    () => indicatorName => {
+      const normalizedName =
+        indicatorName === 'Flexibility'
           ? 'Agility'
-          : item.name,
-      value: Math.max(
-        0,
-        Math.min(
-          100,
-          Number(item.val) || 0
+          : indicatorName
+
+      return [...playerFitnessTests]
+        .filter(test => {
+          const testIndicator =
+            test.indicator === 'Flexibility'
+              ? 'Agility'
+              : test.indicator
+
+          return testIndicator === normalizedName
+        })
+        .sort((a, b) => {
+          const aTime = new Date(
+            a.updatedAt ||
+            a.createdAt ||
+            `${a.date || ''}T00:00:00`
+          ).getTime()
+
+          const bTime = new Date(
+            b.updatedAt ||
+            b.createdAt ||
+            `${b.date || ''}T00:00:00`
+          ).getTime()
+
+          return bTime - aTime
+        })[0] || null
+    },
+    [playerFitnessTests]
+  )
+
+  const indicators = useMemo(() => {
+    const indicatorNames = [
+      'Endurance',
+      'Speed',
+      'Strength',
+      'Agility',
+    ]
+
+    const testIndicators = indicatorNames.map(name => {
+      const latestTest = latestPlayerTestFor(name)
+
+      return {
+        name,
+        val: latestTest
+          ? Math.max(
+              0,
+              Math.min(
+                100,
+                Number(latestTest.score) || 0
+              )
+            )
+          : 0,
+        hasData: Boolean(latestTest),
+      }
+    })
+
+    const recoveryIndicator = {
+      name: 'Recovery',
+      val: latestRecovery
+        ? Math.max(
+            0,
+            Math.min(
+              100,
+              Number(recoveryScore) || 0
+            )
+          )
+        : 0,
+      hasData: Boolean(latestRecovery),
+    }
+
+    return [
+      ...testIndicators,
+      recoveryIndicator,
+    ]
+  }, [
+    latestPlayerTestFor,
+    latestRecovery,
+    recoveryScore,
+  ])
+
+  const recordedIndicators =
+    indicators.filter(item => item.hasData)
+
+  const hasAnyFitnessIndicatorData =
+    recordedIndicators.length > 0
+
+  // Overall Fitness Score uses only indicators that have real saved data.
+  // Missing indicators display 0 but are not included in the average.
+  const fitnessScore =
+    recordedIndicators.length > 0
+      ? Math.round(
+          recordedIndicators.reduce(
+            (sum, item) =>
+              sum + (Number(item.val) || 0),
+            0
+          ) / recordedIndicators.length
         )
-      ),
-    }))
+      : 0
+
+  // Keep the summary utility available for other values such as weekly load,
+  // while preventing its placeholder indicator values from reaching the UI.
+  void calculatedFitnessScore
+  void calculatedIndicators
+
+  const fitnessScoreBreakdown = useMemo(() => {
+    const items = (indicators || [])
+      .filter(item => item.hasData)
+      .map(item => ({
+        name:
+          item.name === 'Flexibility'
+            ? 'Agility'
+            : item.name,
+        value: Math.max(
+          0,
+          Math.min(
+            100,
+            Number(item.val) || 0
+          )
+        ),
+      }))
 
     const total = items.reduce(
       (sum, item) => sum + item.value,
@@ -9633,6 +9764,11 @@ export default function Fitness() {
       return
     }
 
+    if (!testForm.indicator) {
+      setLoadError('Please select a fitness indicator.')
+      return
+    }
+
     if (!testForm.test.trim() || !testForm.result.trim() || saving) return
 
     setSaving(true)
@@ -9648,6 +9784,12 @@ export default function Fitness() {
         result: testForm.result.trim(),
         indicator: testForm.indicator,
         score: clamp(testForm.score),
+
+        // This form belongs to the player side.
+        // Keep player tests separate from coach-added tests.
+        added_by_coach: false,
+        coach_user_id: null,
+
         change_note: editingTest ? 'Updated' : 'New',
         updated_at: new Date().toISOString(),
       }
@@ -10251,13 +10393,21 @@ export default function Fitness() {
     const text = [
       'ShuttleTracker Fitness Report',
       `Fitness score: ${fitnessScore}/100`,
-      `Recovery status: ${recoveryStatus} (${recoveryScore}/100)`,
+      `Recovery status: ${
+        hasRecoveryData
+          ? `${recoveryStatus} (${recoveryScore}/100)`
+          : 'Not Set'
+      }`,
       `Weekly training load: ${weeklyHours}h`,
       `Upcoming activities: ${upcomingActivitiesCount}`,
       `Completed training this month: ${completedTrainingThisMonth}`,
       `Fitness tests: ${tests.length}`,
       `Active injuries: ${activeInjuries}`,
-      `Suggestion: ${suggestion}`,
+      `Suggestion: ${
+        hasRecoveryData
+          ? suggestion
+          : 'No recovery suggestion yet'
+      }`,
       '',
       'Personal Note:',
       personalNote || draftPersonalNote || '-',
@@ -10502,7 +10652,13 @@ export default function Fitness() {
                   color: fitnessScore >= 70 ? '#00C48C' : fitnessScore >= 50 ? '#F59E0B' : '#EF4444',
                 }}
               >
-                {fitnessScore >= 70 ? 'Good condition' : fitnessScore >= 50 ? 'Moderate' : 'Needs improvement'}
+                {!hasAnyFitnessIndicatorData
+                  ? 'No fitness data yet'
+                  : fitnessScore >= 70
+                    ? 'Good condition'
+                    : fitnessScore >= 50
+                      ? 'Moderate'
+                      : 'Needs improvement'}
               </div>
             </div>
             <ScoreRing value={fitnessScore} />
@@ -10905,7 +11061,7 @@ export default function Fitness() {
               }}
               onClick={openAddTest}
             >
-              Update
+              {hasAnyFitnessIndicatorData ? 'Update' : 'Add fitness test'}
             </button>
           </div>
 
@@ -10926,13 +11082,14 @@ export default function Fitness() {
                 key={item.name}
                 label={displayLabel}
                 playerValue={item.val}
+                playerHasData={item.hasData}
                 coachValue={latestCoachAssessment?.[coachKey]}
               />
             )
           })}
 
           <div style={{ fontSize: 12, color: '#8892A4', marginTop: 8 }}>
-            Player values use your own fitness records. Coach-added test results stay separate and are reflected by the purple coach assessment marker.
+            New players begin with no fitness data. Each indicator appears after you record the related fitness test, while Recovery appears after a recovery check-in. Coach-added results stay separate and are shown by the purple coach assessment marker.
           </div>
         </div>
       </div>

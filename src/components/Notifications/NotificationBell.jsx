@@ -1051,13 +1051,16 @@ export default function NotificationBell({
       <style>{`
         @media (max-width: 640px) {
           .sharedNotificationBellWrap {
-            position: fixed !important;
-            top: 164px !important;
-            right: 14px !important;
+            /* Keep the bell where the page/header renders it.
+               Do not pin it to the phone screen while scrolling. */
+            position: relative !important;
+            top: auto !important;
+            right: auto !important;
             left: auto !important;
-            z-index: 9998 !important;
-            width: 44px !important;
-            height: 44px !important;
+            z-index: auto !important;
+            width: auto !important;
+            height: auto !important;
+            flex: 0 0 auto;
           }
 
           .sharedNotificationBellWrap > button {
@@ -1065,7 +1068,7 @@ export default function NotificationBell({
             height: 44px !important;
             border-radius: 13px !important;
             margin: 0 !important;
-            box-shadow: 0 8px 22px rgba(13,27,62,0.14) !important;
+            box-shadow: 0 4px 14px rgba(13,27,62,0.08) !important;
           }
         }
       `}</style>
