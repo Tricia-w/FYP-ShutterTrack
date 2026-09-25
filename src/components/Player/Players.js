@@ -22,13 +22,6 @@ const C = {
 // can be opened from another phone, Wi-Fi network, or mobile data.
 const APP_ORIGIN = "https://fyp-shutter-track.vercel.app";
 
-const CURRENT_PLAYER = {
-  level: "Intermediate",
-  style: "Aggressive",
-  state: "Penang",
-  weakness: "Defense",
-};
-
 const REPORT_REASON_OPTIONS = [
   "Harassment or bullying",
   "Fake or misleading profile",
@@ -59,7 +52,7 @@ function SkillBar({ name, val, dim }) {
   );
 }
 
-function getPartnerMatch(player, criteria) {
+function getPartnerMatch(player, criteria, currentPlayer = {}) {
   let score = 0;
   const reasons = [];
 
@@ -74,15 +67,26 @@ function getPartnerMatch(player, criteria) {
   }
 
   if (criteria.style === "Auto") {
+    const currentStyle = String(currentPlayer.style || "").trim();
+
     if (
-      CURRENT_PLAYER.style === "Aggressive" &&
+      ["Aggressive", "Attacking"].includes(currentStyle) &&
       ["Defensive", "All-round"].includes(player.style)
     ) {
       score += 20;
       reasons.push("Balances your attacking style");
+    } else if (
+      currentStyle === "Defensive" &&
+      ["Aggressive", "Attacking", "All-round"].includes(player.style)
+    ) {
+      score += 20;
+      reasons.push("Adds attacking balance");
     } else if (player.style === "All-round") {
       score += 15;
       reasons.push("Flexible style");
+    } else if (currentStyle && player.style === currentStyle) {
+      score += 12;
+      reasons.push("Similar playing style");
     }
   } else if (criteria.style === "Any" || player.style === criteria.style) {
     score += 18;
@@ -103,9 +107,28 @@ function getPartnerMatch(player, criteria) {
     }
   }
 
-  if (CURRENT_PLAYER.weakness === "Defense" && player.defense >= 75) {
+  const weakness = String(currentPlayer.weakness || "")
+    .trim()
+    .toLowerCase();
+
+  if (weakness.includes("defen") && player.defense >= 75) {
     score += 13;
     reasons.push("Covers defense weakness");
+  } else if (weakness.includes("net") && player.net >= 75) {
+    score += 13;
+    reasons.push("Supports your net play");
+  } else if (weakness.includes("smash") && player.smash >= 75) {
+    score += 13;
+    reasons.push("Adds strong attacking power");
+  } else if (weakness.includes("footwork") && player.footwork >= 75) {
+    score += 13;
+    reasons.push("Supports movement and court coverage");
+  } else if (weakness.includes("drop") && player.dropShot >= 75) {
+    score += 13;
+    reasons.push("Adds strong drop-shot control");
+  } else if (weakness.includes("serve") && player.serve >= 75) {
+    score += 13;
+    reasons.push("Adds reliable serving");
   }
 
   return {
@@ -1429,6 +1452,12 @@ export default function Players() {
   const [reportTarget, setReportTarget] = useState(null);
   const [submittingReport, setSubmittingReport] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [currentPlayerMatchProfile, setCurrentPlayerMatchProfile] = useState({
+    level: "",
+    style: "",
+    state: "",
+    weakness: "",
+  });
   const [showMyQr, setShowMyQr] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [scannerStarting, setScannerStarting] = useState(false);
@@ -1451,9 +1480,9 @@ export default function Players() {
 
   const [partnerCriteria, setPartnerCriteria] = useState({
     gameType: "Doubles",
-    level: "Intermediate",
+    level: "Any",
     style: "Auto",
-    state: "Penang",
+    state: "Any",
     goal: "Training",
   });
 
@@ -1805,6 +1834,72 @@ export default function Players() {
         user?.user_metadata?.display_name ||
         user?.user_metadata?.full_name ||
         "";
+
+      let ownSetup = null;
+
+      if (user?.id) {
+        const { data: ownSetupData, error: ownSetupError } = await supabase
+          .from("player_setup")
+          .select("preferred_event, play_style, current_weakness, biggest_weakness")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (ownSetupError) {
+          console.warn(
+            "Failed to load current player's setup for partner matching:",
+            ownSetupError,
+          );
+        } else {
+          ownSetup = ownSetupData || null;
+        }
+      }
+
+      const currentPlayerLevel =
+        ownSetup?.preferred_event
+          ? `${ownSetup.preferred_event} Player`
+          : currentPlayerProfile?.level ||
+            currentPlayerProfile?.skill_level ||
+            currentPlayerProfile?.player_category ||
+            currentPlayerProfile?.category ||
+            "";
+
+      const currentPlayerStyle =
+        ownSetup?.play_style ||
+        currentPlayerProfile?.playing_style ||
+        currentPlayerProfile?.play_style ||
+        currentPlayerProfile?.style ||
+        "";
+
+      const currentPlayerState =
+        currentPlayerProfile?.state ||
+        currentPlayerProfile?.location ||
+        "";
+
+      const currentPlayerWeakness =
+        ownSetup?.current_weakness ||
+        ownSetup?.biggest_weakness ||
+        currentPlayerProfile?.current_weakness ||
+        currentPlayerProfile?.weakness ||
+        "";
+
+      setCurrentPlayerMatchProfile({
+        level: currentPlayerLevel,
+        style: currentPlayerStyle,
+        state: currentPlayerState,
+        weakness: currentPlayerWeakness,
+      });
+
+      setPartnerCriteria((previous) => ({
+        ...previous,
+        level:
+          previous.level === "Any" && currentPlayerLevel
+            ? currentPlayerLevel
+            : previous.level,
+        state:
+          previous.state === "Any" && currentPlayerState
+            ? currentPlayerState
+            : previous.state,
+      }));
 
       const currentPlayerMatches = currentPlayerProfile?.id
         ? matchesByProfileId.get(String(currentPlayerProfile.id)) || []
@@ -2403,10 +2498,14 @@ export default function Players() {
 
   const partnerRecommendations = useMemo(() => {
     return players.map((player) => {
-      const match = getPartnerMatch(player, partnerCriteria);
+      const match = getPartnerMatch(
+        player,
+        partnerCriteria,
+        currentPlayerMatchProfile,
+      );
       return { ...player, matchScore: match.score, reasons: match.reasons };
     }).filter((player) => player.matchScore >= 45).sort((a, b) => b.matchScore - a.matchScore);
-  }, [players, partnerCriteria]);
+  }, [players, partnerCriteria, currentPlayerMatchProfile]);
 
   const savedPartners = players.filter((player) => player.isPartner);
   const coachLevels = useMemo(() => [...new Set(coaches.map((coach) => coach.coachingLevel).filter(Boolean))].sort(), [coaches]);
@@ -2670,73 +2769,7 @@ export default function Players() {
     const rawValue = String(decodedText || "").trim();
 
     // ------------------------------------------------------
-    // TYPE 1: SKILL VERIFICATION QR
-    // Supports:
-    //   https://your-site.com/verify-skill/<token>
-    //   /verify-skill/<token>
-    //   SHUTTLETRACK_VERIFY_SKILL:<token>
-    // ------------------------------------------------------
-    let verificationToken = "";
-
-    if (rawValue.startsWith("SHUTTLETRACK_VERIFY_SKILL:")) {
-      verificationToken = rawValue
-        .slice("SHUTTLETRACK_VERIFY_SKILL:".length)
-        .trim();
-    } else if (rawValue.includes("/verify-skill/")) {
-      try {
-        const parsedUrl = rawValue.startsWith("/")
-          ? new URL(rawValue, window.location.origin)
-          : new URL(rawValue);
-
-        const parts = parsedUrl.pathname.split("/").filter(Boolean);
-        const verifyIndex = parts.findIndex((part) => part === "verify-skill");
-
-        if (verifyIndex >= 0) {
-          verificationToken = parts[verifyIndex + 1] || "";
-        }
-      } catch {
-        const marker = "/verify-skill/";
-        const markerIndex = rawValue.indexOf(marker);
-
-        if (markerIndex >= 0) {
-          verificationToken = rawValue
-            .slice(markerIndex + marker.length)
-            .split(/[?#/]/)[0]
-            .trim();
-        }
-      }
-    }
-
-    if (verificationToken) {
-      setScanError("");
-      setScanSuccess(true);
-      setScanSuccessLabel("Verification QR found");
-
-      if (qrScannerRef.current?.isScanning) {
-        try {
-          await qrScannerRef.current.pause(true);
-        } catch (error) {
-          console.warn("Unable to pause scanner after verification QR:", error);
-        }
-      }
-
-      scanCloseTimerRef.current = window.setTimeout(async () => {
-        await stopQrScanner();
-        setShowScanner(false);
-        setScanSuccess(false);
-        setScanSuccessLabel("");
-        setScanError("");
-
-        window.location.assign(
-          `/verify-skill/${encodeURIComponent(verificationToken)}`
-        );
-      }, 700);
-
-      return;
-    }
-
-    // ------------------------------------------------------
-    // TYPE 2: COACH QR
+    // TYPE 1: COACH QR
     // Supports:
     //   https://fyp-shutter-track.vercel.app/players?tab=coach&coach=<user-id>
     //   SHUTTLETRACK_COACH:<user-id>
@@ -2802,7 +2835,7 @@ export default function Players() {
     }
 
     // ------------------------------------------------------
-    // TYPE 3: PLAYER QR
+    // TYPE 2: PLAYER QR
     // Supports:
     //   SHUTTLETRACK_PLAYER:<user-id>
     //   URLs containing ?player=<user-id>, /player/, /p/, or /scan/
@@ -2840,7 +2873,7 @@ export default function Players() {
 
     if (!scannedUserId) {
       setScanError(
-        "This is not a valid ShuttleTrack QR code. Scan a player QR or skill verification QR."
+        "This is not a valid ShuttleTrack QR code. Scan a player QR or coach QR."
       );
       return;
     }
@@ -2895,7 +2928,6 @@ export default function Players() {
     isMobileDirectory,
     players,
     scanSuccess,
-    stopQrScanner,
   ]);
 
   const startQrScanner = useCallback(async () => {
@@ -3010,7 +3042,16 @@ export default function Players() {
           <div className={styles.pageTitle}>Players, Opponents & Coaches</div>
           <div className={styles.pageSub}>Search players, find partners, review opponents and connect with a coach</div>
         </div>
-        <NotificationBell supabase={supabase} title="Notifications" mode="players" includePartnerRequests onPartnerChanged={fetchData} />
+
+        {!isMobileDirectory && (
+          <NotificationBell
+            supabase={supabase}
+            title="Notifications"
+            mode="players"
+            includePartnerRequests
+            onPartnerChanged={fetchData}
+          />
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
@@ -3022,9 +3063,48 @@ export default function Players() {
           <button className={`${styles.tab} ${tab === "coach" ? styles.tabActive : ""}`} onClick={() => switchTab("coach")}>Find coach</button>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexShrink: 0 }}>
-          <button type="button" className={styles.btnPrimary} onClick={() => setShowMyQr(true)} style={{ whiteSpace: "nowrap" }}>My QR</button>
-          <button type="button" className={styles.btnOutline} onClick={() => { setScanError(""); setScanSuccess(false); setScanSuccessLabel(""); setShowScanner(true); }} style={{ whiteSpace: "nowrap" }}>Scan QR</button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginLeft: "auto",
+            flexShrink: 0,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            className={styles.btnPrimary}
+            onClick={() => setShowMyQr(true)}
+            style={{ whiteSpace: "nowrap" }}
+          >
+            My QR
+          </button>
+
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={() => {
+              setScanError("");
+              setScanSuccess(false);
+              setScanSuccessLabel("");
+              setShowScanner(true);
+            }}
+            style={{ whiteSpace: "nowrap" }}
+          >
+            Scan QR
+          </button>
+
+          {isMobileDirectory && (
+            <NotificationBell
+              supabase={supabase}
+              title="Notifications"
+              mode="players"
+              includePartnerRequests
+              onPartnerChanged={fetchData}
+            />
+          )}
         </div>
       </div>
 
@@ -3104,10 +3184,10 @@ export default function Players() {
               <div style={{ marginTop: 14, padding: 14, background: C.soft, border: `1px solid ${C.line}`, borderRadius: 12, color: C.text }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 10 }}>Your profile used for matching</div>
                 <div style={{ display: "grid", gridTemplateColumns: "88px minmax(0, 1fr)", rowGap: 7, columnGap: 10, fontSize: 12, lineHeight: 1.5 }}>
-                  <span style={{ color: C.muted }}>Level</span><strong style={{ color: C.text }}>{CURRENT_PLAYER.level}</strong>
-                  <span style={{ color: C.muted }}>Style</span><strong style={{ color: C.text }}>{CURRENT_PLAYER.style}</strong>
-                  <span style={{ color: C.muted }}>State</span><strong style={{ color: C.text }}>{CURRENT_PLAYER.state}</strong>
-                  <span style={{ color: C.muted }}>Weakness</span><strong style={{ color: C.text }}>{CURRENT_PLAYER.weakness}</strong>
+                  <span style={{ color: C.muted }}>Level</span><strong style={{ color: C.text }}>{currentPlayerMatchProfile.level || "Not specified"}</strong>
+                  <span style={{ color: C.muted }}>Style</span><strong style={{ color: C.text }}>{currentPlayerMatchProfile.style || "Not specified"}</strong>
+                  <span style={{ color: C.muted }}>State</span><strong style={{ color: C.text }}>{currentPlayerMatchProfile.state || "Not specified"}</strong>
+                  <span style={{ color: C.muted }}>Weakness</span><strong style={{ color: C.text }}>{currentPlayerMatchProfile.weakness || "Not specified"}</strong>
                 </div>
               </div>
             </div>
@@ -3391,7 +3471,7 @@ export default function Players() {
         <div role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeScanner(); }} style={{ position: "fixed", inset: 0, zIndex: 3200, background: "rgba(13, 27, 62, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
           <div style={{ width: "min(520px, 100%)", maxHeight: "calc(100vh - 36px)", overflowY: "auto", background: C.card, borderRadius: 20, padding: 20, boxShadow: "0 24px 60px rgba(13,27,62,0.28)" }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-              <div><div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>Scan ShuttleTrack QR</div><div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>Scan a player QR or a skill verification QR.</div></div>
+              <div><div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>Scan ShuttleTrack QR</div><div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>Scan a player QR or coach QR.</div></div>
               <button type="button" aria-label="Close QR scanner" onClick={closeScanner} style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${C.line}`, background: C.card, color: C.muted, cursor: "pointer", fontSize: 18, flexShrink: 0 }}>×</button>
             </div>
 
@@ -3403,7 +3483,7 @@ export default function Players() {
             </div>
 
             {scanError && <div style={{ marginTop: 12, padding: 12, borderRadius: 11, background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", fontSize: 12, lineHeight: 1.5 }}>{scanError}</div>}
-            <div style={{ marginTop: 12, padding: 12, borderRadius: 11, background: C.soft, color: C.muted, fontSize: 11, lineHeight: 1.6 }}>This scanner accepts both player QR codes and skill verification QR codes. Camera access works on localhost and normally requires HTTPS after deployment. Chrome must also have camera permission enabled.</div>
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 11, background: C.soft, color: C.muted, fontSize: 11, lineHeight: 1.6 }}>This scanner accepts player QR codes and coach QR codes. Camera access works on localhost and normally requires HTTPS after deployment. Chrome must also have camera permission enabled.</div>
           </div>
         </div>
       )}

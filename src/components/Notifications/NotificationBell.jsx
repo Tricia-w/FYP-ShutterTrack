@@ -86,6 +86,7 @@ function decodeActionPlans(value) {
     };
 
     const performance = readPlan("performance");
+
     const fitness = readPlan("fitness");
 
     return {
@@ -99,13 +100,16 @@ function decodeActionPlans(value) {
   } catch {
     return empty;
   }
+
 }
 
 function toLocalISODate(date = new Date()) {
   const year = date.getFullYear();
+
   const month = String(
     date.getMonth() + 1
   ).padStart(2, "0");
+
   const day = String(
     date.getDate()
   ).padStart(2, "0");
@@ -117,6 +121,7 @@ function addLocalDays(date, days) {
   const next = new Date(date);
   next.setHours(12, 0, 0, 0);
   next.setDate(next.getDate() + days);
+
   return toLocalISODate(next);
 }
 
@@ -138,7 +143,9 @@ function formatActionPlanDeadline(value) {
 
 function isPlayerDirectoryNotification(item) {
   const type = normalise(item?.source_type || item?.type);
+
   const title = normalise(item?.title);
+
   const message = normalise(item?.message);
 
   if (PLAYER_DIRECTORY_TYPES.map(normalise).includes(type)) {
@@ -160,6 +167,7 @@ function formatTime(value) {
   if (!value) return "";
 
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return "";
 
   return date.toLocaleString("en-MY", {
@@ -176,19 +184,25 @@ function getRoute(item) {
 
   if (rawUrl) {
     const withoutOrigin = rawUrl.replace(/^https?:\/\/[^/]+/i, "");
+
     const normalised = withoutOrigin.replace(/^\/player(?=\/|$)/i, "");
 
     if (normalised) {
       return normalised.startsWith("/") ? normalised : `/${normalised}`;
     }
+
   }
 
   const type = normalise(item?.source_type || item?.type);
 
   if (type.includes("coach")) return "/players?tab=coach";
+
   if (type.includes("partner")) return "/players?tab=partner";
+
   if (type.includes("performance") || type.includes("progress")) return "/performance";
+
   if (type.includes("fitness") || type.includes("training")) return "/fitness";
+
   if (type.includes("club")) return "/clubs";
 
   return "";
@@ -196,6 +210,7 @@ function getRoute(item) {
 
 function getTone(item) {
   const title = normalise(item?.title);
+
   const type = normalise(item?.type);
 
   if (
@@ -281,15 +296,25 @@ export default function NotificationBell({
   onLocalItemClick,
 }) {
   const navigate = useNavigate();
+
   const wrapRef = useRef(null);
+
   const popupRef = useRef(null);
+
   const notificationSoundRef = useRef(null);
+
   const soundEnabledRef = useRef(false);
+
   const [resolvedUserId, setResolvedUserId] = useState(userId);
+
   const [open, setOpen] = useState(false);
+
   const [items, setItems] = useState([]);
+
   const [partnerRequests, setPartnerRequests] = useState([]);
+
   const [loading, setLoading] = useState(false);
+
   const [popupPosition, setPopupPosition] = useState({
     top: 0,
     left: 14,
@@ -301,10 +326,8 @@ export default function NotificationBell({
     const sound = new Audio(
       "/shuttletrack-notification-tink.mp3"
     );
-
     sound.volume = 0.4;
     sound.preload = "auto";
-
     notificationSoundRef.current = sound;
 
     return () => {
@@ -318,15 +341,15 @@ export default function NotificationBell({
       if (!soundEnabledRef.current) return;
 
       const sound = notificationSoundRef.current;
+
       if (!sound) return;
 
       const originalVolume = sound.volume;
-      const originalMuted = sound.muted;
 
+      const originalMuted = sound.muted;
       sound.muted = true;
       sound.volume = 0;
       sound.currentTime = 0;
-
       sound
         .play()
         .then(() => {
@@ -339,12 +362,10 @@ export default function NotificationBell({
           sound.volume = originalVolume || 0.4;
           sound.muted = originalMuted;
         });
-
       document.removeEventListener("click", unlockAudio);
       document.removeEventListener("touchstart", unlockAudio);
       document.removeEventListener("keydown", unlockAudio);
     };
-
     document.addEventListener("click", unlockAudio);
     document.addEventListener("touchstart", unlockAudio);
     document.addEventListener("keydown", unlockAudio);
@@ -360,11 +381,10 @@ export default function NotificationBell({
     if (!soundEnabledRef.current) return;
 
     const sound = notificationSoundRef.current;
-    if (!sound) return;
 
+    if (!sound) return;
     sound.currentTime = 0;
     sound.volume = 0.4;
-
     sound.play().catch(error => {
       console.log(
         "Notification sound was blocked by the browser:",
@@ -386,8 +406,8 @@ export default function NotificationBell({
     } = await supabase.auth.getUser();
 
     if (error || !user?.id) return null;
-
     setResolvedUserId(user.id);
+
     return user.id;
   }, [resolvedUserId, supabase]);
 
@@ -398,6 +418,7 @@ export default function NotificationBell({
 
     const loadSoundSetting = async () => {
       const uid = await resolveUserId();
+
       if (!active || !uid) return;
 
       const { data, error } = await supabase
@@ -421,7 +442,6 @@ export default function NotificationBell({
     const handleSoundSettingUpdated = event => {
       const enabled =
         event?.detail?.enabled === true;
-
       soundEnabledRef.current = enabled;
 
       if (!enabled) {
@@ -431,11 +451,11 @@ export default function NotificationBell({
           sound.pause();
           sound.currentTime = 0;
         }
+
       }
+
     };
-
     loadSoundSetting();
-
     window.addEventListener(
       "notification-sound-updated",
       handleSoundSettingUpdated
@@ -443,7 +463,6 @@ export default function NotificationBell({
 
     return () => {
       active = false;
-
       window.removeEventListener(
         "notification-sound-updated",
         handleSoundSettingUpdated
@@ -457,7 +476,9 @@ export default function NotificationBell({
         if (!uid) return;
 
         const now = new Date();
+
         const today = toLocalISODate(now);
+
         const tomorrow = addLocalDays(now, 1);
 
         const {
@@ -516,7 +537,9 @@ export default function NotificationBell({
             }
 
             let stage = "";
+
             let title = "";
+
             let message = "";
 
             if (plan.deadline === tomorrow) {
@@ -561,54 +584,62 @@ export default function NotificationBell({
               is_read: false,
             });
           }
+
         }
 
         for (const reminder of reminders) {
-          const {
-            data: existing,
-            error: existingError,
-          } = await supabase
-            .from("notifications")
-            .select("id")
-            .eq("user_id", uid)
-            .eq(
-              "source_type",
-              reminder.source_type
-            )
-            .eq(
-              "action_url",
-              reminder.action_url
-            )
-            .eq(
-              "message",
-              reminder.message
-            )
-            .limit(1);
+            const {
+              data: existing,
+              error: existingError,
+            } = await supabase
+              .from("notifications")
+              .select("id")
+              .eq("user_id", uid)
+              .eq("source_type", reminder.source_type)
+              .eq("action_url", reminder.action_url)
+              .maybeSingle();
 
-          if (existingError) {
-            console.error(
-              "Action plan reminder duplicate check error:",
-              existingError
-            );
-            continue;
-          }
+            if (existingError) {
+              console.error(
+                "Action plan reminder duplicate check error:",
+                existingError
+              );
+              continue;
+            }
 
-          if ((existing || []).length > 0) {
-            continue;
-          }
+            if (existing?.id) {
+              const { error: updateError } = await supabase
+                .from("notifications")
+                .update({
+                  title: reminder.title,
+                  message: reminder.message,
+                  type: reminder.type,
+                })
+                .eq("id", existing.id);
 
-          const { error: insertError } =
-            await supabase
+              if (updateError) {
+                console.error(
+                  "Update action plan reminder error:",
+                  updateError
+                );
+              }
+
+              continue;
+            }
+
+            const { error: insertError } = await supabase
               .from("notifications")
               .insert(reminder);
 
-          if (insertError) {
-            console.error(
-              "Create action plan reminder error:",
-              insertError
-            );
+            if (insertError) {
+              console.error(
+                "Create action plan reminder error:",
+                insertError
+              );
+            }
+
           }
-        }
+
       },
       [supabase]
     );
@@ -620,19 +651,18 @@ export default function NotificationBell({
     }
 
     const uid = await resolveUserId();
+
     if (!uid) return;
-
     setLoading(true);
-
     try {
       await ensureActionPlanReminders(uid);
+
       let query = supabase
         .from("notifications")
         .select("*")
         .eq("user_id", uid)
         .order("created_at", { ascending: false })
         .limit(limit);
-
 
       const requestsQuery = includePartnerRequests
         ? supabase
@@ -660,7 +690,9 @@ export default function NotificationBell({
                 sourceTypes.length > 0
               ? rows.filter(item => {
                   const allowedTypes = sourceTypes.map(normalise);
+
                   const sourceType = normalise(item?.source_type);
+
                   const type = normalise(item?.type);
 
                   return (
@@ -669,7 +701,6 @@ export default function NotificationBell({
                   );
                 })
               : rows;
-
         setItems(filteredRows);
       }
 
@@ -678,9 +709,11 @@ export default function NotificationBell({
       } else {
         setPartnerRequests(requestResult.data || []);
       }
+
     } finally {
       setLoading(false);
     }
+
   }, [
     includePartnerRequests,
     ensureActionPlanReminders,
@@ -700,10 +733,12 @@ export default function NotificationBell({
     if (localOnly) return undefined;
 
     let cancelled = false;
+
     let channel = null;
 
     const subscribe = async () => {
       const uid = await resolveUserId();
+
       if (!uid || cancelled) return;
 
       const nextChannel = supabase
@@ -722,6 +757,7 @@ export default function NotificationBell({
           },
           payload => {
             const newItem = payload?.new;
+
             const isInsert = payload?.eventType === "INSERT";
 
             const matchesCurrentView =
@@ -735,6 +771,7 @@ export default function NotificationBell({
                         const sourceType = normalise(
                           newItem?.source_type
                         );
+
                         const itemType = normalise(newItem?.type);
 
                         return (
@@ -775,11 +812,11 @@ export default function NotificationBell({
       channel = nextChannel;
       nextChannel.subscribe();
     };
-
     subscribe();
 
     return () => {
       cancelled = true;
+
       if (channel) supabase.removeChannel(channel);
     };
   }, [
@@ -798,9 +835,13 @@ export default function NotificationBell({
     if (!wrapRef.current || typeof window === "undefined") return;
 
     const rect = wrapRef.current.getBoundingClientRect();
+
     const viewportWidth = window.innerWidth;
+
     const viewportHeight = window.innerHeight;
+
     const sideGap = 14;
+
     const popupGap = 6;
 
     const isMobile = viewportWidth <= 640;
@@ -815,7 +856,6 @@ export default function NotificationBell({
     let left = isMobile
       ? 12
       : rect.right - width;
-
     left = isMobile
       ? 12
       : Math.max(
@@ -827,6 +867,7 @@ export default function NotificationBell({
         );
 
     let top = rect.bottom + popupGap;
+
     let availableHeight =
       viewportHeight - top - (isMobile ? 12 : sideGap);
 
@@ -835,12 +876,10 @@ export default function NotificationBell({
         560,
         viewportHeight - sideGap * 2
       );
-
       top = Math.max(
         sideGap,
         rect.top - preferredHeight - popupGap
       );
-
       availableHeight =
         viewportHeight - top - sideGap;
     }
@@ -861,14 +900,11 @@ export default function NotificationBell({
 
   useEffect(() => {
     if (!open) return undefined;
-
     updatePopupPosition();
-
     window.addEventListener(
       "resize",
       updatePopupPosition
     );
-
     window.addEventListener(
       "scroll",
       updatePopupPosition,
@@ -880,7 +916,6 @@ export default function NotificationBell({
         "resize",
         updatePopupPosition
       );
-
       window.removeEventListener(
         "scroll",
         updatePopupPosition,
@@ -900,9 +935,10 @@ export default function NotificationBell({
       if (!clickedBell && !clickedPopup) {
         setOpen(false);
       }
-    };
 
+    };
     document.addEventListener("mousedown", closeOutside);
+
     return () => document.removeEventListener("mousedown", closeOutside);
   }, []);
 
@@ -923,12 +959,12 @@ export default function NotificationBell({
     }
 
     const uid = await resolveUserId();
+
     if (!uid || items.length === 0) return;
 
     const ids = items
       .filter(item => !item.is_read)
       .map(item => item.id);
-
     setItems(current =>
       current.map(item => ({ ...item, is_read: true })),
     );
@@ -945,6 +981,7 @@ export default function NotificationBell({
       console.error("Mark notifications read error:", error);
       loadNotifications();
     }
+
   };
 
   const clearAll = async event => {
@@ -956,6 +993,7 @@ export default function NotificationBell({
     }
 
     const uid = await resolveUserId();
+
     if (!uid || items.length === 0) return;
 
     const ids = items.map(item => item.id);
@@ -971,6 +1009,7 @@ export default function NotificationBell({
       console.error("Clear notifications error:", error);
       loadNotifications();
     }
+
   };
 
   const deleteOne = async (event, id) => {
@@ -992,6 +1031,7 @@ export default function NotificationBell({
       console.error("Delete notification error:", error);
       loadNotifications();
     }
+
   };
 
   const openNotification = async item => {
@@ -1002,6 +1042,7 @@ export default function NotificationBell({
     }
 
     const uid = await resolveUserId();
+
     if (!uid) return;
 
     if (!item.is_read) {
@@ -1010,7 +1051,6 @@ export default function NotificationBell({
           row.id === item.id ? { ...row, is_read: true } : row,
         ),
       );
-
       await supabase
         .from("notifications")
         .update({ is_read: true })
@@ -1021,6 +1061,7 @@ export default function NotificationBell({
     setOpen(false);
 
     const route = getRoute(item);
+
     if (route) navigate(route);
   };
 
@@ -1070,14 +1111,14 @@ export default function NotificationBell({
             margin: 0 !important;
             box-shadow: 0 4px 14px rgba(13,27,62,0.08) !important;
           }
-        }
-      `}</style>
 
+        }
+
+      `}</style>
       <button
         type="button"
         onClick={event => {
           event.stopPropagation();
-
           setOpen(current => {
             const nextOpen = !current;
 
@@ -1089,7 +1130,6 @@ export default function NotificationBell({
 
             return nextOpen;
           });
-
           loadNotifications();
         }}
         title="Notifications"
@@ -1109,7 +1149,6 @@ export default function NotificationBell({
         }}
       >
         🔔
-
         {unread > 0 && (
           <span
             style={{
@@ -1133,7 +1172,6 @@ export default function NotificationBell({
           </span>
         )}
       </button>
-
       {open &&
         typeof document !== "undefined" &&
         createPortal(
@@ -1178,7 +1216,6 @@ export default function NotificationBell({
             >
               {title}
             </div>
-
             {displayedItems.length > 0 && (
               <div
                 style={{
@@ -1202,7 +1239,6 @@ export default function NotificationBell({
                 >
                   Mark read
                 </button>
-
                 <button
                   type="button"
                   onClick={clearAll}
@@ -1221,7 +1257,6 @@ export default function NotificationBell({
               </div>
             )}
           </div>
-
           {loading ? (
             <div
               style={{
@@ -1268,7 +1303,6 @@ export default function NotificationBell({
                   >
                     New partner request
                   </div>
-
                   <div
                     style={{
                       marginTop: 5,
@@ -1279,7 +1313,6 @@ export default function NotificationBell({
                   >
                     A player sent you a partner request.
                   </div>
-
                   <div
                     style={{
                       display: "flex",
@@ -1292,6 +1325,7 @@ export default function NotificationBell({
                       onClick={() =>
                         respondToPartnerRequest(request, "rejected")
                       }
+
                       style={{
                         flex: 1,
                         border: "1px solid #FECACA",
@@ -1305,12 +1339,12 @@ export default function NotificationBell({
                     >
                       Decline
                     </button>
-
                     <button
                       type="button"
                       onClick={() =>
                         respondToPartnerRequest(request, "accepted")
                       }
+
                       style={{
                         flex: 1,
                         border: "none",
@@ -1327,7 +1361,6 @@ export default function NotificationBell({
                   </div>
                 </div>
               ))}
-
               {displayedItems.map(item => {
                 const tone = getTone(item);
 
@@ -1342,6 +1375,7 @@ export default function NotificationBell({
                         event.preventDefault();
                         openNotification(item);
                       }
+
                     }}
                     style={{
                       position: "relative",
@@ -1378,7 +1412,6 @@ export default function NotificationBell({
                     >
                       ×
                     </button>
-
                     <div
                       style={{
                         display: "flex",
@@ -1403,7 +1436,6 @@ export default function NotificationBell({
                       >
                         {tone.icon}
                       </span>
-
                       <div
                         style={{
                           minWidth: 0,
@@ -1414,7 +1446,6 @@ export default function NotificationBell({
                       >
                         {item.title || "Notification"}
                       </div>
-
                       {!item.is_read && (
                         <span
                           style={{
@@ -1428,7 +1459,6 @@ export default function NotificationBell({
                         />
                       )}
                     </div>
-
                     <div
                       style={{
                         fontSize: 13,
@@ -1438,7 +1468,6 @@ export default function NotificationBell({
                     >
                       {item.message || ""}
                     </div>
-
                     <div
                       style={{
                         marginTop: 9,
