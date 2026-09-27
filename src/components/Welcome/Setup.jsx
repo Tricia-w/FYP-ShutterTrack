@@ -6,15 +6,31 @@ import styles from './Setup.module.css'
 
 const PRESSURE_OPTIONS = ['Calm', 'Aggressive', 'Careful']
 
+const PLAYING_LEVEL_OPTIONS = [
+  'Lower Beginner',
+  'Beginner',
+  'Upper Beginner',
+  'Lower Intermediate',
+  'Intermediate',
+  'Upper Intermediate',
+  'Lower Advanced',
+  'Advanced',
+  'Upper Advanced',
+  'Elite',
+]
+
 export default function Setup() {
   const { user, loading, saveProfile } = useAuth()
-  const navigate = useNavigate()
-  const location = useLocation()
 
+  const navigate = useNavigate()
+
+  const location = useLocation()
   // Redo setup should return to Profile.
   // First-time setup should still continue to Dashboard.
   // The ?redo=1 fallback also works if React Router state is lost after refresh.
+
   const searchParams = new URLSearchParams(location.search)
+
   const isRedoSetup = searchParams.get('redo') === '1'
 
   const returnTo =
@@ -27,21 +43,24 @@ export default function Setup() {
     strength: 'Smash Power',
     weakness: 'Defense Under Pressure',
     stamina: 'High',
+    level: 'Beginner',
     pressure: 'Calm',
   })
 
   const [saving, setSaving] = useState(false)
-  const [skipping, setSkipping] = useState(false)
-  const [loadingSetup, setLoadingSetup] = useState(true)
-  const [error, setError] = useState('')
 
+  const [skipping, setSkipping] = useState(false)
+
+  const [loadingSetup, setLoadingSetup] = useState(true)
+
+  const [error, setError] = useState('')
   // First-time setup follows the Login/Register theme.
   // Re-do setup follows the main ShuttleTrack/Profile theme.
+
   const [isDark, setIsDark] = useState(() => {
     const themeKey = isRedoSetup
       ? 'shuttleTheme'
       : 'shuttleLoginTheme'
-
     return localStorage.getItem(themeKey) === 'dark'
   })
 
@@ -56,7 +75,6 @@ export default function Setup() {
           user?.id
             ? user
             : (await supabase.auth.getUser()).data?.user
-
         if (!activeUser?.id) {
           if (mounted) setLoadingSetup(false)
           return
@@ -67,11 +85,9 @@ export default function Setup() {
           .select('*')
           .eq('user_id', activeUser.id)
           .maybeSingle()
-
         if (loadError) {
           throw loadError
         }
-
         if (mounted && data) {
           setForm({
             event:
@@ -91,6 +107,9 @@ export default function Setup() {
             stamina:
               data.endurance_level ||
               'High',
+            level:
+              data.playing_level ||
+              'Beginner',
             pressure:
               data.under_pressure ||
               data.pressure_reaction ||
@@ -101,7 +120,6 @@ export default function Setup() {
         }
       } catch (loadError) {
         console.error('Load existing setup error:', loadError)
-
         if (mounted) {
           setError(
             loadError.message ||
@@ -114,9 +132,7 @@ export default function Setup() {
         }
       }
     }
-
     loadExistingSetup()
-
     return () => {
       mounted = false
     }
@@ -138,21 +154,17 @@ export default function Setup() {
       data: { user: currentUser },
       error: userError,
     } = await supabase.auth.getUser()
-
     if (userError) {
       throw userError
     }
-
     return currentUser
   }
 
   async function handleFinish() {
     setError('')
     setSaving(true)
-
     try {
       const activeUser = await getActiveUser()
-
       if (!activeUser?.id) {
         throw new Error('Account is not ready yet. Please refresh or login again.')
       }
@@ -167,15 +179,25 @@ export default function Setup() {
             biggest_strength: form.strength,
             current_weakness: form.weakness,
             endurance_level: form.stamina,
+            playing_level: form.level,
             pressure_reaction: form.pressure,
           },
           {
             onConflict: 'user_id',
           }
         )
-
       if (setupError) {
         throw setupError
+      }
+
+      const { error: profileLevelError } = await supabase
+        .from('player_profiles')
+        .update({
+          level: form.level,
+        })
+        .eq('user_id', activeUser.id)
+      if (profileLevelError) {
+        throw profileLevelError
       }
 
       const { error: updateError } = await supabase
@@ -184,11 +206,9 @@ export default function Setup() {
           setup_completed: true,
         })
         .eq('user_id', activeUser.id)
-
       if (updateError) {
         throw updateError
       }
-
       saveProfile?.({
         ...user,
         event: form.event,
@@ -196,13 +216,13 @@ export default function Setup() {
         strength: form.strength,
         weakness: form.weakness,
         stamina: form.stamina,
+        level: form.level,
         pressure: form.pressure,
         playerType: form.pressure,
         reaction: form.pressure,
         underPressure: form.pressure,
         setup_completed: true,
       })
-
       navigate(returnTo, { replace: true })
     } catch (err) {
       setError(err.message || 'Failed to save setup. Please try again.')
@@ -214,25 +234,22 @@ export default function Setup() {
   async function handleSkip() {
     setError('')
     setSkipping(true)
-
     try {
       const activeUser = await getActiveUser()
-
       if (!activeUser?.id) {
         throw new Error(
           'Account is not ready yet. Please refresh or login again.'
         )
       }
-
       /*
         Mark onboarding as finished even when the player skips.
         No player_setup row is created, so the player can complete
         the setup later from the Profile page.
       */
+
       const { error: completeSetupError } = await supabase.rpc(
         'complete_player_setup'
       )
-
       if (completeSetupError) {
         console.error(
           'Skip setup completion RPC error:',
@@ -242,12 +259,10 @@ export default function Setup() {
           'Unable to skip setup right now. Please try again.'
         )
       }
-
       saveProfile?.({
         ...user,
         setup_completed: true,
       })
-
       navigate(returnTo, { replace: true })
     } catch (err) {
       console.error('Skip player setup error:', err)
@@ -293,6 +308,7 @@ export default function Setup() {
   }
 
   if (loading || loadingSetup) {
+
     return (
       <div className={styles.screen} style={screenStyle}>
         <div className={styles.box} style={boxStyle}>
@@ -335,7 +351,6 @@ export default function Setup() {
                 <circle cx="10" cy="10" r="2" fill="white" />
               </svg>
             </div>
-
             <span
               className={styles.logoName}
               style={{
@@ -345,7 +360,6 @@ export default function Setup() {
               ShuttleTrack
             </span>
           </div>
-
           <button
             type="button"
             onClick={() => {
@@ -353,7 +367,6 @@ export default function Setup() {
               setIsDark(next)
 
               const theme = next ? 'dark' : 'light'
-
               if (isRedoSetup) {
                 localStorage.setItem('shuttleTheme', theme)
                 document.documentElement.setAttribute(
@@ -413,17 +426,14 @@ export default function Setup() {
             </span>
           </button>
         </div>
-
         <h1 className={styles.title} style={titleStyle}>
           {location.search.includes('redo=1')
             ? 'Update Player Setup'
             : 'New Player Setup'}
         </h1>
-
         <p className={styles.sub} style={subStyle}>
           Answer a few questions so the system can create your initial player status.
         </p>
-
         {error && (
           <div
             style={{
@@ -444,13 +454,11 @@ export default function Setup() {
             {error}
           </div>
         )}
-
         <div className={styles.grid2}>
           <div>
             <label className={styles.label} style={labelStyle}>
               Preferred Event
             </label>
-
             <select
               className={styles.select}
               style={selectStyle}
@@ -463,12 +471,10 @@ export default function Setup() {
               <option>Mixed Doubles</option>
             </select>
           </div>
-
           <div>
             <label className={styles.label} style={labelStyle}>
               How do you usually play?
             </label>
-
             <select
               className={styles.select}
               style={selectStyle}
@@ -483,13 +489,11 @@ export default function Setup() {
             </select>
           </div>
         </div>
-
         <div className={styles.grid2}>
           <div>
             <label className={styles.label} style={labelStyle}>
               What is your biggest strength?
             </label>
-
             <select
               className={styles.select}
               style={selectStyle}
@@ -504,12 +508,10 @@ export default function Setup() {
               <option>Drop Shots</option>
             </select>
           </div>
-
           <div>
             <label className={styles.label} style={labelStyle}>
               What is your current weakness?
             </label>
-
             <select
               className={styles.select}
               style={selectStyle}
@@ -525,30 +527,46 @@ export default function Setup() {
             </select>
           </div>
         </div>
-
-        <div className={styles.field}>
-          <label className={styles.label} style={labelStyle}>
-            How is your endurance level?
-          </label>
-
-          <select
-            className={styles.select}
-            style={selectStyle}
-            value={form.stamina}
-            onChange={set('stamina')}
-            disabled={busy}
-          >
-            <option>High</option>
-            <option>Medium</option>
-            <option>Low</option>
-          </select>
+        <div className={styles.grid2}>
+          <div>
+            <label className={styles.label} style={labelStyle}>
+              How is your endurance level?
+            </label>
+            <select
+              className={styles.select}
+              style={selectStyle}
+              value={form.stamina}
+              onChange={set('stamina')}
+              disabled={busy}
+            >
+              <option>High</option>
+              <option>Medium</option>
+              <option>Low</option>
+            </select>
+          </div>
+          <div>
+            <label className={styles.label} style={labelStyle}>
+              What is your playing level?
+            </label>
+            <select
+              className={styles.select}
+              style={selectStyle}
+              value={form.level}
+              onChange={set('level')}
+              disabled={busy}
+            >
+              {PLAYING_LEVEL_OPTIONS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-
         <div className={styles.field}>
           <label className={styles.label} style={labelStyle}>
             How do you react under pressure?
           </label>
-
           <div className={`${styles.pressureBtns} setupPressureBtns`}>
             {PRESSURE_OPTIONS.map((option) => {
               const active = form.pressure === option
@@ -589,7 +607,6 @@ export default function Setup() {
             })}
           </div>
         </div>
-
         <style>{`
           @media (max-width: 640px) {
             .setupPressureBtns {
@@ -598,7 +615,6 @@ export default function Setup() {
               gap: 10px !important;
               width: 100% !important;
             }
-
             .setupPressureBtns > button {
               width: 100% !important;
               min-width: 0 !important;
@@ -609,12 +625,10 @@ export default function Setup() {
               white-space: normal !important;
             }
           }
-
           @media (max-width: 390px) {
             .setupPressureBtns {
               gap: 7px !important;
             }
-
             .setupPressureBtns > button {
               padding-left: 6px !important;
               padding-right: 6px !important;
@@ -622,7 +636,6 @@ export default function Setup() {
             }
           }
         `}</style>
-
         <div
           className={styles.preview}
           style={
@@ -635,10 +648,9 @@ export default function Setup() {
                 }
           }
         >
-          Result preview: your answers will generate your initial play style,
+          Result preview: your answers will generate your initial playing level, play style,
           strength summary, weakness summary, and default radar status for first-time setup.
         </div>
-
         <div
           style={{
             display: 'flex',
@@ -662,7 +674,6 @@ export default function Setup() {
                 ? 'Save Changes'
                 : 'Finish Setup'}
           </button>
-
           <button
             type="button"
             onClick={handleSkip}

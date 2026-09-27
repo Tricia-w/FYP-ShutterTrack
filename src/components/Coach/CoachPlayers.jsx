@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext'
 import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
-import { Avatar, CoachPageHeader, LevelBadge } from './CoachShared'
+import { Avatar, CoachPageHeader } from './CoachShared'
 import CoachNotificationBell from '../Notifications/CoachNotificationBell'
 
 const DEFAULT_SKILL = 0
@@ -338,10 +338,8 @@ function normalizePlayer(
       profile?.level ||
       profile?.playing_level ||
       profile?.skill_level ||
-      profile?.category ||
-      profile?.player_category ||
-      setupRow?.preferred_event ||
-      'Beginner',
+      setupRow?.playing_level ||
+      'Not specified',
     style:
       setupRow?.play_style ||
       profile?.playing_style ||
@@ -382,6 +380,7 @@ function normalizePlayer(
     bio: profile?.bio || profile?.about || '',
     phone: profile?.phone || '',
     avatarUrl:
+      profile?.profile_photo_url ||
       profile?.avatar_url ||
       profile?.profile_picture ||
       profile?.photo_url ||
@@ -979,6 +978,7 @@ export default function CoachPlayers() {
         directoryAccountsResult,
         playerSetupResult,
         clubsResult,
+        activeCoachAssignmentsResult,
         verificationRequestsResult,
       ] = await Promise.all([
         supabase.from('player_profiles').select('*').order('display_name', { ascending: true }),
@@ -1011,6 +1011,9 @@ export default function CoachPlayers() {
         supabase
           .from('clubs')
           .select('id, short_name, name'),
+        // Public-safe list of players who already have an active coach.
+        // The coach can still view them, but cannot send another request.
+        supabase.rpc('get_players_with_active_coach'),
         supabase
           .from('skill_verification_requests')
           .select('id, player_user_id, token, created_at')
@@ -1028,6 +1031,7 @@ export default function CoachPlayers() {
         directoryAccountsResult.error,
         playerSetupResult.error,
         clubsResult.error,
+        activeCoachAssignmentsResult.error,
       ].find(Boolean)
 
       if (firstError) throw firstError
@@ -1127,6 +1131,12 @@ export default function CoachPlayers() {
           )
         }
       }
+
+      const playersWithActiveCoach = new Set(
+        (activeCoachAssignmentsResult.data || [])
+          .map(row => row?.player_user_id && String(row.player_user_id))
+          .filter(Boolean)
+      )
 
       const visibleDirectoryUserIds = new Set(
         (directoryAccountsResult.data || [])
@@ -1258,6 +1268,24 @@ export default function CoachPlayers() {
         )
       })
 
+      const publicPlayerByUserId = new Map()
+      const publicPlayerByName = new Map()
+
+      ;(publicPlayersResult.data || []).forEach(row => {
+        const linkedUserId = row?.user_id || row?.player_user_id || null
+        if (linkedUserId) {
+          publicPlayerByUserId.set(String(linkedUserId), row)
+        }
+
+        const nameKey = String(row?.name || '')
+          .trim()
+          .toLowerCase()
+
+        if (nameKey && !publicPlayerByName.has(nameKey)) {
+          publicPlayerByName.set(nameKey, row)
+        }
+      })
+
       const allRegisteredProfiles = profilesResult.data || []
 
       const allRegisteredNames = new Set(
@@ -1302,8 +1330,33 @@ export default function CoachPlayers() {
           const playerMatches =
             matchesByProfileId.get(profile.id) || []
 
-          return normalizePlayer(
-            profile,
+          const profileNameKey = String(profile?.display_name || '')
+            .trim()
+            .toLowerCase()
+
+          const matchingPublicPlayer =
+            (profile?.user_id
+              ? publicPlayerByUserId.get(String(profile.user_id))
+              : null) ||
+            publicPlayerByName.get(profileNameKey) ||
+            null
+
+          const profileWithAvatar = {
+            ...profile,
+            avatar_url:
+              profile?.profile_photo_url ||
+              profile?.avatar_url ||
+              profile?.profile_picture ||
+              profile?.photo_url ||
+              matchingPublicPlayer?.profile_photo_url ||
+              matchingPublicPlayer?.avatar_url ||
+              matchingPublicPlayer?.profile_picture ||
+              matchingPublicPlayer?.photo_url ||
+              null,
+          }
+
+          const normalizedPlayer = normalizePlayer(
+            profileWithAvatar,
             skillRow,
             relationshipMap.get(playerId),
             'registered',
@@ -1317,6 +1370,11 @@ export default function CoachPlayers() {
               ? clubById.get(String(profile.club_id)) || null
               : null
           )
+
+          return {
+            ...normalizedPlayer,
+            hasActiveCoach: playersWithActiveCoach.has(String(playerId)),
+          }
         })
 
       const publicPlayers = (publicPlayersResult.data || [])
@@ -1374,7 +1432,7 @@ export default function CoachPlayers() {
               ? buildPlayerMatchStats(publicPlayerMatches)
               : null
 
-          return normalizePlayer(
+          const normalizedPlayer = normalizePlayer(
             {
               ...row,
               user_id: linkedUserId,
@@ -1438,6 +1496,14 @@ export default function CoachPlayers() {
               ? clubById.get(String(row.club_id)) || null
               : null
           )
+
+          return {
+            ...normalizedPlayer,
+            hasActiveCoach:
+              linkedUserId
+                ? playersWithActiveCoach.has(String(linkedUserId))
+                : false,
+          }
         })
         .filter(player => player.id)
 
@@ -1564,15 +1630,28 @@ export default function CoachPlayers() {
 
   const availablePlayers = useMemo(
     () =>
+      players.filter(
+        player =>
+          !player.assigned &&
+          !player.pending &&
+          !player.hasActiveCoach
+      ),
+    [players]
+  )
+
+  // Keep public players searchable even when another coach is already assigned.
+  // They remain viewable, but the request action is disabled.
+  const searchablePlayers = useMemo(
+    () =>
       players.filter(player => !player.assigned && !player.pending),
     [players]
   )
 
   const searchResults = useMemo(() => {
     const keyword = playerSearch.trim().toLowerCase()
-    if (!keyword) return availablePlayers
+    if (!keyword) return searchablePlayers
 
-    return availablePlayers.filter(player =>
+    return searchablePlayers.filter(player =>
       [
         player.name,
         player.club,
@@ -1585,7 +1664,7 @@ export default function CoachPlayers() {
           .includes(keyword)
       )
     )
-  }, [availablePlayers, playerSearch])
+  }, [searchablePlayers, playerSearch])
 
   const handlePlayerCardClick = player => {
     if (!player?.id) return
@@ -1621,6 +1700,13 @@ export default function CoachPlayers() {
   const handleAddPlayer = async player => {
     if (!user?.id || !player?.id) return
 
+    if (player.hasActiveCoach) {
+      setError(
+        `${player.name} already has an active coach. You can still view the player profile, but another coaching request cannot be sent.`
+      )
+      return
+    }
+
     if (!player.isRegistered) {
       setError(
         'This is a public/demo player profile and is not linked to a registered account.'
@@ -1632,49 +1718,23 @@ export default function CoachPlayers() {
     setSavingId(player.id)
 
     try {
-      const { data, error: relationshipError } = await supabase
-        .from('coach_player_relationships')
-        .upsert(
-          {
-            player_user_id: player.id,
-            coach_user_id: user.id,
-            status: 'pending',
-            requested_by: 'coach',
-            message: null,
-            responded_at: null,
-          },
-          { onConflict: 'player_user_id,coach_user_id' }
+      const { data: relationshipId, error: requestError } = await supabase.rpc(
+        'coach_request_player_with_notification',
+        {
+          target_player_user_id: player.id,
+        }
+      )
+
+      if (requestError) throw requestError
+
+      if (!relationshipId) {
+        throw new Error(
+          `${player.name} already has an active coach, so another coaching request cannot be sent.`
         )
-        .select()
-        .single()
-
-      if (relationshipError) throw relationshipError
-
-      const coachName =
-        user?.user_metadata?.display_name ||
-        user?.user_metadata?.full_name ||
-        user?.user_metadata?.name ||
-        user?.email ||
-        'A coach'
-
-      const { error: notificationError } = await supabase
-        .from('notifications')
-        .insert({
-          user_id: player.id,
-          title: 'New coaching request',
-          message: `${coachName} sent you a coaching request.`,
-          type: 'info',
-          source_type: 'coach_request_received',
-          action_url: '/players?tab=coach',
-          is_read: false,
-        })
-
-      if (notificationError) {
-        console.error('Coach request notification error:', notificationError)
       }
 
       updatePlayerRelationship(player.id, {
-        relationshipId: data.id,
+        relationshipId,
         relationshipStatus: 'pending',
         requestedBy: 'coach',
         assigned: false,
@@ -1683,9 +1743,7 @@ export default function CoachPlayers() {
 
       setPlayerSearch('')
       setSuccess(
-        notificationError
-          ? `The coaching request was sent to ${player.name}, but the notification could not be created.`
-          : `A coaching request and notification were sent to ${player.name}. They must accept it before appearing in My Players.`
+        `A coaching request and notification were sent to ${player.name}. They must accept it before appearing in My Players.`
       )
     } catch (addError) {
       console.error('Add player error:', addError)
@@ -2508,7 +2566,7 @@ export default function CoachPlayers() {
                       borderRadius: 10,
                     }}
                   >
-                    <Avatar name={player.name} size={38} />
+                    <ProfileAvatar player={player} size={38} />
 
                     <div style={{ flex: 1 }}>
                       <div
@@ -2605,7 +2663,7 @@ export default function CoachPlayers() {
                       borderRadius: 10,
                     }}
                   >
-                    <Avatar name={player.name} size={38} />
+                    <ProfileAvatar player={player} size={38} />
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
@@ -2713,7 +2771,7 @@ export default function CoachPlayers() {
                         borderRadius: 10,
                       }}
                     >
-                      <Avatar name={player.name} size={38} />
+                      <ProfileAvatar player={player} size={38} />
 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
@@ -2825,7 +2883,7 @@ export default function CoachPlayers() {
                       color: '#0D1B3E',
                     }}
                   >
-                    Available players ({availablePlayers.length})
+                    Players ({searchablePlayers.length})
                   </div>
 
                   <button
@@ -2889,7 +2947,7 @@ export default function CoachPlayers() {
                         }}
                       >
                         <div className="coachAvailablePlayerAvatar">
-                          <Avatar name={player.name} size={32} />
+                          <ProfileAvatar player={player} size={32} />
                         </div>
 
                         <div
@@ -2914,39 +2972,85 @@ export default function CoachPlayers() {
                           >
                             {player.club} • {player.state || 'No state'}
                           </div>
-                        </div>
 
-                        <div className="coachAvailablePlayerActions">
-                          <LevelBadge level={player.level} />
-
-                          {player.isRegistered ? (
-                            <button
-                              type="button"
-                              className={styles.btnPrimary}
-                              disabled={savingId === player.id}
-                              onClick={event => {
-                                event.stopPropagation()
-                                handleAddPlayer(player)
-                              }}
-                              style={{
-                                fontSize: 11,
-                                padding: '4px 12px',
-                              }}
-                            >
-                              {savingId === player.id
-                                ? 'Sending...'
-                                : '+ Request'}
-                            </button>
-                          ) : (
+                          <div
+                            style={{
+                              marginTop: 5,
+                              display: 'flex',
+                              gap: 4,
+                              flexWrap: 'wrap',
+                            }}
+                          >
                             <span
                               style={{
-                                fontSize: 11,
-                                color: '#8892A4',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '2px 8px',
+                                borderRadius: 999,
+                                background: '#E8EFFE',
+                                color: '#1A5FFF',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {player.level}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 10,
+                                background: 'rgba(136,146,164,.14)',
+                                padding: '2px 8px',
+                                borderRadius: 20,
                                 fontWeight: 600,
                               }}
                             >
-                              View only
+                              {player.style}
                             </span>
+                          </div>
+                        </div>
+
+                        <div className="coachAvailablePlayerActions">
+                          {player.hasActiveCoach ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '5px 10px',
+                                minHeight: 30,
+                                borderRadius: 999,
+                                background: '#F3F4F6',
+                                color: '#6B7280',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Already has a coach
+                            </span>
+                          ) : (
+                            player.isRegistered && (
+                              <button
+                                type="button"
+                                className={styles.btnPrimary}
+                                disabled={savingId === player.id}
+                                onClick={event => {
+                                  event.stopPropagation()
+                                  handleAddPlayer(player)
+                                }}
+                                style={{
+                                  fontSize: 11,
+                                  padding: '5px 11px',
+                                  minHeight: 30,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {savingId === player.id
+                                  ? 'Sending...'
+                                  : '+ Request'}
+                              </button>
+                            )
                           )}
                         </div>
                       </div>
@@ -3007,7 +3111,7 @@ export default function CoachPlayers() {
                   }}
                 >
                   <div className="coachMyPlayerAvatar">
-                    <Avatar name={player.name} />
+                    <ProfileAvatar player={player} size={40} />
                   </div>
 
                   <div
@@ -3040,7 +3144,22 @@ export default function CoachPlayers() {
                         gap: 4,
                       }}
                     >
-                      <LevelBadge level={player.level} />
+                      <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '2px 8px',
+                                borderRadius: 999,
+                                background: '#E8EFFE',
+                                color: '#1A5FFF',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {player.level}
+                            </span>
                       <span
                         style={{
                           fontSize: 10,
@@ -3056,18 +3175,6 @@ export default function CoachPlayers() {
                   </div>
 
                   <div className="coachMyPlayerActions">
-                    <button
-                      type="button"
-                      className={styles.btnOutline}
-                      onClick={event => {
-                        event.stopPropagation()
-                        setProfilePlayerId(player.id)
-                      }}
-                      style={{ fontSize: 11 }}
-                    >
-                      Profile
-                    </button>
-
                     <button
                       type="button"
                       disabled={savingId === player.id}
@@ -3117,7 +3224,7 @@ export default function CoachPlayers() {
                       marginBottom: 16,
                     }}
                   >
-                    <Avatar name={selectedPlayer.name} size={44} />
+                    <ProfileAvatar player={selectedPlayer} size={44} />
 
                     <div style={{ flex: 1 }}>
                       <div
@@ -3223,7 +3330,22 @@ export default function CoachPlayers() {
                     marginTop: 7,
                   }}
                 >
-                  <LevelBadge level={profilePlayer.level} />
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      background: '#E8EFFE',
+                      color: '#1A5FFF',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      lineHeight: 1.4,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {profilePlayer.level}
+                  </span>
                   <span
                     style={{
                       fontSize: 10,
@@ -3761,7 +3883,23 @@ export default function CoachPlayers() {
 
                 {!profilePlayer.assigned &&
                   !profilePlayer.pending &&
-                  profilePlayer.isRegistered && (
+                  profilePlayer.isRegistered &&
+                  (profilePlayer.hasActiveCoach ? (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '8px 12px',
+                        borderRadius: 999,
+                        background: '#F3F4F6',
+                        color: '#6B7280',
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Already has a coach
+                    </span>
+                  ) : (
                     <button
                       type="button"
                       className={styles.btnPrimary}
@@ -3774,7 +3912,7 @@ export default function CoachPlayers() {
                         ? 'Sending...'
                         : '+ Send coaching request'}
                     </button>
-                  )}
+                  ))}
               </div>
             </div>
           </div>
