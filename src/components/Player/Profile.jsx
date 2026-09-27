@@ -822,6 +822,10 @@ export default function Profile() {
     setupData?.endurance_level ||
     'Not set'
 
+  const playingLevel =
+    setupData?.playing_level ||
+    'Not set'
+
   const mindset =
     setupData?.player_type ||
     setupData?.under_pressure ||
@@ -2096,7 +2100,8 @@ export default function Profile() {
                 { label: 'Strength', value: strength },
                 { label: 'Weakness', value: weakness },
                 { label: 'What player are you?', value: playerMindsetText },
-                { label: 'Endurance Level', value: enduranceLevel, fullWidth: true },
+                { label: 'Playing Level', value: playingLevel },
+                { label: 'Endurance Level', value: enduranceLevel },
               ].map(item => (
                 <div
                   key={item.label}

@@ -22,6 +22,19 @@ const C = {
 // can be opened from another phone, Wi-Fi network, or mobile data.
 const APP_ORIGIN = "https://fyp-shutter-track.vercel.app";
 
+const PLAYING_LEVEL_OPTIONS = [
+  "Lower Beginner",
+  "Beginner",
+  "Upper Beginner",
+  "Lower Intermediate",
+  "Intermediate",
+  "Upper Intermediate",
+  "Lower Advanced",
+  "Advanced",
+  "Upper Advanced",
+  "Elite",
+];
+
 const REPORT_REASON_OPTIONS = [
   "Harassment or bullying",
   "Fake or misleading profile",
@@ -550,7 +563,26 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div className={styles.card}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-          <div className={styles.av} style={{ width: 48, height: 48, fontSize: 16 }}>{p.init}</div>
+          {p.avatarUrl ? (
+            <img
+              src={p.avatarUrl}
+              alt={`${p.name} profile`}
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                objectFit: "cover",
+                flexShrink: 0,
+              }}
+            />
+          ) : (
+            <div
+              className={styles.av}
+              style={{ width: 48, height: 48, fontSize: 16, flexShrink: 0 }}
+            >
+              {p.init}
+            </div>
+          )}
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{p.name}</div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{p.club} · {p.state}</div>
@@ -953,6 +985,8 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
             gap: 12,
           }}
         >
+          <SmallInfo label="Playing level" value={p.level} />
+          <SmallInfo label="Preferred event" value={p.preferredEvent} />
           <SmallInfo label="Style" value={p.setupStyle || p.style} />
           <SmallInfo label="Strength" value={p.setupStrength} />
           <SmallInfo label="What player are you?" value={p.setupPlayerType} />
@@ -1840,7 +1874,7 @@ export default function Players() {
       if (user?.id) {
         const { data: ownSetupData, error: ownSetupError } = await supabase
           .from("player_setup")
-          .select("preferred_event, play_style, current_weakness, biggest_weakness")
+          .select("preferred_event, playing_level, play_style, current_weakness, biggest_weakness")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -1855,13 +1889,10 @@ export default function Players() {
       }
 
       const currentPlayerLevel =
-        ownSetup?.preferred_event
-          ? `${ownSetup.preferred_event} Player`
-          : currentPlayerProfile?.level ||
-            currentPlayerProfile?.skill_level ||
-            currentPlayerProfile?.player_category ||
-            currentPlayerProfile?.category ||
-            "";
+        ownSetup?.playing_level ||
+        currentPlayerProfile?.level ||
+        currentPlayerProfile?.skill_level ||
+        "";
 
       const currentPlayerStyle =
         ownSetup?.play_style ||
@@ -2022,13 +2053,36 @@ export default function Players() {
             userId: player.user_id || null,
             source: "registered",
             init: player.display_name?.charAt(0)?.toUpperCase() || "?",
-            name: player.display_name || "Unknown",
-            club: player.club || acceptedClubByUserId.get(String(player.user_id)) || player.external_club || "No club",
-            state: player.state || player.location || "-",
+            avatarUrl:
+              player.profile_photo_url ||
+              publicPlayer?.profile_photo_url ||
+              publicPlayer?.avatar_url ||
+              null,
+            name: player.display_name || publicPlayer?.name || "Unknown",
+            club:
+              player.club ||
+              acceptedClubByUserId.get(String(player.user_id)) ||
+              publicPlayer?.club ||
+              player.external_club ||
+              "No club",
+            state:
+              player.state ||
+              player.location ||
+              publicPlayer?.state ||
+              publicPlayer?.location ||
+              "-",
             level:
-              setup?.preferred_event
-                ? `${setup.preferred_event} Player`
-                : player.level || player.skill_level || player.player_category || player.category || "Beginner",
+              player.level ||
+              player.skill_level ||
+              setup?.playing_level ||
+              "Not specified",
+            preferredEvent:
+              setup?.preferred_event ||
+              player.player_category ||
+              player.category ||
+              publicPlayer?.preferred_event ||
+              publicPlayer?.player_category ||
+              null,
             style:
               setup?.play_style ||
               player.playing_style ||
@@ -2076,18 +2130,60 @@ export default function Players() {
               }`;
             })(),
 
-            hand: player.dominant_hand || player.playing_hand || player.hand || "-",
+            hand:
+              player.dominant_hand ||
+              player.playing_hand ||
+              player.hand ||
+              publicPlayer?.dominant_hand ||
+              publicPlayer?.playing_hand ||
+              publicPlayer?.hand ||
+              "-",
             gender:
-              player.show_gender === true
-                ? player.gender || null
+              (player.show_gender === true || publicPlayer?.show_gender === true)
+                ? (player.gender || publicPlayer?.gender || null)
                 : null,
-            showGender: player.show_gender === true,
-            startedPlayingAge: player.started_playing_age !== null && player.started_playing_age !== undefined ? Number(player.started_playing_age) : null,
-            experienceYears: calculatePlayerExperience(player),
-            playingVideos: publicVideosByPlayerId.get(String(player.id)) || [],
-            videoUrl: publicVideosByPlayerId.get(String(player.id))?.[0]?.url || null,
-            videoTitle: publicVideosByPlayerId.get(String(player.id))?.[0]?.title || "Playing video",
-            ig: player.instagram || null,
+            showGender:
+              player.show_gender === true ||
+              publicPlayer?.show_gender === true,
+            startedPlayingAge:
+              player.started_playing_age !== null &&
+              player.started_playing_age !== undefined
+                ? Number(player.started_playing_age)
+                : publicPlayer?.started_playing_age !== null &&
+                    publicPlayer?.started_playing_age !== undefined
+                  ? Number(publicPlayer.started_playing_age)
+                  : null,
+            experienceYears: calculateExperienceYears(
+              player.date_of_birth || publicPlayer?.date_of_birth,
+              player.started_playing_age ?? publicPlayer?.started_playing_age,
+              player.experience_years ??
+                player.years_experience ??
+                publicPlayer?.experience_years ??
+                publicPlayer?.years_experience ??
+                0
+            ),
+            playingVideos:
+              publicVideosByPlayerId.get(String(player.id)) ||
+              (publicPlayer?.id
+                ? publicVideosByPlayerId.get(String(publicPlayer.id))
+                : []) ||
+              [],
+            videoUrl:
+              publicVideosByPlayerId.get(String(player.id))?.[0]?.url ||
+              (publicPlayer?.id
+                ? publicVideosByPlayerId.get(String(publicPlayer.id))?.[0]?.url
+                : null) ||
+              publicPlayer?.video_url ||
+              publicPlayer?.playing_video_url ||
+              null,
+            videoTitle:
+              publicVideosByPlayerId.get(String(player.id))?.[0]?.title ||
+              (publicPlayer?.id
+                ? publicVideosByPlayerId.get(String(publicPlayer.id))?.[0]?.title
+                : null) ||
+              publicPlayer?.video_title ||
+              "Playing video",
+            ig: player.instagram || publicPlayer?.instagram || null,
             racket: mainEquipment.racket,
             stringName: mainEquipment.stringName,
             stringTension: mainEquipment.stringTension,
@@ -2203,10 +2299,23 @@ export default function Players() {
             userId: player.user_id || null,
             source: "public",
             init: player.name?.charAt(0)?.toUpperCase() || "?",
+            avatarUrl:
+              player.profile_photo_url ||
+              player.avatar_url ||
+              null,
             name: player.name || "Unknown",
             club: player.club || "-",
             state: player.state || "-",
-            level: player.level || "Beginner",
+            level:
+              player.level ||
+              setup?.playing_level ||
+              "Not specified",
+            preferredEvent:
+              setup?.preferred_event ||
+              player.preferred_event ||
+              player.player_category ||
+              player.category ||
+              null,
             style: player.style || "All-round",
             setupStyle:
               setup?.play_style ||
@@ -2685,13 +2794,27 @@ export default function Players() {
   async function respondToIncomingCoachRequest(coach, nextStatus) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return alert("Please log in again.");
-    const { error } = await supabase.from("coach_player_relationships").update({ status: nextStatus, responded_at: new Date().toISOString() }).eq("player_user_id", user.id).eq("coach_user_id", coach.userId).eq("status", "pending").eq("requested_by", "coach");
+
+    const { error } = await supabase.rpc(
+      "respond_to_coach_request_with_notification",
+      {
+        target_coach_user_id: coach.userId,
+        next_status: nextStatus,
+      },
+    );
+
     if (error) {
       console.error("Failed to respond to coach request:", error);
       return alert(error.message || "Failed to respond to the coach request.");
     }
+
     await fetchData();
-    alert(nextStatus === "accepted" ? `${coach.name} is now your coach.` : `You declined ${coach.name}'s request.`);
+
+    alert(
+      nextStatus === "accepted"
+        ? `${coach.name} is now your coach. The coach has been notified.`
+        : `You declined ${coach.name}'s request. The coach has been notified.`,
+    );
   }
 
   async function acceptIncomingCoachRequest(coach) { await respondToIncomingCoachRequest(coach, "accepted"); }
@@ -3114,7 +3237,10 @@ export default function Players() {
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
               <input className={styles.formInput} style={{ flex: 1, minWidth: 160 }} placeholder="Search by name, club or state..." value={search} onChange={(event) => setSearch(event.target.value)} />
               <select className={styles.formSelect} style={{ width: 130 }} value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
-                <option value="">All levels</option><option>Beginner</option><option>Intermediate</option><option>Advanced</option>
+                <option value="">All levels</option>
+                {PLAYING_LEVEL_OPTIONS.map((level) => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
               </select>
               <select className={styles.formSelect} style={{ width: 130 }} value={styleFilter} onChange={(event) => setStyleFilter(event.target.value)}>
                 <option value="">All styles</option><option>Aggressive</option><option>Defensive</option><option>All-round</option><option>Attacking</option>
@@ -3129,7 +3255,21 @@ export default function Players() {
                 const isSelected = selected?.id === player.id;
                 return (
                   <div key={player.id} onClick={() => openPlayerDetail(player)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 16, cursor: "pointer", background: isSelected ? C.soft : C.card, border: isSelected ? "2px solid #1A5FFF" : `1.5px solid ${C.line}` }}>
-                    <div className={styles.av}>{player.init}</div>
+                    {player.avatarUrl ? (
+                      <img
+                        src={player.avatarUrl}
+                        alt={`${player.name} profile`}
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: "50%",
+                          objectFit: "cover",
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : (
+                      <div className={styles.av}>{player.init}</div>
+                    )}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>{player.name}</div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{player.club} · {player.state}</div>
@@ -3176,7 +3316,17 @@ export default function Players() {
             <div className={styles.card}>
               <div className={styles.cardTitle}>Find suitable partner</div>
               <FormSelect label="Game type" value={partnerCriteria.gameType} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, gameType: value }))} options={["Singles", "Doubles", "Mixed Doubles"]} />
-              <FormSelect label="Preferred level" value={partnerCriteria.level} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, level: value }))} options={["Any", "Beginner", "Intermediate", "Advanced"]} />
+              <FormSelect
+                label="Preferred level"
+                value={partnerCriteria.level}
+                onChange={(value) =>
+                  setPartnerCriteria((previous) => ({
+                    ...previous,
+                    level: value,
+                  }))
+                }
+                options={["Any", ...PLAYING_LEVEL_OPTIONS]}
+              />
               <FormSelect label="Preferred style" value={partnerCriteria.style} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, style: value }))} options={["Auto", "Any", "Aggressive", "Defensive", "All-round", "Attacking"]} />
               <FormSelect label="State" value={partnerCriteria.state} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, state: value }))} options={["Any", "Penang", "Selangor", "Kuala Lumpur", "Johor"]} />
               <FormSelect label="Goal" value={partnerCriteria.goal} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, goal: value }))} options={["Casual", "Training", "Tournament"]} />

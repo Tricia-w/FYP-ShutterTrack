@@ -50,13 +50,16 @@ export default function Layout() {
 
   const [hasPlayerProfile, setHasPlayerProfile] =
     useState(false)
+
   const [hasCoachProfile, setHasCoachProfile] =
     useState(false)
+
   const [checkingModes, setCheckingModes] =
     useState(true)
 
   const [playerModeProfile, setPlayerModeProfile] =
     useState(null)
+
   const [coachModeProfile, setCoachModeProfile] =
     useState(null)
 
@@ -79,13 +82,13 @@ export default function Layout() {
         await Promise.all([
           supabase
             .from('player_profiles')
-            .select('id, user_id, display_name, club')
+            .select('id, user_id, display_name, club, profile_photo_url')
             .eq('user_id', user.id)
             .maybeSingle(),
 
           supabase
             .from('coach_profiles')
-            .select('id, user_id, display_name, club')
+            .select('id, user_id, display_name, club, avatar_url')
             .eq('user_id', user.id)
             .maybeSingle(),
         ])
@@ -147,6 +150,7 @@ export default function Layout() {
       setCheckingModes(false)
     }
   }, [
+
     accountRole,
     hasCoachAccess,
     hasPlayerAccess,
@@ -168,6 +172,7 @@ export default function Layout() {
    * in this browser, and also listen for Supabase updates made from
    * another account/session, such as when a coach accepts a request.
    */
+
   useEffect(() => {
     if (!user?.id) return undefined
 
@@ -240,6 +245,7 @@ export default function Layout() {
    * The event data is shown immediately, then the latest values
    * are reloaded from Supabase.
    */
+
   useEffect(() => {
     const handleProfileUpdated = async (event) => {
       if (event?.detail) {
@@ -320,7 +326,10 @@ export default function Layout() {
     mode === 'coach'
       ? coachModeProfile || sidebarProfile || profile || {}
       : playerModeProfile || sidebarProfile || profile || {}
-
+  const activeSidebarAvatar =
+    mode === 'coach'
+      ? activeProfile?.avatar_url || sidebarAvatar || ''
+      : activeProfile?.profile_photo_url || sidebarAvatar || ''
   const displayName =
     activeProfile?.display_name ||
     activeProfile?.full_name ||
@@ -404,6 +413,7 @@ export default function Layout() {
           sidebarCollapsed ? styles.sidebarCollapsed : ''
         }`}
       >
+
         {/* Logo */}
         <div className={styles.sidebarLogo}>
           <div className={styles.logoMark}>
@@ -621,7 +631,7 @@ export default function Layout() {
               </svg>
               Dashboard
             </NavLink>
-
+            
             <NavLink
               to="/coach/players"
               className={navClass}
@@ -871,7 +881,7 @@ export default function Layout() {
               </svg>
               Dashboard
             </NavLink>
-
+            
             <div
               className={styles.navLabel}
               style={{ marginTop: 14 }}
@@ -1024,7 +1034,7 @@ export default function Layout() {
               </svg>
               Players & Opponents
             </NavLink>
-
+            
             <NavLink
               to="/clubs"
               className={navClass}
@@ -1052,7 +1062,7 @@ export default function Layout() {
               </svg>
               Clubs
             </NavLink>
-
+            
             <div
               className={styles.navLabel}
               style={{ marginTop: 14 }}
@@ -1092,10 +1102,10 @@ export default function Layout() {
         {/* User information */}
         <div className={styles.sidebarUser}>
           <div className={styles.userAv}>
-            {sidebarAvatar ? (
+            {activeSidebarAvatar ? (
               <img
-                src={sidebarAvatar}
-                alt="Profile"
+                src={activeSidebarAvatar}
+                alt={`${displayName} profile`}
                 style={{
                   width: '100%',
                   height: '100%',
