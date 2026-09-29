@@ -1479,8 +1479,13 @@ function RecoveryModal({
   const [uploadedBpmFile, setUploadedBpmFile] = useState(null)
   const [cropMode, setCropMode] = useState(false)
   const [cropRect, setCropRect] = useState(null)
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [cameraError, setCameraError] = useState('')
 
   const fileInputRef = useRef(null)
+  const cameraVideoRef = useRef(null)
+  const cameraCanvasRef = useRef(null)
+  const cameraStreamRef = useRef(null)
   const cropImageRef = useRef(null)
   const cropDragStartRef = useRef(null)
   const ocrCancelledRef = useRef(false)
@@ -1492,6 +1497,33 @@ function RecoveryModal({
       }
     }
   }, [imagePreview])
+
+  useEffect(() => {
+    if (
+      cameraOpen &&
+      cameraVideoRef.current &&
+      cameraStreamRef.current
+    ) {
+      cameraVideoRef.current.srcObject =
+        cameraStreamRef.current
+
+      cameraVideoRef.current
+        .play()
+        .catch(() => {})
+    }
+  }, [cameraOpen])
+
+  useEffect(() => {
+    return () => {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current
+          .getTracks()
+          .forEach(track => track.stop())
+
+        cameraStreamRef.current = null
+      }
+    }
+  }, [])
 
   const isValidBpm = value => {
     const bpm = Number(value)
@@ -3559,6 +3591,140 @@ function RecoveryModal({
     }
   }
 
+  const stopBpmCamera = () => {
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.pause()
+      cameraVideoRef.current.srcObject = null
+    }
+
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current
+        .getTracks()
+        .forEach(track => track.stop())
+
+      cameraStreamRef.current = null
+    }
+
+    setCameraOpen(false)
+  }
+
+  const startBpmCamera = async () => {
+    setCameraError('')
+
+    if (
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+      setCameraError(
+        'Camera access is not supported in this browser. Use Upload BPM Image instead.'
+      )
+      return
+    }
+
+    stopBpmCamera()
+
+    try {
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: {
+              ideal: 'environment',
+            },
+          },
+          audio: false,
+        })
+
+      cameraStreamRef.current = stream
+      setCameraOpen(true)
+    } catch (error) {
+      console.error(
+        'Unable to open BPM camera:',
+        error
+      )
+
+      setCameraError(
+        window.isSecureContext
+          ? 'Camera permission was blocked or the camera is unavailable.'
+          : 'Camera access requires HTTPS. Open ShuttleTrack using the deployed HTTPS link.'
+      )
+    }
+  }
+
+  const captureBpmPhoto = async () => {
+    const video = cameraVideoRef.current
+    const canvas = cameraCanvasRef.current
+
+    if (!video || !canvas) {
+      setCameraError(
+        'Camera is not ready yet. Please try again.'
+      )
+      return
+    }
+
+    const width =
+      video.videoWidth ||
+      video.clientWidth
+
+    const height =
+      video.videoHeight ||
+      video.clientHeight
+
+    if (!width || !height) {
+      setCameraError(
+        'Camera is still starting. Please wait a moment and try again.'
+      )
+      return
+    }
+
+    canvas.width = width
+    canvas.height = height
+
+    const ctx =
+      canvas.getContext('2d')
+
+    ctx.drawImage(
+      video,
+      0,
+      0,
+      width,
+      height
+    )
+
+    const blob =
+      await new Promise(resolve => {
+        canvas.toBlob(
+          resolve,
+          'image/jpeg',
+          0.92
+        )
+      })
+
+    if (!blob) {
+      setCameraError(
+        'Unable to capture the photo. Please try again.'
+      )
+      return
+    }
+
+    const file =
+      new File(
+        [blob],
+        `bpm-${Date.now()}.jpg`,
+        {
+          type: 'image/jpeg',
+        }
+      )
+
+    stopBpmCamera()
+
+    await handleBpmImage({
+      target: {
+        files: [file],
+        value: '',
+      },
+    })
+  }
+
   const handleBpmImage = async event => {
     const file =
       event.target.files?.[0]
@@ -4182,6 +4348,8 @@ function RecoveryModal({
   }
 
   const clearBpmImage = () => {
+    stopBpmCamera()
+
     if (imagePreview) {
       URL.revokeObjectURL(imagePreview)
     }
@@ -4197,6 +4365,7 @@ function RecoveryModal({
 
   const handleClose = () => {
     ocrCancelledRef.current = true
+    stopBpmCamera()
     onClose()
   }
 
@@ -4265,9 +4434,10 @@ function RecoveryModal({
 
       <div className={styles.formRow}>
         <label className={styles.formLabel}>
-          Or upload BPM image
+          Scan or upload BPM image
         </label>
 
+        {/* Existing image picker for screenshots/gallery/desktop. */}
         <input
           ref={fileInputRef}
           type="file"
@@ -4276,25 +4446,48 @@ function RecoveryModal({
           style={{ display: 'none' }}
         />
 
-        <button
-          type="button"
-          className={styles.btnOutline}
-          onClick={() => fileInputRef.current?.click()}
-          disabled={ocrLoading || saving}
+        <div
           style={{
-            width: '100%',
-            minHeight: 44,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
             gap: 8,
-            borderStyle: 'dashed',
           }}
         >
-          {ocrLoading
-            ? 'Reading BPM from image...'
-            : '📷 Upload BPM Image'}
-        </button>
+          <button
+            type="button"
+            className={styles.btnPrimary}
+            onClick={startBpmCamera}
+            disabled={ocrLoading || saving || cameraOpen}
+            style={{
+              width: '100%',
+              minHeight: 44,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+            }}
+          >
+            📷 Snap & Detect BPM
+          </button>
+
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={ocrLoading || saving || cameraOpen}
+            style={{
+              width: '100%',
+              minHeight: 44,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              borderStyle: 'dashed',
+            }}
+          >
+            🖼️ Upload BPM Image
+          </button>
+        </div>
 
         <div
           style={{
@@ -4304,10 +4497,96 @@ function RecoveryModal({
             lineHeight: 1.45,
           }}
         >
-          Upload a screenshot or photo showing the heart-rate reading.
-          The system will try automatic detection first. If needed, use
-          Crop & Rescan BPM to select the main number manually.
+          Snap a photo or upload an image to detect BPM automatically.
         </div>
+
+        {cameraError && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '9px 11px',
+              borderRadius: 9,
+              border: '1px solid #FECACA',
+              background: '#FEF2F2',
+              color: '#B91C1C',
+              fontSize: 11,
+              lineHeight: 1.45,
+              fontWeight: 700,
+            }}
+          >
+            {cameraError}
+          </div>
+        )}
+
+        {cameraOpen && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: 10,
+              borderRadius: 12,
+              border: '1px solid #DCE5F5',
+              background: '#F7F9FF',
+            }}
+          >
+            <div
+              style={{
+                marginBottom: 8,
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#0D1B3E',
+              }}
+            >
+              Point the camera at the BPM reading
+            </div>
+
+            <video
+              ref={cameraVideoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{
+                display: 'block',
+                width: '100%',
+                maxHeight: 360,
+                objectFit: 'cover',
+                borderRadius: 10,
+                background: '#000000',
+              }}
+            />
+
+            <canvas
+              ref={cameraCanvasRef}
+              style={{ display: 'none' }}
+            />
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 8,
+                marginTop: 10,
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={stopBpmCamera}
+                disabled={ocrLoading}
+              >
+                Cancel Camera
+              </button>
+
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={captureBpmPhoto}
+                disabled={ocrLoading}
+              >
+                📸 Capture & Scan
+              </button>
+            </div>
+          </div>
+        )}
 
         {imagePreview && (
           <div
