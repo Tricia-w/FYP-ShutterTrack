@@ -1266,14 +1266,44 @@ function getCoachVenueMapEmbedUrl(venue, state) {
   return `https://www.google.com/maps?q=${encodeURIComponent(locationText)}&output=embed`;
 }
 
-function CoachDetail({ coach, onRequest, onCancel, onAcceptIncoming, onDeclineIncoming, onReport, onRequestClub, onCancelClubRequest }) {
+function CoachDetail({
+  coach,
+  onRequest,
+  onCancel,
+  onAcceptIncoming,
+  onDeclineIncoming,
+  onReport,
+  onRequestClub,
+  onCancelClubRequest,
+  onSaveReview,
+}) {
   const [message, setMessage] = useState(coach.requestMessage || "");
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [showAllReviews, setShowAllReviews] = useState(false);
+  const [reviewRating, setReviewRating] = useState(coach.myReview?.rating || 0);
+  const [reviewText, setReviewText] = useState(coach.myReview?.review_text || "");
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+
   const requestStatus = coach.requestStatus;
-  const requestSentByCoach = requestStatus === "pending" && coach.requestedBy === "coach";
+  const requestSentByCoach =
+    requestStatus === "pending" && coach.requestedBy === "coach";
+
+  const latestReviews = Array.isArray(coach.latestReviews)
+    ? coach.latestReviews
+    : [];
+  const reviewCount = Number(coach.reviewCount || 0);
+  const averageRating = Number(coach.averageRating || 0);
+  const myReview = coach.myReview || null;
 
   useEffect(() => {
     setMessage(coach.requestMessage || "");
-  }, [coach.id, coach.requestMessage]);
+    setReviewRating(coach.myReview?.rating || 0);
+    setReviewText(coach.myReview?.review_text || "");
+    setShowReviewForm(false);
+    setShowAllReviews(false);
+    setReviewError("");
+  }, [coach.id, coach.requestMessage, coach.myReview]);
 
   const requestButtonLabel = ["rejected", "cancelled", "removed"].includes(requestStatus)
     ? "Send request again"
@@ -1400,6 +1430,494 @@ function CoachDetail({ coach, onRequest, onCancel, onAcceptIncoming, onDeclineIn
         {coach.coachingPhilosophy && <div style={{ marginTop: 16 }}><div className={styles.cardTitle}>Coaching philosophy</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{coach.coachingPhilosophy}</div></div>}
         {coach.achievements && <div style={{ marginTop: 16 }}><div className={styles.cardTitle}>Achievements</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{coach.achievements}</div></div>}
         {coach.instagram && <a href={`https://instagram.com/${coach.instagram.replace("@", "")}`} target="_blank" rel="noreferrer" style={{ display: "inline-flex", marginTop: 14, padding: "5px 12px", background: "#FFF0F6", border: "1px solid #FBC8DC", borderRadius: 20, textDecoration: "none", color: "#B5305A", fontSize: 11, fontWeight: 700 }}>{coach.instagram}</a>}
+
+        <div
+          style={{
+            marginTop: 22,
+            paddingTop: 18,
+            borderTop: `1px solid ${C.line}`,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <div className={styles.cardTitle} style={{ marginBottom: 3 }}>
+                Player reviews
+              </div>
+              <div style={{ fontSize: 12, color: C.muted }}>
+                {reviewCount > 0 ? (
+                  <>
+                    <strong style={{ color: "#F59E0B" }}>
+                      ★ {averageRating.toFixed(1)}
+                    </strong>{" "}
+                    · {reviewCount} review
+                    {reviewCount === 1 ? "" : "s"}
+                  </>
+                ) : (
+                  "No reviews yet"
+                )}
+              </div>
+            </div>
+
+            {requestStatus === "accepted" && (
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={() => {
+                  setReviewRating(coach.myReview?.rating || 0);
+                  setReviewText(coach.myReview?.review_text || "");
+                  setReviewError("");
+                  setShowReviewForm(true);
+                }}
+                style={{
+                  padding: "7px 12px",
+                  color: "#1A5FFF",
+                  borderColor: "#BFDBFE",
+                  background: "#EFF6FF",
+                }}
+              >
+                {myReview ? "Edit review" : "Write review"}
+              </button>
+            )}
+          </div>
+
+          {latestReviews.length > 0 ? (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {latestReviews.slice(0, 2).map((review) => (
+                  <div
+                    key={review.id}
+                    style={{
+                      padding: "11px 12px",
+                      borderRadius: 11,
+                      background: C.soft,
+                      border: `1px solid ${C.line}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        marginBottom: 5,
+                      }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 800, color: C.text }}>
+                        {review.player_name || "ShuttleTrack player"}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#F59E0B", fontWeight: 800 }}>
+                        {"★".repeat(Number(review.rating || 0))}
+                        <span style={{ color: "#D1D5DB" }}>
+                          {"★".repeat(Math.max(0, 5 - Number(review.rating || 0)))}
+                        </span>
+                      </div>
+                    </div>
+
+                    {review.review_text && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: C.text,
+                          lineHeight: 1.55,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {review.review_text}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 5, fontSize: 10, color: C.muted }}>
+                      {review.updated_at || review.created_at
+                        ? new Date(review.updated_at || review.created_at).toLocaleDateString(
+                            "en-MY",
+                            {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            },
+                          )
+                        : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {reviewCount > 2 && (
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  onClick={() => setShowAllReviews(true)}
+                  style={{
+                    width: "100%",
+                    marginTop: 10,
+                    color: "#1A5FFF",
+                    borderColor: "#BFDBFE",
+                    background: "#EFF6FF",
+                  }}
+                >
+                  View all reviews ({reviewCount})
+                </button>
+              )}
+            </>
+          ) : (
+            <div
+              style={{
+                padding: 13,
+                borderRadius: 11,
+                background: C.soft,
+                border: `1px dashed ${C.line}`,
+                color: C.muted,
+                fontSize: 12,
+                textAlign: "center",
+              }}
+            >
+              No player reviews yet.
+            </div>
+          )}
+        </div>
+
+        {showAllReviews && (
+          <div
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setShowAllReviews(false);
+              }
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 3550,
+              background: "rgba(13, 27, 62, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                width: "min(640px, 100%)",
+                maxHeight: "85vh",
+                overflowY: "auto",
+                background: C.card,
+                borderRadius: 18,
+                padding: 20,
+                boxShadow: "0 24px 60px rgba(13,27,62,0.28)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>
+                    All reviews
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
+                    ★ {averageRating.toFixed(1)} · {reviewCount} review
+                    {reviewCount === 1 ? "" : "s"}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  aria-label="Close all reviews"
+                  onClick={() => setShowAllReviews(false)}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 999,
+                    border: `1px solid ${C.line}`,
+                    background: C.soft,
+                    color: C.muted,
+                    cursor: "pointer",
+                    fontSize: 18,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {latestReviews.map((review) => (
+                  <div
+                    key={review.id}
+                    style={{
+                      padding: 13,
+                      borderRadius: 12,
+                      background: C.soft,
+                      border: `1px solid ${C.line}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>
+                        {review.player_name || "ShuttleTrack player"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#F59E0B", fontWeight: 800 }}>
+                        {"★".repeat(Number(review.rating || 0))}
+                        <span style={{ color: "#D1D5DB" }}>
+                          {"★".repeat(Math.max(0, 5 - Number(review.rating || 0)))}
+                        </span>
+                      </div>
+                    </div>
+
+                    {review.review_text && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: C.text,
+                          lineHeight: 1.6,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {review.review_text}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 6, fontSize: 10, color: C.muted }}>
+                      {review.updated_at || review.created_at
+                        ? new Date(review.updated_at || review.created_at).toLocaleDateString(
+                            "en-MY",
+                            {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            },
+                          )
+                        : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showReviewForm && (
+          <div
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !reviewSaving) {
+                setShowReviewForm(false);
+              }
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 3600,
+              background: "rgba(13, 27, 62, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                width: "min(520px, 100%)",
+                background: C.card,
+                borderRadius: 18,
+                padding: 20,
+                boxShadow: "0 24px 60px rgba(13,27,62,0.28)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>
+                    {myReview ? "Edit review" : "Review coach"}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
+                    Share your experience with {coach.name}.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={reviewSaving}
+                  onClick={() => setShowReviewForm(false)}
+                  aria-label="Close review form"
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 999,
+                    border: `1px solid ${C.line}`,
+                    background: C.soft,
+                    color: C.muted,
+                    cursor: "pointer",
+                    fontSize: 18,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: C.muted,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.6,
+                    marginBottom: 7,
+                  }}
+                >
+                  Rating
+                </div>
+
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[1, 2, 3, 4, 5].map((rating) => (
+                    <button
+                      key={rating}
+                      type="button"
+                      disabled={reviewSaving}
+                      onClick={() => setReviewRating(rating)}
+                      aria-label={`${rating} star rating`}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        padding: 2,
+                        cursor: "pointer",
+                        fontSize: 28,
+                        color: rating <= reviewRating ? "#F59E0B" : "#D1D5DB",
+                      }}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: C.muted,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.6,
+                    marginBottom: 7,
+                  }}
+                >
+                  Review
+                </label>
+                <textarea
+                  className={styles.formInput}
+                  rows={4}
+                  maxLength={800}
+                  value={reviewText}
+                  disabled={reviewSaving}
+                  onChange={(event) => setReviewText(event.target.value)}
+                  placeholder="Optional: share what was helpful about this coach."
+                  style={{
+                    width: "100%",
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <div
+                  style={{
+                    marginTop: 4,
+                    textAlign: "right",
+                    fontSize: 10,
+                    color: C.muted,
+                  }}
+                >
+                  {reviewText.length}/800
+                </div>
+              </div>
+
+              {reviewError && (
+                <div
+                  style={{
+                    marginBottom: 14,
+                    padding: 11,
+                    borderRadius: 10,
+                    background: "#FEF2F2",
+                    color: "#B91C1C",
+                    fontSize: 12,
+                  }}
+                >
+                  {reviewError}
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 9 }}>
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  disabled={reviewSaving}
+                  onClick={() => setShowReviewForm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  disabled={reviewSaving}
+                  onClick={async () => {
+                    setReviewSaving(true);
+                    setReviewError("");
+
+                    try {
+                      if (!Number.isInteger(Number(reviewRating)) || Number(reviewRating) < 1) {
+                        throw new Error("Please choose a rating from 1 to 5 stars.");
+                      }
+
+                      if (typeof onSaveReview !== "function") {
+                        throw new Error("Review function is not ready. Refresh the page and try again.");
+                      }
+
+                      await onSaveReview(coach, {
+                        rating: reviewRating,
+                        reviewText: reviewText.trim(),
+                      });
+                      setShowReviewForm(false);
+                    } catch (error) {
+                      setReviewError(error?.message || "Unable to save your review.");
+                    } finally {
+                      setReviewSaving(false);
+                    }
+                  }}
+                >
+                  {reviewSaving ? "Saving..." : myReview ? "Save changes" : "Submit review"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {requestStatus === "accepted" && (
           <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid ${C.line}` }}>
@@ -1532,6 +2050,7 @@ export default function Players() {
         clubsResult, acceptedMembershipsResult, playerMatchesResult,
         publicPlayerMatchesResult, directoryAccountsResult,
         playerSetupResult, verificationRequestResult, verificationResult,
+        coachReviewsResult,
       ] = await Promise.all([
         supabase.from("public_players").select("*").order("created_at", { ascending: true }),
         supabase.from("player_profiles").select("*").order("display_name", { ascending: true }),
@@ -1584,6 +2103,19 @@ export default function Players() {
             feedback
           `)
           .order("verified_at", { ascending: false }),
+        supabase
+          .from("coach_reviews")
+          .select(`
+            id,
+            coach_user_id,
+            player_user_id,
+            player_name,
+            rating,
+            review_text,
+            created_at,
+            updated_at
+          `)
+          .order("updated_at", { ascending: false }),
       ]);
 
       if (publicPlayerResult.error) console.error("Failed to load public players:", publicPlayerResult.error);
@@ -1602,6 +2134,7 @@ export default function Players() {
       if (playerSetupResult.error) console.error("Failed to load public player setup directory:", playerSetupResult.error);
       if (verificationRequestResult.error) console.error("Failed to load skill verification requests:", verificationRequestResult.error);
       if (verificationResult.error) console.error("Failed to load skill verifications:", verificationResult.error);
+      if (coachReviewsResult.error) console.error("Failed to load coach reviews:", coachReviewsResult.error);
 
       const acceptedClubByUserId = new Map();
       (acceptedMembershipsResult.data || []).forEach((row) => {
@@ -2427,6 +2960,16 @@ export default function Players() {
         ]),
       );
 
+      const reviewsByCoachUserId = new Map();
+      (coachReviewsResult.data || []).forEach((review) => {
+        if (!review?.coach_user_id) return;
+
+        const key = String(review.coach_user_id);
+        const current = reviewsByCoachUserId.get(key) || [];
+        current.push(review);
+        reviewsByCoachUserId.set(key, current);
+      });
+
       const formattedCoaches = (coachResult.data || [])
         .filter((coach) => {
           if (user && coach.user_id === user.id) return false;
@@ -2435,9 +2978,35 @@ export default function Players() {
           return true;
         })
         .map((coach) => {
-          const relationship = coachRelationshipData.find((item) => item.coach_user_id === coach.user_id);
-          const clubMatch = clubsByShortName.get(String(coach.club || "").trim().toUpperCase()) || null;
-          const clubMembership = clubMatch ? ownClubMemberships.find((membership) => membership.club_id === clubMatch.id) : null;
+          const relationship = coachRelationshipData.find(
+            (item) => item.coach_user_id === coach.user_id,
+          );
+          const clubMatch =
+            clubsByShortName.get(
+              String(coach.club || "").trim().toUpperCase(),
+            ) || null;
+          const clubMembership = clubMatch
+            ? ownClubMemberships.find(
+                (membership) => membership.club_id === clubMatch.id,
+              )
+            : null;
+
+          const coachReviews =
+            reviewsByCoachUserId.get(String(coach.user_id)) || [];
+          const reviewCount = coachReviews.length;
+          const averageRating =
+            reviewCount > 0
+              ? coachReviews.reduce(
+                  (total, review) => total + Number(review.rating || 0),
+                  0,
+                ) / reviewCount
+              : 0;
+          const myReview = user?.id
+            ? coachReviews.find(
+                (review) => String(review.player_user_id) === String(user.id),
+              ) || null
+            : null;
+
           return {
             id: coach.id,
             userId: coach.user_id,
@@ -2472,6 +3041,10 @@ export default function Players() {
             relationshipId: relationship?.id || null,
             clubMatch,
             clubMembershipStatus: clubMembership?.status || null,
+            reviewCount,
+            averageRating,
+            latestReviews: coachReviews.slice(0, 2),
+            myReview,
           };
         });
 
@@ -2860,6 +3433,66 @@ export default function Players() {
       console.error("Failed to cancel club request:", error);
       return alert(error.message || "Failed to cancel club request.");
     }
+    await fetchData();
+  }
+
+  async function saveCoachReview(coach, { rating, reviewText }) {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      throw new Error("Please log in again.");
+    }
+
+    if (!coach?.userId) {
+      throw new Error("This coach could not be identified.");
+    }
+
+    const relationship = coach.requestStatus === "accepted";
+
+    if (!relationship) {
+      throw new Error("Only a current player of this coach can submit a review.");
+    }
+
+    const numericRating = Number(rating);
+
+    if (!Number.isInteger(numericRating) || numericRating < 1 || numericRating > 5) {
+      throw new Error("Choose a rating from 1 to 5 stars.");
+    }
+
+    const { data: playerProfile, error: profileError } = await supabase
+      .from("player_profiles")
+      .select("display_name")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.warn("Unable to load player name for coach review:", profileError);
+    }
+
+    const playerName =
+      playerProfile?.display_name ||
+      user.user_metadata?.display_name ||
+      user.user_metadata?.full_name ||
+      "A player";
+
+    const { error } = await supabase.rpc(
+      "submit_coach_review_with_notification",
+      {
+        p_coach_user_id: coach.userId,
+        p_rating: numericRating,
+        p_review_text: reviewText || null,
+        p_player_name: playerName,
+      },
+    );
+
+    if (error) {
+      console.error("Failed to save coach review:", error);
+      throw error;
+    }
+
     await fetchData();
   }
 
@@ -3409,7 +4042,18 @@ export default function Players() {
           </div>
 
           <div className="playersDirectoryDesktopDetail">
-            {!selectedCoach ? <div className={styles.card} style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>Select a coach</div> : <CoachDetail key={`${selectedCoach.id}-${selectedCoach.requestStatus}`} coach={selectedCoach} onRequest={requestCoach} onCancel={cancelCoachRelationship} onAcceptIncoming={acceptIncomingCoachRequest} onDeclineIncoming={declineIncomingCoachRequest} onReport={openCoachReport} onRequestClub={requestCoachClub} onCancelClubRequest={cancelCoachClubRequest} />}
+            {!selectedCoach ? <div className={styles.card} style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>Select a coach</div> : <CoachDetail
+                key={`${selectedCoach.id}-${selectedCoach.requestStatus}-${selectedCoach.reviewCount}-${selectedCoach.myReview?.updated_at || ""}`}
+                coach={selectedCoach}
+                onRequest={requestCoach}
+                onCancel={cancelCoachRelationship}
+                onAcceptIncoming={acceptIncomingCoachRequest}
+                onDeclineIncoming={declineIncomingCoachRequest}
+                onReport={openCoachReport}
+                onRequestClub={requestCoachClub}
+                onCancelClubRequest={cancelCoachClubRequest}
+                onSaveReview={saveCoachReview}
+              />}
           </div>
         </div>
       )}
@@ -3592,6 +4236,7 @@ export default function Players() {
                 onReport={openCoachReport}
                 onRequestClub={requestCoachClub}
                 onCancelClubRequest={cancelCoachClubRequest}
+                onSaveReview={saveCoachReview}
               />
             </div>
           </div>

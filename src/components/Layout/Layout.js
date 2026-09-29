@@ -748,7 +748,7 @@ export default function Layout() {
                   strokeLinejoin="round"
                 />
               </svg>
-              Club Management
+              Club 
             </NavLink>
 
             <div

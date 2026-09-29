@@ -506,7 +506,7 @@ export default function NotificationBell({
                      error: existingError,
                   } = await supabase
                      .from("notifications")
-                     .select("id")
+                     .select("id, title, message, type")
                      .eq("user_id", uid)
                      .eq("source_type", reminder.source_type)
                      .eq("action_url", reminder.action_url)
@@ -519,19 +519,25 @@ export default function NotificationBell({
                      continue;
                   }
                   if (existing?.id) {
-                     const { error: updateError } = await supabase
-                        .from("notifications")
-                        .update({
-                           title: reminder.title,
-                           message: reminder.message,
-                           type: reminder.type,
-                        })
-                        .eq("id", existing.id);
-                     if (updateError) {
-                        console.error(
-                           "Update action plan reminder error:",
-                           updateError
-                        );
+                     const reminderChanged =
+                        existing.title !== reminder.title ||
+                        existing.message !== reminder.message ||
+                        existing.type !== reminder.type;
+                     if (reminderChanged) {
+                        const { error: updateError } = await supabase
+                           .from("notifications")
+                           .update({
+                              title: reminder.title,
+                              message: reminder.message,
+                              type: reminder.type,
+                           })
+                           .eq("id", existing.id);
+                        if (updateError) {
+                           console.error(
+                              "Update action plan reminder error:",
+                              updateError
+                           );
+                        }
                      }
                      continue;
                   }

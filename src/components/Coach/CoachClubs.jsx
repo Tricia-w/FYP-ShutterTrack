@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+//import { useNavigate } from "react-router-dom";
+import CoachNotificationBell from "../Notifications/CoachNotificationBell";
 import { supabase } from "../../lib/supabase";
 import styles from "../Layout/Pages.module.css";
 import Loader from "../Loader/Loader";
 import useLoadingDelay from "../Loader/LoadingDelay";
-import CoachNotificationBell from "../Notifications/CoachNotificationBell";
+
+
+
+// Local development continues to run on localhost.
+// Only links that are copied/shared with other people use the public Vercel app.
+const PUBLIC_APP_URL = "https://fyp-shutter-track.vercel.app";
 
 const C = {
   text: "var(--text, #0D1B3E)",
@@ -12,6 +20,7 @@ const C = {
   soft: "var(--soft, #F6F8FF)",
   line: "var(--line, #EEF1F8)",
 };
+
 
 
 function getVenueMapEmbedUrl(venue, club) {
@@ -76,9 +85,13 @@ function SmallInfo({ label, value }) {
   );
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, requestType }) {
   if (status === "accepted") {
     return <span className={styles.badgeGreen}>Joined</span>;
+  }
+
+  if (status === "pending" && requestType === "invite") {
+    return <span className={styles.badgeBlue}>Club invitation</span>;
   }
 
   if (status === "pending") {
@@ -315,7 +328,7 @@ function CreateClubForm({ submitting, onCreate }) {
               background: "#EAF0FF",
               color: "#1A5FFF",
               fontSize: form.shortName.length > 4 ? 14 : 22,
-              fontWeight: 700,
+              fontWeight: 900,
               padding: 6,
             }}
           >
@@ -559,7 +572,7 @@ function CreateClubForm({ submitting, onCreate }) {
                 <div
                   style={{
                     fontSize: 13,
-                    fontWeight: 700,
+                    fontWeight: 900,
                     color: C.text,
                   }}
                 >
@@ -762,6 +775,9 @@ function ClubDetail({
   onJoin,
   onCancel,
   onLeave,
+  onAcceptInvite,
+  onDeclineInvite,
+  onAcceptInviteLink,
   onViewMember,
 }) {
   const busy = actionId === club.id;
@@ -799,7 +815,7 @@ function ClubDetail({
           )}
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>
               {club.shortName
                 ? `${club.shortName} · ${club.name}`
                 : club.name}
@@ -830,7 +846,10 @@ function ClubDetail({
                 <span className={styles.badgeAmber}>Club owner</span>
               )}
 
-              <StatusBadge status={club.membershipStatus} />
+              <StatusBadge
+                status={club.membershipStatus}
+                requestType={club.membershipRequestType}
+              />
             </div>
           </div>
         </div>
@@ -892,7 +911,7 @@ function ClubDetail({
                     <div
                       style={{
                         fontSize: 14,
-                        fontWeight: 700,
+                        fontWeight: 900,
                         color: C.text,
                       }}
                     >
@@ -1091,6 +1110,24 @@ function ClubDetail({
         >
           {busy ? "Leaving..." : "Leave club"}
         </button>
+      ) : club.membershipStatus === "pending" && club.membershipRequestType === "invite" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button
+            className={styles.btnOutline}
+            disabled={busy}
+            onClick={() => onDeclineInvite(club)}
+            style={{ color: "#DC2626", borderColor: "#FECACA" }}
+          >
+            {busy ? "Updating..." : "Decline invitation"}
+          </button>
+          <button
+            className={styles.btnPrimary}
+            disabled={busy}
+            onClick={() => onAcceptInvite(club)}
+          >
+            {busy ? "Joining..." : "Accept invitation"}
+          </button>
+        </div>
       ) : club.membershipStatus === "pending" ? (
         <button
           className={styles.btnOutline}
@@ -1104,6 +1141,15 @@ function ClubDetail({
           }}
         >
           {busy ? "Cancelling..." : "Cancel join request"}
+        </button>
+      ) : club.isInviteLink ? (
+        <button
+          className={styles.btnPrimary}
+          disabled={busy}
+          onClick={() => onAcceptInviteLink(club)}
+          style={{ width: "100%" }}
+        >
+          {busy ? "Joining..." : "Accept club invitation"}
         </button>
       ) : (
         <button
@@ -1223,7 +1269,7 @@ function ClubPlayerProfileModal({ member, onClose }) {
               </div>
 
               <div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>
+                <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
                   {privateDisplayName}
                 </div>
 
@@ -1283,7 +1329,7 @@ function ClubPlayerProfileModal({ member, onClose }) {
             <div
               style={{
                 fontSize: 15,
-                fontWeight: 700,
+                fontWeight: 900,
                 color: C.text,
               }}
             >
@@ -1398,7 +1444,7 @@ function ClubPlayerProfileModal({ member, onClose }) {
             )}
 
             <div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
                 {displayName}
               </div>
 
@@ -1773,7 +1819,7 @@ function EditClubModal({
             marginBottom: 18,
           }}
         >
-          <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
             Edit club
           </div>
 
@@ -1838,7 +1884,7 @@ function EditClubModal({
                 background: "#EAF0FF",
                 color: "#1A5FFF",
                 fontSize: form.shortName.length > 4 ? 14 : 22,
-                fontWeight: 700,
+                fontWeight: 900,
                 padding: 6,
               }}
             >
@@ -2096,7 +2142,7 @@ function EditClubModal({
                   <div
                     style={{
                       fontSize: 13,
-                      fontWeight: 700,
+                      fontWeight: 900,
                       color: C.text,
                     }}
                   >
@@ -2294,10 +2340,16 @@ function ManageClub({
   club,
   requests,
   members,
+  invitations,
+  invitePlayers,
+  inviteBusyId,
   busyId,
   onRespond,
   onRemoveMember,
   onToggleMembership,
+  onInvitePlayer,
+  onCancelInvitation,
+  onCopyInviteLink,
   onViewPlayer,
   onEditClub,
 }) {
@@ -2378,6 +2430,73 @@ function ManageClub({
             </div>
           </div>
         </div>
+      </div>
+
+      <div className={styles.card}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
+          <div>
+            <div className={styles.cardTitle} style={{ marginBottom: 3 }}>Invite players</div>
+            <div style={{ fontSize: 11, color: C.muted }}>
+              Invite an existing ShuttleTrack player or share a club invitation link.
+            </div>
+          </div>
+          <button type="button" className={styles.btnOutline} onClick={() => onCopyInviteLink(club)}>
+            Copy invite link
+          </button>
+        </div>
+
+        {invitePlayers.length === 0 ? (
+          <div style={{ fontSize: 13, color: C.muted }}>
+            No available players to invite.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {invitePlayers.slice(0, 12).map((player) => (
+              <div key={player.user_id} className={styles.listRow} style={{ alignItems: "center" }}>
+                {player.profile_photo_url ? (
+                  <img src={player.profile_photo_url} alt={`${player.display_name || "Player"} profile`} style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} />
+                ) : (
+                  <div className={styles.av}>{(player.display_name || "P").charAt(0).toUpperCase()}</div>
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{player.display_name || "Player"}</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>{player.state || "State not set"}</div>
+                </div>
+                <button type="button" className={styles.btnPrimary} disabled={inviteBusyId === player.user_id} onClick={() => onInvitePlayer(player)}>
+                  {inviteBusyId === player.user_id ? "Inviting..." : "Invite"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={styles.card}>
+        <div className={styles.cardTitle}>Sent invitations ({invitations.length})</div>
+        {invitations.length === 0 ? (
+          <div style={{ fontSize: 13, color: C.muted }}>No pending invitations.</div>
+        ) : (
+          invitations.map((invite) => (
+            <div key={invite.id} className={styles.listRow} style={{ alignItems: "center" }}>
+              <div className={styles.av}>{(invite.playerName || "P").charAt(0).toUpperCase()}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{invite.playerName}</div>
+                <div style={{ fontSize: 11, color: C.muted }}>Invitation pending</div>
+              </div>
+              <button type="button" className={styles.btnOutline} disabled={busyId === invite.id} onClick={() => onCancelInvitation(invite)} style={{ color: "#DC2626", borderColor: "#FECACA" }}>
+                Cancel
+              </button>
+            </div>
+          ))
+        )}
       </div>
 
       <div className={styles.card}>
@@ -2550,12 +2669,17 @@ function ManageClub({
 }
 
 export default function CoachClubs() {
+  const [clubSearchParams] = useSearchParams();
+
   const [tab, setTab] = useState("find");
   const [clubs, setClubs] = useState([]);
   const [selectedClub, setSelectedClub] = useState(null);
   const [ownedClub, setOwnedClub] = useState(null);
   const [requests, setRequests] = useState([]);
   const [members, setMembers] = useState([]);
+  const [invitations, setInvitations] = useState([]);
+  const [invitePlayers, setInvitePlayers] = useState([]);
+  const [inviteBusyId, setInviteBusyId] = useState(null);
   const [selectedMemberProfile, setSelectedMemberProfile] = useState(null);
   const [loadingMemberProfile, setLoadingMemberProfile] = useState(false);
   const [editingClub, setEditingClub] = useState(null);
@@ -2570,6 +2694,50 @@ export default function CoachClubs() {
   const [manageBusyId, setManageBusyId] = useState(null);
 
   const showLoader = useLoadingDelay(loading, 350);
+
+  // Read the shared invite directly from the URL. A copied invitation always
+  // points to the public Vercel app, while normal development can stay on localhost.
+  const inviteClubId = String(
+    clubSearchParams.get("clubInvite") || "",
+  ).trim();
+
+  const invitedClubFromUrl = useMemo(() => {
+    if (!inviteClubId) return null;
+
+    const match = clubs.find(
+      (club) => String(club.id || "").trim() === inviteClubId,
+    );
+
+    if (!match) return null;
+
+    return {
+      ...match,
+      isInviteLink: match.membershipStatus !== "accepted",
+    };
+  }, [clubs, inviteClubId]);
+
+  // IMPORTANT: when ?clubInvite=... exists, that club is the actual active
+  // selection. This makes the left card highlighted and renders ClubDetail on
+  // the right even if a normal selectedClub state has not been set yet.
+  const effectiveSelectedClub = invitedClubFromUrl || selectedClub;
+
+  useEffect(() => {
+    if (!inviteClubId || loading || clubs.length === 0) return;
+
+    const invitedClub = clubs.find(
+      (club) => String(club.id || "").trim() === inviteClubId,
+    );
+
+    if (!invitedClub) return;
+
+    setTab("find");
+    setSearch("");
+    setStateFilter("");
+    setSelectedClub({
+      ...invitedClub,
+      isInviteLink: invitedClub.membershipStatus !== "accepted",
+    });
+  }, [clubs, inviteClubId, loading]);
 
   const fetchClubs = useCallback(async () => {
     setLoading(true);
@@ -2856,9 +3024,18 @@ export default function CoachClubs() {
           memberCount: countByClub.get(club.id) || 0,
           membershipId: membership?.id || null,
           membershipStatus: membership?.status || null,
+          membershipRequestType: membership?.request_type || "request",
           members: membersByClubId.get(club.id) || [],
         };
       });
+
+      if (inviteClubId) {
+        formatted.forEach((club) => {
+          club.isInviteLink =
+            String(club.id || "").trim() === inviteClubId &&
+            club.membershipStatus !== "accepted";
+        });
+      }
 
       const nextOwnedClub =
         formatted.find((club) => club.isOwner) || null;
@@ -2866,11 +3043,26 @@ export default function CoachClubs() {
       setClubs(formatted);
       setOwnedClub(nextOwnedClub);
 
-      setSelectedClub((current) =>
-        current
+      // If the page was opened from a shared invitation URL, select that
+      // exact club immediately. Otherwise preserve the user's manual selection.
+      const invitedClub = inviteClubId
+        ? formatted.find(
+            (club) => String(club.id || "").trim() === inviteClubId,
+          ) || null
+        : null;
+
+      setSelectedClub((current) => {
+        if (invitedClub) {
+          return {
+            ...invitedClub,
+            isInviteLink: invitedClub.membershipStatus !== "accepted",
+          };
+        }
+
+        return current
           ? formatted.find((club) => club.id === current.id) || null
-          : null,
-      );
+          : null;
+      });
 
       if (nextOwnedClub) {
         const membershipResult = await supabase
@@ -2940,13 +3132,40 @@ export default function CoachClubs() {
         });
 
         setRequests(
-          formattedMemberships.filter((row) => row.status === "pending"),
+          formattedMemberships.filter(
+            (row) => row.status === "pending" && row.request_type !== "invite",
+          ),
+        );
+        setInvitations(
+          formattedMemberships.filter(
+            (row) => row.status === "pending" && row.request_type === "invite",
+          ),
         );
         setMembers(
           formattedMemberships.filter((row) => row.status === "accepted"),
         );
+
+        const { data: inviteProfileRows, error: inviteProfileError } = await supabase
+          .from("player_profiles")
+          .select("user_id, display_name, state, player_category, profile_photo_url")
+          .neq("user_id", user.id)
+          .order("display_name", { ascending: true });
+
+        if (inviteProfileError) {
+          console.error("Failed to load players available for invitation:", inviteProfileError);
+          setInvitePlayers([]);
+        } else {
+          const existingUserIds = new Set(rows.map((row) => row.user_id));
+          setInvitePlayers(
+            (inviteProfileRows || []).filter(
+              (profile) => profile.user_id && !existingUserIds.has(profile.user_id),
+            ),
+          );
+        }
       } else {
         setRequests([]);
+        setInvitations([]);
+        setInvitePlayers([]);
         setMembers([]);
       }
     } catch (error) {
@@ -2955,7 +3174,7 @@ export default function CoachClubs() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [inviteClubId]);
 
   useEffect(() => {
     fetchClubs();
@@ -3009,7 +3228,10 @@ export default function CoachClubs() {
 
     if (error) {
       console.error("Failed to create club notification:", error);
+      throw error;
     }
+
+    return true;
   }
 
   async function syncPlayerProfileClub(userId, shortName) {
@@ -3285,7 +3507,7 @@ export default function CoachClubs() {
 
     try {
       const { data: playerProfile } = await supabase
-        .from("player_profiles")
+        .from("coach_profiles")
         .select("display_name")
         .eq("user_id", user.id)
         .maybeSingle();
@@ -3446,6 +3668,7 @@ export default function CoachClubs() {
             user_id: user.id,
             member_name: memberName,
             status: "pending",
+            request_type: "request",
             member_role: "coach",
             requested_at: new Date().toISOString(),
             responded_at: null,
@@ -3581,6 +3804,147 @@ export default function CoachClubs() {
     }
   }
 
+  async function invitePlayerToClub(player) {
+    if (!ownedClub?.id || !player?.user_id) return;
+
+    setInviteBusyId(player.user_id);
+
+    try {
+      const { error } = await supabase.rpc("invite_player_to_club", {
+        p_club_id: ownedClub.id,
+        p_player_user_id: player.user_id,
+      });
+
+      if (error) throw error;
+
+      await sendClubNotification({
+        recipientUserId: player.user_id,
+        type: "club_invitation",
+        title: "Club invitation",
+        message: `${ownedClub.shortName || ownedClub.name} invited you to join the club.`,
+        actionUrl: `/clubs?clubInvite=${encodeURIComponent(ownedClub.id)}&notice=${Date.now()}`,
+      });
+
+      await fetchClubs();
+      alert(`Invitation sent to ${player.display_name || "player"}.`);
+    } catch (error) {
+      console.error("Failed to invite player:", error);
+      alert(error.message || "Failed to send club invitation.");
+    } finally {
+      setInviteBusyId(null);
+    }
+  }
+
+  async function cancelClubInvitation(invitation) {
+    if (!window.confirm(`Cancel the invitation for ${invitation.playerName}?`)) return;
+    setManageBusyId(invitation.id);
+    try {
+      const { error } = await supabase
+        .from("club_members")
+        .delete()
+        .eq("id", invitation.id)
+        .eq("status", "pending")
+        .eq("request_type", "invite");
+      if (error) throw error;
+      await fetchClubs();
+    } catch (error) {
+      alert(error.message || "Failed to cancel invitation.");
+    } finally {
+      setManageBusyId(null);
+    }
+  }
+
+  async function copyClubInviteLink(club) {
+    const link = `${PUBLIC_APP_URL}/clubs?clubInvite=${encodeURIComponent(club.id)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      alert("Club invitation link copied.");
+    } catch (error) {
+      window.prompt("Copy this club invitation link:", link);
+    }
+  }
+
+  async function respondToClubInvitation(club, status) {
+    if (!club?.membershipId) return;
+    setActionId(club.id);
+    try {
+      const nextStatus = status === "accepted" ? "accepted" : "rejected";
+      const { error } = await supabase
+        .from("club_members")
+        .update({ status: nextStatus, responded_at: new Date().toISOString() })
+        .eq("id", club.membershipId)
+        .eq("status", "pending")
+        .eq("request_type", "invite");
+      if (error) throw error;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (status === "accepted" && user) {
+        await syncPlayerProfileClub(user.id, club.shortName);
+      }
+
+      await sendClubNotification({
+        recipientUserId: club.ownerId,
+        type: status === "accepted" ? "club_invitation_accepted" : "club_invitation_declined",
+        title: status === "accepted" ? "Club invitation accepted" : "Club invitation declined",
+        message: `${user?.user_metadata?.display_name || user?.email?.split("@")[0] || "A player"} ${status === "accepted" ? "accepted" : "declined"} the invitation to ${club.shortName || club.name}.`,
+        actionUrl: "/coach/clubs",
+      });
+
+      await fetchClubs();
+    } catch (error) {
+      alert(error.message || "Failed to update club invitation.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function acceptClubInviteLink(club) {
+    setActionId(club.id);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error("Please log in to accept this club invitation.");
+
+      const { data: ownProfile } = await supabase
+        .from("coach_profiles")
+        .select("display_name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const memberName = ownProfile?.display_name || user.user_metadata?.display_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "Coach";
+
+      const { error } = await supabase
+        .from("club_members")
+        .upsert({
+          club_id: club.id,
+          user_id: user.id,
+          member_name: memberName,
+          status: "accepted",
+          request_type: "invite_link",
+          member_role: "player",
+          requested_at: new Date().toISOString(),
+          responded_at: new Date().toISOString(),
+          invited_by: club.ownerId,
+        }, { onConflict: "club_id,user_id" });
+      if (error) throw error;
+
+      await syncPlayerProfileClub(user.id, club.shortName);
+      await sendClubNotification({
+        recipientUserId: club.ownerId,
+        type: "club_invitation_accepted",
+        title: "Club invitation accepted",
+        message: `${memberName} joined ${club.shortName || club.name} using your invitation link.`,
+        actionUrl: "/coach/clubs",
+      });
+      window.history.replaceState({}, "", window.location.pathname);
+      await fetchClubs();
+      alert(`You joined ${club.shortName || club.name}.`);
+    } catch (error) {
+      alert(error.message || "Failed to accept club invitation.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
   async function respondToRequest(request, status) {
     setManageBusyId(request.id);
 
@@ -3592,7 +3956,8 @@ export default function CoachClubs() {
           responded_at: new Date().toISOString(),
         })
         .eq("id", request.id)
-        .eq("status", "pending");
+        .eq("status", "pending")
+        .neq("request_type", "invite");
 
       if (error) throw error;
 
@@ -3607,10 +3972,7 @@ export default function CoachClubs() {
           type: "club_request_accepted",
           title: "Club request accepted",
           message: `Your request to join ${ownedClub?.shortName || ownedClub?.name || "the club"} was accepted.`,
-          actionUrl:
-            request.member_role === "coach"
-              ? "/coach/clubs"
-              : "/clubs",
+          actionUrl: "/coach/clubs",
         });
       } else {
         await sendClubNotification({
@@ -3618,10 +3980,7 @@ export default function CoachClubs() {
           type: "club_request_declined",
           title: "Club request declined",
           message: `Your request to join ${ownedClub?.shortName || ownedClub?.name || "the club"} was declined.`,
-          actionUrl:
-            request.member_role === "coach"
-              ? "/coach/clubs"
-              : "/clubs",
+          actionUrl: "/coach/clubs",
         });
       }
 
@@ -3656,7 +4015,7 @@ export default function CoachClubs() {
         type: "club_member_removed",
         title: "Removed from club",
         message: `You were removed from ${ownedClub?.shortName || ownedClub?.name || "the club"}.`,
-        actionUrl: "/clubs",
+        actionUrl: "/coach/clubs",
       });
 
       await fetchClubs();
@@ -3826,7 +4185,7 @@ export default function CoachClubs() {
   }
 
   return (
-    <div className={styles.coachReadablePage}>
+    <div className={styles.playerReadablePage}>
       <div className={styles.pageHead} style={{ overflow: "visible" }}>
         <div
           style={{
@@ -3924,12 +4283,12 @@ export default function CoachClubs() {
                 </div>
               ) : (
                 filteredClubs.map((club) => {
-                  const isSelected = selectedClub?.id === club.id;
+                  const isSelected = String(effectiveSelectedClub?.id || "").trim() === String(club.id || "").trim();
 
                   return (
                     <div
                       key={club.id}
-                      onClick={() => setSelectedClub(club)}
+                      onClick={() => setSelectedClub({ ...club, isInviteLink: false })}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -3993,7 +4352,10 @@ export default function CoachClubs() {
                             {club.memberCount} member
                             {club.memberCount === 1 ? "" : "s"}
                           </span>
-                          <StatusBadge status={club.membershipStatus} />
+                          <StatusBadge
+                status={club.membershipStatus}
+                requestType={club.membershipRequestType}
+              />
                           {club.isOwner && (
                             <span className={styles.badgeAmber}>Owner</span>
                           )}
@@ -4013,13 +4375,20 @@ export default function CoachClubs() {
           </div>
 
           <div>
-            {selectedClub ? (
+            {effectiveSelectedClub ? (
               <ClubDetail
-                club={selectedClub}
+                club={effectiveSelectedClub}
                 actionId={actionId}
                 onJoin={requestJoin}
                 onCancel={cancelRequest}
                 onLeave={leaveClub}
+                onAcceptInvite={(club) =>
+                  respondToClubInvitation(club, "accepted")
+                }
+                onDeclineInvite={(club) =>
+                  respondToClubInvitation(club, "rejected")
+                }
+                onAcceptInviteLink={acceptClubInviteLink}
                 onViewMember={openClubMemberProfile}
               />
             ) : (
@@ -4047,10 +4416,16 @@ export default function CoachClubs() {
             club={ownedClub}
             requests={requests}
             members={members}
+            invitations={invitations}
+            invitePlayers={invitePlayers}
+            inviteBusyId={inviteBusyId}
             busyId={manageBusyId}
             onRespond={respondToRequest}
             onRemoveMember={removeMember}
             onToggleMembership={toggleMembership}
+            onInvitePlayer={invitePlayerToClub}
+            onCancelInvitation={cancelClubInvitation}
+            onCopyInviteLink={copyClubInviteLink}
             onViewPlayer={openClubMemberProfile}
             onEditClub={setEditingClub}
           />

@@ -2,51 +2,42 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/supabase'
-
 function getFriendlyLoginError(error) {
   const code = String(error?.code || '').toLowerCase()
   const message = String(error?.message || '').toLowerCase()
-
   if (
     code === 'email_not_confirmed' ||
     message.includes('email not confirmed')
   ) {
     return 'Verify your email before logging in.'
   }
-
   if (
     code === 'invalid_credentials' ||
     message.includes('invalid login credentials')
   ) {
     return 'The email or password is incorrect.'
   }
-
   if (
     message.includes('rate limit') ||
     message.includes('too many requests')
   ) {
     return 'Too many login attempts. Please wait before trying again.'
   }
-
   if (
     message.includes('failed to fetch') ||
     message.includes('network')
   ) {
     return 'Unable to connect to the server. Check your internet connection.'
   }
-
   return 'Unable to log in. Please try again.'
 }
-
 const RETURNING_REVERIFY_DAYS = 30
 const SESSION_HEARTBEAT_KEY = 'shuttleSessionHeartbeat'
 const SESSION_HEARTBEAT_MAX_AGE_MS = 10000
-
 const AUTH_REDIRECT_ORIGIN =
   String(window.location.origin || '')
     .trim()
     .replace(/\/$/, '')
-
 // The QR code should always open the public ShuttleTrack site so it works
 // on mobile data, another Wi-Fi network, or a friend's phone.
 // You can override this later with REACT_APP_PUBLIC_APP_URL if the domain changes.
@@ -57,14 +48,15 @@ const MOBILE_QR_URL =
   )
     .trim()
     .replace(/\/$/, '')
-
 function getSafePostLoginRedirect(location) {
   const from = location.state?.from
-  let redirectPath = ''
+  const redirectFromQuery =
+    new URLSearchParams(location.search).get('redirect') || ''
+  let redirectPath = redirectFromQuery
 
-  if (typeof from === 'string') {
+  if (!redirectPath && typeof from === 'string') {
     redirectPath = from
-  } else if (from?.pathname) {
+  } else if (!redirectPath && from?.pathname) {
     redirectPath = `${from.pathname}${from.search || ''}${from.hash || ''}`
   }
 
@@ -72,7 +64,6 @@ function getSafePostLoginRedirect(location) {
     redirectPath =
       sessionStorage.getItem('shuttlePostLoginRedirect') || ''
   }
-
   if (
     !redirectPath.startsWith('/') ||
     redirectPath.startsWith('//') ||
@@ -80,23 +71,17 @@ function getSafePostLoginRedirect(location) {
   ) {
     return ''
   }
-
   return redirectPath
 }
-
 function needsReturningReverification(lastSeenAt) {
   if (!lastSeenAt) return false
-
   const lastSeenMs = new Date(lastSeenAt).getTime()
   if (!Number.isFinite(lastSeenMs)) return false
-
   const inactiveMs = Date.now() - lastSeenMs
   const thresholdMs =
     RETURNING_REVERIFY_DAYS * 24 * 60 * 60 * 1000
-
   return inactiveMs >= thresholdMs
 }
-
 async function sendReturningVerificationEmail(email) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
@@ -106,10 +91,8 @@ async function sendReturningVerificationEmail(email) {
         `${AUTH_REDIRECT_ORIGIN}/verify-returning-user`,
     },
   })
-
   if (error) throw error
 }
-
 function EyeIcon({ visible }) {
   if (visible) {
     return (
@@ -127,7 +110,6 @@ function EyeIcon({ visible }) {
       </svg>
     )
   }
-
   return (
     <svg
       width="18"
@@ -142,13 +124,11 @@ function EyeIcon({ visible }) {
     </svg>
   )
 }
-
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
   const postLoginRedirect = getSafePostLoginRedirect(location)
   const locationEmail = location.state?.email || ''
-
   const [email, setEmail] = useState(
     locationEmail,
   )
@@ -160,47 +140,36 @@ export default function Login() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
-
   const [isDark, setIsDark] = useState(
     localStorage.getItem('shuttleLoginTheme') === 'dark',
   )
-
   useEffect(() => {
     localStorage.setItem(
       'shuttleLoginTheme',
       isDark ? 'dark' : 'light',
     )
   }, [isDark])
-
   useEffect(() => {
     localStorage.removeItem('shuttleAddingRole')
-
     // Clear the previous account's login identity whenever the login page opens.
     localStorage.removeItem('shuttleRememberedEmail')
     localStorage.removeItem('shuttleRememberMe')
-
     setPassword('')
     setRememberMe(false)
-
     if (!locationEmail) {
       setEmail('')
     }
-
     const blockedMessage =
       sessionStorage.getItem('shuttleLoginBlockedMessage')
-
     if (blockedMessage) {
       setError(blockedMessage)
       sessionStorage.removeItem('shuttleLoginBlockedMessage')
     }
-
     async function checkBrowserSession() {
       const sessionOnly =
         localStorage.getItem('shuttleSessionOnly') === 'true'
-
       const browserSessionActive =
         sessionStorage.getItem('shuttleBrowserSession') === 'true'
-
       if (sessionOnly && !browserSessionActive) {
         const lastHeartbeat = Number(
           localStorage.getItem(SESSION_HEARTBEAT_KEY),
@@ -209,7 +178,6 @@ export default function Login() {
           Number.isFinite(lastHeartbeat) &&
           Date.now() - lastHeartbeat <=
             SESSION_HEARTBEAT_MAX_AGE_MS
-
         if (hasActiveBrowserSession) {
           sessionStorage.setItem('shuttleBrowserSession', 'true')
         } else {
@@ -220,51 +188,39 @@ export default function Login() {
         }
       }
     }
-
     checkBrowserSession()
   }, [locationEmail])
-
   async function blockLoginWithMessage(message) {
     sessionStorage.setItem('shuttleLoginBlockedMessage', message)
     localStorage.removeItem('activeRole')
-
     try {
       await supabase.auth.signOut()
     } finally {
       setError(message)
     }
   }
-
   async function handleLogin(event) {
     event.preventDefault()
-
     setError('')
     setSuccess('')
     setLoading(true)
-
     try {
       const cleanEmail = email.trim().toLowerCase()
-
       const { data, error: loginError } =
         await supabase.auth.signInWithPassword({
           email: cleanEmail,
           password,
         })
-
       if (loginError) throw loginError
-
       const user = data?.user
-
       if (!user?.id) {
         throw new Error('Supabase did not return the user.')
       }
-
       if (!user.email_confirmed_at) {
         await supabase.auth.signOut()
         setError('Verify your email before logging in.')
         return
       }
-
       if (rememberMe) {
         localStorage.setItem('shuttleRememberMe', 'true')
         localStorage.removeItem('shuttleRememberedEmail')
@@ -281,7 +237,6 @@ export default function Login() {
           String(Date.now()),
         )
       }
-
       const { data: appUser, error: appUserError } =
         await supabase
           .from('app_users')
@@ -290,9 +245,7 @@ export default function Login() {
           )
           .eq('user_id', user.id)
           .maybeSingle()
-
       if (appUserError) throw appUserError
-
       if (!appUser) {
         await supabase.auth.signOut()
         setError(
@@ -300,47 +253,39 @@ export default function Login() {
         )
         return
       }
-
       const accountStatus = String(
         appUser.account_status || 'active',
       ).toLowerCase()
-
       if (appUser.removed_at) {
         await blockLoginWithMessage(
           'This ShuttleTrack account is no longer available.',
         )
         return
       }
-
       if (accountStatus === 'disabled') {
         await blockLoginWithMessage(
           'Your ShuttleTrack account has been disabled by an administrator. You cannot access your account at this time.',
         )
         return
       }
-
       if (accountStatus === 'suspended') {
         await blockLoginWithMessage(
           'Your ShuttleTrack account is currently suspended.',
         )
         return
       }
-
       if (accountStatus !== 'active') {
         await blockLoginWithMessage(
           'Your ShuttleTrack account is not currently active. You cannot access your account at this time.',
         )
         return
       }
-
       const hasPlayer =
         appUser.has_player_access === true ||
         appUser.role === 'player'
-
       const hasCoach =
         appUser.has_coach_access === true ||
         appUser.role === 'coach'
-
       if (
         hasPlayer &&
         needsReturningReverification(appUser.last_seen_at)
@@ -353,13 +298,10 @@ export default function Login() {
           'shuttleReturningVerificationPending',
           'true',
         )
-
         await supabase.auth.signOut({
           scope: 'local',
         })
-
         await sendReturningVerificationEmail(cleanEmail)
-
         navigate('/verify-returning-user', {
           replace: true,
           state: {
@@ -369,15 +311,12 @@ export default function Login() {
         })
         return
       }
-
       if (appUser.role === 'admin') {
         localStorage.setItem('activeRole', 'admin')
         navigate('/admin', { replace: true })
         return
       }
-
       localStorage.removeItem('shuttleAddingRole')
-
       if (
         postLoginRedirect.startsWith('/verify-skill/') &&
         (hasPlayer || hasCoach)
@@ -386,10 +325,60 @@ export default function Login() {
         navigate(postLoginRedirect, { replace: true })
         return
       }
-
+      // Return a player to the exact protected Player page that originally
+      // sent them to Login. This preserves query strings such as:
+      // /clubs?clubInvite=<club-id>
+      const redirectUrl = postLoginRedirect
+        ? new URL(postLoginRedirect, window.location.origin)
+        : null
+      const redirectPathname = redirectUrl?.pathname || ''
+      const playerRedirectPaths = new Set([
+        '/dashboard',
+        '/profile',
+        '/performance',
+        '/fitness',
+        '/expenses',
+        '/players',
+        '/clubs',
+        '/settings',
+      ])
+      if (
+        postLoginRedirect &&
+        hasPlayer &&
+        playerRedirectPaths.has(redirectPathname)
+      ) {
+        if (!appUser.setup_completed) {
+          // Keep the original target while the player completes setup.
+          sessionStorage.setItem(
+            'shuttlePostLoginRedirect',
+            postLoginRedirect,
+          )
+          localStorage.setItem('activeRole', 'player')
+          navigate('/setup', { replace: true })
+          return
+        }
+        localStorage.setItem('activeRole', 'player')
+        sessionStorage.removeItem('shuttlePostLoginRedirect')
+        navigate(postLoginRedirect, { replace: true })
+        return
+      }
+      // Do the same for Coach pages when the original protected route
+      // belongs to Coach Mode.
+      if (
+        postLoginRedirect &&
+        hasCoach &&
+        (
+          redirectPathname === '/coach' ||
+          redirectPathname.startsWith('/coach/')
+        )
+      ) {
+        localStorage.setItem('activeRole', 'coach')
+        sessionStorage.removeItem('shuttlePostLoginRedirect')
+        navigate(postLoginRedirect, { replace: true })
+        return
+      }
       const savedMode =
         localStorage.getItem('activeRole')
-
       if (
         savedMode === 'coach' &&
         hasCoach
@@ -397,7 +386,6 @@ export default function Login() {
         navigate('/coach', { replace: true })
         return
       }
-
       if (
         savedMode === 'player' &&
         hasPlayer
@@ -410,18 +398,15 @@ export default function Login() {
         )
         return
       }
-
       if (hasPlayer && hasCoach) {
         const primaryRole =
           appUser.role === 'coach'
             ? 'coach'
             : 'player'
-
         localStorage.setItem(
           'activeRole',
           primaryRole,
         )
-
         navigate(
           primaryRole === 'coach'
             ? '/coach'
@@ -432,13 +417,11 @@ export default function Login() {
         )
         return
       }
-
       if (hasCoach) {
         localStorage.setItem('activeRole', 'coach')
         navigate('/coach', { replace: true })
         return
       }
-
       if (hasPlayer) {
         localStorage.setItem('activeRole', 'player')
         navigate(
@@ -449,7 +432,6 @@ export default function Login() {
         )
         return
       }
-
       await supabase.auth.signOut()
       setError(
         'This account does not have Player or Coach access.',
@@ -461,22 +443,17 @@ export default function Login() {
       setLoading(false)
     }
   }
-
   async function handleForgotPassword() {
     setError('')
     setSuccess('')
-
     const cleanEmail = email.trim().toLowerCase()
-
     if (!cleanEmail) {
       setError(
         'Enter your email first, then press Forgot password.',
       )
       return
     }
-
     setForgotLoading(true)
-
     try {
       /*
        * A newly requested reset link should start a fresh recovery flow.
@@ -486,7 +463,6 @@ export default function Login() {
       sessionStorage.removeItem(
         'shuttlePasswordRecoveryActive',
       )
-
       const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(
           cleanEmail,
@@ -495,18 +471,14 @@ export default function Login() {
               `${AUTH_REDIRECT_ORIGIN}/reset-password`,
           },
         )
-
       if (resetError) throw resetError
-
       setSuccess(
         'If an account exists with this email, a reset link has been sent. Check Inbox, Spam, Junk, Promotions, and Trash.',
       )
     } catch (err) {
       console.error('Forgot-password error:', err)
-
       const message =
         String(err?.message || '').toLowerCase()
-
       if (message.includes('rate limit')) {
         setError(
           'Too many reset emails were requested. Please wait before trying again.',
@@ -520,15 +492,12 @@ export default function Login() {
       setForgotLoading(false)
     }
   }
-
   async function handleGoogle() {
     setError('')
     setSuccess('')
     setGoogleLoading(true)
-
     try {
       localStorage.removeItem('shuttleRememberedEmail')
-
       if (rememberMe) {
         localStorage.setItem('shuttleRememberMe', 'true')
         localStorage.removeItem('shuttleSessionOnly')
@@ -543,7 +512,6 @@ export default function Login() {
           String(Date.now()),
         )
       }
-
       const { error: googleError } =
         await supabase.auth.signInWithOAuth({
           provider: 'google',
@@ -552,7 +520,6 @@ export default function Login() {
               `${AUTH_REDIRECT_ORIGIN}/auth/callback`,
           },
         })
-
       if (googleError) throw googleError
     } catch (err) {
       console.error('Google login error:', err)
@@ -560,7 +527,6 @@ export default function Login() {
       setGoogleLoading(false)
     }
   }
-
   const inputStyle = {
     width: '100%',
     padding: '14px 16px',
@@ -576,7 +542,6 @@ export default function Login() {
     transition:
       'border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease',
   }
-
   return (
     <div
       className={isDark ? 'login-theme-dark' : 'login-theme-light'}
@@ -632,7 +597,6 @@ export default function Login() {
           >
             BADMINTON PERFORMANCE MANAGEMENT
           </div>
-
           <h2
             style={{
               margin: '0 0 16px',
@@ -650,7 +614,6 @@ export default function Login() {
             <br />
             Improve together.
           </h2>
-
           <p
             style={{
               margin: '0 0 28px',
@@ -664,7 +627,6 @@ export default function Login() {
             training, monitor fitness and performance progress, record
             match results, and stay connected through one central system.
           </p>
-
           <div
             className="shuttletrack-login-qr"
             style={{
@@ -711,7 +673,6 @@ export default function Login() {
                 fgColor="#0D1B3E"
               />
             </div>
-
             <div
               style={{
                 maxWidth: 250,
@@ -728,7 +689,6 @@ export default function Login() {
               >
                 Open on your phone
               </div>
-
               <div
                 style={{
                   fontSize: 13,
@@ -740,7 +700,6 @@ export default function Login() {
                 Scan this QR code with your phone camera to open
                 ShuttleTrack on mobile.
               </div>
-
               <div
                 style={{
                   fontSize: 11,
@@ -753,9 +712,7 @@ export default function Login() {
               </div>
             </div>
           </div>
-
         </section>
-
       <div
         className="shuttletrack-login-card"
         style={{
@@ -826,7 +783,6 @@ export default function Login() {
               <circle cx="10" cy="10" r="2" fill="white" />
             </svg>
           </div>
-
           <span
             style={{
               fontSize: 16,
@@ -837,7 +793,6 @@ export default function Login() {
             ShuttleTrack
           </span>
           </div>
-
           <button
             type="button"
             onClick={() => setIsDark((previous) => !previous)}
@@ -884,7 +839,6 @@ export default function Login() {
             </span>
           </button>
         </div>
-
         <h1
           style={{
             fontSize: 30,
@@ -895,7 +849,6 @@ export default function Login() {
         >
           Welcome Back
         </h1>
-
         <p
           style={{
             fontSize: 13,
@@ -905,8 +858,6 @@ export default function Login() {
         >
           Enter your details to continue to ShuttleTrack.
         </p>
-
-
         {error && (
           <div
             style={{
@@ -925,7 +876,6 @@ export default function Login() {
             {error}
           </div>
         )}
-
         {success && (
           <div
             style={{
@@ -944,7 +894,6 @@ export default function Login() {
             {success}
           </div>
         )}
-
         <form onSubmit={handleLogin}>
           <input
             type="email"
@@ -960,7 +909,6 @@ export default function Login() {
               opacity: loading || googleLoading ? 0.7 : 1,
             }}
           />
-
           <div style={{ position: 'relative', marginBottom: 14 }}>
             <input
               type={showPassword ? 'text' : 'password'}
@@ -976,7 +924,6 @@ export default function Login() {
                 opacity: loading || googleLoading ? 0.7 : 1,
               }}
             />
-
             <button
               type="button"
               onClick={() =>
@@ -1006,7 +953,6 @@ export default function Login() {
               <EyeIcon visible={showPassword} />
             </button>
           </div>
-
           <div
             style={{
               display: 'flex',
@@ -1049,7 +995,6 @@ export default function Login() {
               />
               Remember me
             </label>
-
             <button
               type="button"
               onClick={handleForgotPassword}
@@ -1073,7 +1018,6 @@ export default function Login() {
               {forgotLoading ? 'Sending...' : 'Forgot password?'}
             </button>
           </div>
-
           <button
             type="submit"
             className="loginPressButton"
@@ -1089,7 +1033,6 @@ export default function Login() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
-
         <div
           style={{
             display: 'flex',
@@ -1121,7 +1064,6 @@ export default function Login() {
             }}
           />
         </div>
-
         <button
           type="button"
           className="googleLoginButton"
@@ -1167,12 +1109,10 @@ export default function Login() {
               d="M43.6 20H24v8h11.3c-.9 2.4-2.5 4.4-4.6 5.8l6.2 5.2C40.8 35.7 44 30.3 44 24c0-1.3-.1-2.7-.4-4z"
             />
           </svg>
-
           {googleLoading
             ? 'Connecting to Google...'
             : 'Continue with Google'}
         </button>
-
         <p
           style={{
             color: isDark ? '#8892A4' : '#667085',
@@ -1200,30 +1140,24 @@ export default function Login() {
         </p>
       </div>
       </div>
-
       <style>
         {`
           .login-theme-light .shuttletrack-login-card input::placeholder {
             color: #98A2B3;
           }
-
           .login-theme-dark .shuttletrack-login-card input::placeholder {
             color: #6F7B90;
           }
-
           .shuttletrack-login-card input:focus {
             border-color: #1A5FFF !important;
             box-shadow: 0 0 0 4px rgba(26,95,255,0.10);
           }
-
           .login-theme-light .shuttletrack-login-card input:focus {
             background: #FFFFFF !important;
           }
-
           .login-theme-dark .shuttletrack-login-card input:focus {
             background: #20293B !important;
           }
-
           .loginPressButton {
             width: 100%;
             padding: 14px;
@@ -1241,14 +1175,12 @@ export default function Login() {
               transform 0.14s ease,
               box-shadow 0.14s ease;
           }
-
           .loginPressButton:hover:not(:disabled) {
             background:
               linear-gradient(90deg, #2468FF, #4A82FF);
             box-shadow:
               0 15px 30px rgba(26,95,255,0.28);
           }
-
           .loginPressButton:active:not(:disabled) {
             transform: translateY(1px);
             background:
@@ -1256,59 +1188,47 @@ export default function Login() {
             box-shadow:
               0 8px 18px rgba(26,95,255,0.24);
           }
-
           .googleLoginButton {
             transition:
               background 0.14s ease,
               border-color 0.14s ease,
               transform 0.14s ease;
           }
-
           .login-theme-light .googleLoginButton:hover:not(:disabled) {
             background: #F8FAFC !important;
             border-color: #C7D2E3 !important;
           }
-
           .login-theme-dark .googleLoginButton:hover:not(:disabled) {
             background: #222C3F !important;
             border-color: #39455E !important;
           }
-
           .googleLoginButton:active:not(:disabled) {
             transform: translateY(1px);
           }
-
           @media (max-width: 980px) {
             .shuttletrack-login-shell {
               grid-template-columns: 1fr !important;
               max-width: 620px !important;
               gap: 28px !important;
             }
-
             .shuttletrack-login-intro {
               padding: 10px 6px 0 !important;
               text-align: center;
             }
-
             .shuttletrack-login-intro h2,
             .shuttletrack-login-intro p {
               margin-left: auto !important;
               margin-right: auto !important;
             }
-
             .shuttletrack-login-qr {
               display: none !important;
             }
-
           }
-
           @media (max-width: 640px) {
             .shuttletrack-login-intro h2 {
               font-size: 34px !important;
             }
-
           }
-
           @media (max-width: 560px) {
             .shuttletrack-login-card {
               padding: 32px 22px !important;

@@ -7,45 +7,23 @@ import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
 import { Avatar, CoachPageHeader } from './CoachShared'
 import CoachNotificationBell from "../Notifications/CoachNotificationBell";
-
 const PERFORMANCE_FIELDS = ['smash', 'defense', 'footwork', 'drop_shot', 'net_play', 'serve']
-const FITNESS_FIELDS = ['stamina', 'speed', 'strength', 'flexibility', 'recovery']
 const ACTION_PLAN_PREFIX = '__SHUTTLETRACK_ACTION_PLAN__:'
-
-const SKILL_LABELS = {
-  smash: 'Smash',
-  defense: 'Defense',
-  footwork: 'Footwork',
-  drop_shot: 'Drop shot',
-  net_play: 'Net play',
-  serve: 'Serve',
-  stamina: 'Stamina',
-  speed: 'Speed',
-  strength: 'Strength',
-  flexibility: 'Flexibility',
-  recovery: 'Recovery',
-}
-
 const averageValues = (row, fields) => {
   const values = fields
     .map(field => Number(row?.[field]))
     .filter(Number.isFinite)
-
   return values.length
     ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
     : 0
 }
-
 const parseActionPlan = value => {
   const text = String(value || '').trim()
-
   if (!text.startsWith(ACTION_PLAN_PREFIX)) return null
-
   try {
     const plan = JSON.parse(text.slice(ACTION_PLAN_PREFIX.length))
     const performanceValue = plan?.performance
     const fitnessValue = plan?.fitness
-
     const performance = String(
       performanceValue &&
         typeof performanceValue === 'object' &&
@@ -53,7 +31,6 @@ const parseActionPlan = value => {
         ? performanceValue.text || ''
         : performanceValue || ''
     ).trim()
-
     const fitness = String(
       fitnessValue &&
         typeof fitnessValue === 'object' &&
@@ -61,28 +38,22 @@ const parseActionPlan = value => {
         ? fitnessValue.text || ''
         : fitnessValue || ''
     ).trim()
-
     if (!performance && !fitness) return null
-
     return { performance, fitness }
   } catch (error) {
     console.error('Unable to parse action plan:', error)
     return null
   }
 }
-
 const formatDate = value => {
   if (!value) return '-'
-
   return new Date(`${value}T00:00:00`).toLocaleDateString('en-MY', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   })
 }
-
 const formatTime = value => (value ? String(value).slice(0, 5) : '')
-
 function DashboardIcon({
   type,
   color = 'currentColor',
@@ -95,7 +66,6 @@ function DashboardIcon({
     fill: 'none',
     'aria-hidden': true,
   }
-
   if (type === 'players') {
     return (
       <svg {...props}>
@@ -128,7 +98,6 @@ function DashboardIcon({
       </svg>
     )
   }
-
   if (type === 'upcoming') {
     return (
       <svg {...props}>
@@ -149,7 +118,6 @@ function DashboardIcon({
       </svg>
     )
   }
-
   if (type === 'past') {
     return (
       <svg {...props}>
@@ -170,7 +138,6 @@ function DashboardIcon({
       </svg>
     )
   }
-
   if (type === 'notes') {
     return (
       <svg {...props}>
@@ -195,10 +162,8 @@ function DashboardIcon({
       </svg>
     )
   }
-
   return null
 }
-
 function CoachDashboardStats({
   myPlayers = [],
   upcomingSessions = [],
@@ -235,7 +200,6 @@ function CoachDashboardStats({
       icon: 'notes',
     },
   ]
-
   return (
     <div className={styles.g4} style={{ marginBottom: 16 }}>
       {stats.map(item => (
@@ -258,7 +222,6 @@ function CoachDashboardStats({
               size={18}
             />
           </div>
-
           <div
             className={styles.metricVal}
             style={{
@@ -268,7 +231,6 @@ function CoachDashboardStats({
           >
             {item.value}
           </div>
-
           <div className={styles.metricLbl}>
             {item.label}
           </div>
@@ -277,15 +239,15 @@ function CoachDashboardStats({
     </div>
   )
 }
-
 export default function CoachDashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
-
   const [students, setStudents] = useState([])
   const [sessions, setSessions] = useState([])
   const [progressRows, setProgressRows] = useState([])
   const [assessments, setAssessments] = useState([])
+  const [coachReviews, setCoachReviews] = useState([])
+  const [showAllReviews, setShowAllReviews] = useState(false)
   const [verification, setVerification] = useState({
     status: 'pending',
     rejectionReason: '',
@@ -294,13 +256,10 @@ export default function CoachDashboard() {
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
   const [error, setError] = useState('')
-
   const loadDashboard = useCallback(async () => {
     if (!user?.id) return
-
     setLoading(true)
     setError('')
-
     try {
       const [
         verificationRes,
@@ -308,6 +267,7 @@ export default function CoachDashboard() {
         sessionRes,
         progressRes,
         assessmentRes,
+        coachReviewsRes,
       ] = await Promise.all([
         supabase
           .from('coach_profiles')
@@ -319,7 +279,6 @@ export default function CoachDashboard() {
           .select('player_user_id')
           .eq('coach_user_id', user.id)
           .eq('status', 'accepted'),
-
         supabase
           .from('coach_training_sessions')
           .select(`
@@ -333,20 +292,32 @@ export default function CoachDashboard() {
           .eq('coach_user_id', user.id)
           .order('session_date', { ascending: true })
           .order('start_time', { ascending: true }),
-
         supabase
           .from('coach_player_progress')
           .select('*')
           .eq('coach_user_id', user.id)
           .order('updated_at', { ascending: false }),
-
         supabase
           .from('coach_player_assessments')
           .select('*')
           .eq('coach_user_id', user.id)
           .order('updated_at', { ascending: false }),
-      ])
 
+        supabase
+          .from('coach_reviews')
+          .select(`
+            id,
+            coach_user_id,
+            player_user_id,
+            player_name,
+            rating,
+            review_text,
+            created_at,
+            updated_at
+          `)
+          .eq('coach_user_id', user.id)
+          .order('updated_at', { ascending: false }),
+      ])
       if (verificationRes.error) {
         console.error('Verification load error:', verificationRes.error)
       } else {
@@ -356,21 +327,21 @@ export default function CoachDashboard() {
           verifiedAt: verificationRes.data?.verified_at || null,
         })
       }
-
       if (relationshipRes.error) {
         console.error('Relationship load error:', relationshipRes.error)
       }
-
       if (sessionRes.error) {
         console.error('Session load error:', sessionRes.error)
       }
-
       if (progressRes.error) {
         console.error('Progress load error:', progressRes.error)
       }
-
       if (assessmentRes.error) {
         console.error('Assessment load error:', assessmentRes.error)
+      }
+
+      if (coachReviewsRes.error) {
+        console.error('Coach reviews load error:', coachReviewsRes.error)
       }
 
       const playerUserIds = [
@@ -380,17 +351,14 @@ export default function CoachDashboard() {
             .filter(Boolean)
         ),
       ]
-
       let profiles = []
       let ratings = []
-
       if (playerUserIds.length) {
         const profileRes = await supabase
           .from('player_profiles')
           .select('*')
           .in('user_id', playerUserIds)
           .order('display_name', { ascending: true })
-
         if (profileRes.error) {
           console.error(
             'Coach dashboard profile load error:',
@@ -399,15 +367,12 @@ export default function CoachDashboard() {
         } else {
           profiles = profileRes.data || []
         }
-
         const profileIds = profiles.map(profile => profile.id)
-
         if (profileIds.length) {
           const ratingRes = await supabase
             .from('player_skill_ratings')
             .select('*')
             .in('player_id', profileIds)
-
           if (ratingRes.error) {
             console.error('Player rating load error:', ratingRes.error)
           } else {
@@ -415,11 +380,9 @@ export default function CoachDashboard() {
           }
         }
       }
-
       const ratingMap = new Map(
         ratings.map(rating => [String(rating.player_id), rating])
       )
-
       setStudents(
         profiles.map(profile => ({
           id: profile.user_id,
@@ -443,10 +406,12 @@ export default function CoachDashboard() {
           rating: ratingMap.get(String(profile.id)) || null,
         }))
       )
-
       setSessions(sessionRes.error ? [] : sessionRes.data || [])
       setProgressRows(progressRes.error ? [] : progressRes.data || [])
       setAssessments(assessmentRes.error ? [] : assessmentRes.data || [])
+      setCoachReviews(
+        coachReviewsRes.error ? [] : coachReviewsRes.data || []
+      )
 
       const failedSections = [
         verificationRes.error ? 'verification' : null,
@@ -454,8 +419,8 @@ export default function CoachDashboard() {
         sessionRes.error ? 'sessions' : null,
         progressRes.error ? 'progress' : null,
         assessmentRes.error ? 'assessments' : null,
+        coachReviewsRes.error ? 'reviews' : null,
       ].filter(Boolean)
-
       if (failedSections.length > 0) {
         setError(
           `Some dashboard sections could not load: ${failedSections.join(
@@ -470,18 +435,14 @@ export default function CoachDashboard() {
       setLoading(false)
     }
   }, [user?.id])
-
   useEffect(() => {
     loadDashboard()
   }, [loadDashboard])
-
   const today = new Date().toISOString().slice(0, 10)
-
   const upcomingSessions = useMemo(
     () => sessions.filter(session => session.session_date >= today),
     [sessions, today]
   )
-
   const pastSessions = useMemo(
     () =>
       [...sessions]
@@ -489,40 +450,32 @@ export default function CoachDashboard() {
         .sort((a, b) => b.session_date.localeCompare(a.session_date)),
     [sessions, today]
   )
-
   const studentMap = useMemo(
     () => new Map(students.map(student => [String(student.id), student])),
     [students]
   )
-
   const assessmentMap = useMemo(
     () => {
       const map = new Map()
-
       assessments.forEach(assessment => {
         const key = String(assessment.player_user_id)
         if (!map.has(key)) map.set(key, assessment)
       })
-
       return map
     },
     [assessments]
   )
-
   const progressMap = useMemo(
     () => {
       const map = new Map()
-
       progressRows.forEach(progress => {
         const key = String(progress.player_user_id)
         if (!map.has(key)) map.set(key, progress)
       })
-
       return map
     },
     [progressRows]
   )
-
   const playerOverview = useMemo(
     () =>
       students.map(student => ({
@@ -534,7 +487,6 @@ export default function CoachDashboard() {
       })),
     [students]
   )
-
   const feedbackAndPlans = useMemo(
     () =>
       students
@@ -551,7 +503,6 @@ export default function CoachDashboard() {
           const coachFeedback = actionPlan
             ? ''
             : String(progress?.coach_comment || '').trim()
-
           return {
             id: `feedback-plan-${student.id}`,
             player_user_id: student.id,
@@ -580,50 +531,31 @@ export default function CoachDashboard() {
         ),
     [students, progressMap, assessmentMap]
   )
-
   const recentFeedbackAndPlans = useMemo(
     () => feedbackAndPlans.slice(0, 3),
     [feedbackAndPlans]
   )
+  const reviewSummary = useMemo(() => {
+    const reviews = Array.isArray(coachReviews) ? coachReviews : []
+    const reviewCount = reviews.length
+    const averageRating =
+      reviewCount > 0
+        ? reviews.reduce(
+            (sum, review) => sum + Number(review.rating || 0),
+            0
+          ) / reviewCount
+        : 0
 
-  const teamFocus = useMemo(
-    () =>
-      students.map(student => {
-        const source =
-          assessmentMap.get(String(student.id)) ||
-          student.rating ||
-          {}
-
-        const available = [
-          ...PERFORMANCE_FIELDS,
-          ...FITNESS_FIELDS,
-        ].filter(field => Number.isFinite(Number(source[field])))
-
-        if (!available.length) {
-          return {
-            ...student,
-            weakestLabel: 'No assessment yet',
-            weakestValue: null,
-          }
-        }
-
-        const weakestField = [...available].sort(
-          (a, b) => Number(source[a]) - Number(source[b])
-        )[0]
-
-        return {
-          ...student,
-          weakestLabel: SKILL_LABELS[weakestField],
-          weakestValue: Number(source[weakestField]),
-        }
-      }),
-    [students, assessmentMap]
-  )
+    return {
+      reviewCount,
+      averageRating,
+      latestReview: reviews[0] || null,
+    }
+  }, [coachReviews])
 
   if (loading && !showLoader) {
     return null
   }
-
   if (showLoader) {
     return (
       <div className={styles.card}>
@@ -631,13 +563,11 @@ export default function CoachDashboard() {
       </div>
     )
   }
-
   return (
     <div className={styles.dashboardPage}>
       <CoachPageHeader
         title="Coach Dashboard"
         subtitle="Manage your players, sessions and track progress"
-      
         rightAction={
           <CoachNotificationBell
             supabase={supabase}
@@ -645,10 +575,6 @@ export default function CoachDashboard() {
             title="Notifications"
           />
         }/>
-
-
-      
-      
 <div
         className={styles.card}
         style={{
@@ -696,7 +622,6 @@ export default function CoachDashboard() {
                   ? 'Coach verification rejected'
                   : 'Coach verification pending'}
             </div>
-
             <div
               style={{
                 marginTop: 4,
@@ -718,7 +643,6 @@ export default function CoachDashboard() {
                   : 'Your profile is under admin review. Players cannot find your coach profile until it is verified.'}
             </div>
           </div>
-
           {verification.status !== 'verified' && (
             <button
               className={styles.btnOutline}
@@ -733,14 +657,12 @@ export default function CoachDashboard() {
           )}
         </div>
       </div>
-
       <CoachDashboardStats
         myPlayers={students}
         upcomingSessions={upcomingSessions}
         pastSessions={pastSessions}
         feedbackAndPlans={feedbackAndPlans}
       />
-
       {error && (
         <div
           className={styles.card}
@@ -753,11 +675,9 @@ export default function CoachDashboard() {
           {error}
         </div>
       )}
-
       <div className={styles.g2}>
         <div className={styles.card}>
           <div className={styles.cardTitle}>My players overview</div>
-
           {playerOverview.length === 0 ? (
             <div
               style={{
@@ -786,7 +706,6 @@ export default function CoachDashboard() {
                 style={{ cursor: 'pointer' }}
               >
                 <Avatar name={player.name} />
-
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
@@ -797,7 +716,6 @@ export default function CoachDashboard() {
                   >
                     {player.name}
                   </div>
-
                   <div
                     style={{
                       marginTop: 2,
@@ -808,7 +726,6 @@ export default function CoachDashboard() {
                     {player.club} · {player.category}
                   </div>
                 </div>
-
                 <div style={{ textAlign: 'right' }}>
                   <div
                     style={{
@@ -818,7 +735,6 @@ export default function CoachDashboard() {
                   >
                     Avg
                   </div>
-
                   <div
                     style={{
                       fontSize: 18,
@@ -835,7 +751,6 @@ export default function CoachDashboard() {
               </div>
             ))
           )}
-
           <button
             className={styles.btnOutline}
             style={{ marginTop: 12 }}
@@ -844,10 +759,8 @@ export default function CoachDashboard() {
             View all players →
           </button>
         </div>
-
         <div className={styles.card}>
           <div className={styles.cardTitle}>Upcoming sessions</div>
-
           {upcomingSessions.length === 0 ? (
             <div
               style={{
@@ -862,7 +775,6 @@ export default function CoachDashboard() {
             upcomingSessions.slice(0, 3).map(session => {
               const assignedPlayers =
                 session.coach_training_session_players || []
-
               return (
                 <div
                   key={session.id}
@@ -913,7 +825,6 @@ export default function CoachDashboard() {
                         `${session.session_date}T00:00:00`
                       ).getDate()}
                     </div>
-
                     <div
                       style={{
                         fontSize: 9,
@@ -929,7 +840,6 @@ export default function CoachDashboard() {
                       })}
                     </div>
                   </div>
-
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
@@ -940,7 +850,6 @@ export default function CoachDashboard() {
                     >
                       {session.session_type}
                     </div>
-
                     <div
                       style={{
                         marginTop: 2,
@@ -954,7 +863,6 @@ export default function CoachDashboard() {
                         ? ` – ${formatTime(session.end_time)}`
                         : ''}
                     </div>
-
                     <div
                       style={{
                         marginTop: 4,
@@ -977,7 +885,6 @@ export default function CoachDashboard() {
               )
             })
           )}
-
           <button
             className={styles.btnOutline}
             style={{ marginTop: 12 }}
@@ -986,12 +893,10 @@ export default function CoachDashboard() {
             View sessions →
           </button>
         </div>
-
         <div className={styles.card}>
           <div className={styles.cardTitle}>
             Recent feedback and action plans
           </div>
-
           {recentFeedbackAndPlans.length === 0 ? (
             <div
               style={{
@@ -1007,7 +912,6 @@ export default function CoachDashboard() {
               const player = studentMap.get(
                 String(planRow.player_user_id)
               )
-
               return (
                 <div
                   key={planRow.id}
@@ -1050,7 +954,6 @@ export default function CoachDashboard() {
                       planRow.updated_at?.slice(0, 10)
                     )}
                   </div>
-
                   {(planRow.performanceFeedback ||
                     planRow.fitnessFeedback ||
                     planRow.coachFeedback) && (
@@ -1075,7 +978,6 @@ export default function CoachDashboard() {
                       >
                         Feedback
                       </div>
-
                       {planRow.performanceFeedback && (
                         <div
                           style={{
@@ -1095,7 +997,6 @@ export default function CoachDashboard() {
                           >
                             Performance Feedback
                           </div>
-
                           <div
                             style={{
                               fontSize: 13,
@@ -1108,7 +1009,6 @@ export default function CoachDashboard() {
                           </div>
                         </div>
                       )}
-
                       {planRow.fitnessFeedback && (
                         <div
                           style={{
@@ -1129,7 +1029,6 @@ export default function CoachDashboard() {
                           >
                             Fitness Feedback
                           </div>
-
                           <div
                             style={{
                               fontSize: 13,
@@ -1142,7 +1041,6 @@ export default function CoachDashboard() {
                           </div>
                         </div>
                       )}
-
                       {planRow.coachFeedback && (
                         <div
                           style={{
@@ -1163,7 +1061,6 @@ export default function CoachDashboard() {
                           >
                             Coach Feedback
                           </div>
-
                           <div
                             style={{
                               fontSize: 13,
@@ -1178,7 +1075,6 @@ export default function CoachDashboard() {
                       )}
                     </div>
                   )}
-
                   {(planRow.actionPlan?.performance ||
                     planRow.actionPlan?.fitness) && (
                     <div
@@ -1202,7 +1098,6 @@ export default function CoachDashboard() {
                       >
                         Action Plan
                       </div>
-
                       {planRow.actionPlan?.performance && (
                         <div
                           style={{
@@ -1222,7 +1117,6 @@ export default function CoachDashboard() {
                           >
                             Performance Action Plan
                           </div>
-
                           <div
                             style={{
                               fontSize: 13,
@@ -1235,7 +1129,6 @@ export default function CoachDashboard() {
                           </div>
                         </div>
                       )}
-
                       {planRow.actionPlan?.fitness && (
                         <div
                           style={{
@@ -1256,7 +1149,6 @@ export default function CoachDashboard() {
                           >
                             Fitness Action Plan
                           </div>
-
                           <div
                             style={{
                               fontSize: 13,
@@ -1276,11 +1168,43 @@ export default function CoachDashboard() {
             })
           )}
         </div>
-
         <div className={styles.card}>
-          <div className={styles.cardTitle}>Team focus</div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <div className={styles.cardTitle} style={{ marginBottom: 3 }}>
+                Player reviews
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: 'var(--text-muted, #8892A4)',
+                }}
+              >
+                {reviewSummary.reviewCount > 0 ? (
+                  <>
+                    <strong style={{ color: '#F59E0B' }}>
+                      ★ {reviewSummary.averageRating.toFixed(1)}
+                    </strong>{' '}
+                    · {reviewSummary.reviewCount} review
+                    {reviewSummary.reviewCount === 1 ? '' : 's'}
+                  </>
+                ) : (
+                  'No reviews yet'
+                )}
+              </div>
+            </div>
+          </div>
 
-          {teamFocus.length === 0 ? (
+          {!reviewSummary.latestReview ? (
             <div
               style={{
                 padding: '20px 0',
@@ -1288,81 +1212,281 @@ export default function CoachDashboard() {
                 color: 'var(--text-muted, #8892A4)',
               }}
             >
-              No student assessment data yet.
+              No player reviews yet.
             </div>
           ) : (
-            teamFocus.map(player => {
-              const progress = progressMap.get(String(player.id))
-
-              return (
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: 11,
+                background: 'var(--soft, #F7F9FF)',
+                border: '1px solid var(--line, #EEF1F8)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                  marginBottom: 6,
+                }}
+              >
                 <div
-                  key={player.id}
-                  className={styles.listRow}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    navigate(`/coach/progress?player=${player.id}`)
-                  }
-                  onKeyDown={event => {
-                    if (
-                      event.key === 'Enter' ||
-                      event.key === ' '
-                    ) {
-                      navigate(
-                        `/coach/progress?player=${player.id}`
-                      )
-                    }
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: 'var(--text, #0D1B3E)',
                   }}
-                  style={{ cursor: 'pointer' }}
                 >
-                  <Avatar name={player.name} size={32} />
+                  {reviewSummary.latestReview.player_name || 'ShuttleTrack player'}
+                </div>
 
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: '#F59E0B',
+                  }}
+                >
+                  {'★'.repeat(Number(reviewSummary.latestReview.rating || 0))}
+                  <span style={{ color: '#D1D5DB' }}>
+                    {'★'.repeat(
+                      Math.max(
+                        0,
+                        5 - Number(reviewSummary.latestReview.rating || 0)
+                      )
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {reviewSummary.latestReview.review_text && (
+                <>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      lineHeight: 1.6,
+                      color: 'var(--text, #0D1B3E)',
+                      whiteSpace: 'pre-wrap',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {reviewSummary.latestReview.review_text}
+                  </div>
+
+                  {String(reviewSummary.latestReview.review_text).length > 180 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllReviews(true)}
                       style={{
-                        fontSize: 13,
+                        marginTop: 6,
+                        padding: 0,
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#1A5FFF',
+                        fontSize: 11,
                         fontWeight: 700,
-                        color: 'var(--text, #0D1B3E)',
+                        cursor: 'pointer',
                       }}
                     >
-                      {player.name}
+                      View more
+                    </button>
+                  )}
+                </>
+              )}
+
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 10,
+                  color: 'var(--text-muted, #8892A4)',
+                }}
+              >
+                {new Date(
+                  reviewSummary.latestReview.updated_at ||
+                    reviewSummary.latestReview.created_at
+                ).toLocaleDateString('en-MY', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </div>
+            </div>
+          )}
+
+          {reviewSummary.reviewCount > 1 && (
+            <button
+              type="button"
+              className={styles.btnOutline}
+              style={{ marginTop: 12 }}
+              onClick={() => setShowAllReviews(true)}
+            >
+              View all reviews →
+            </button>
+          )}
+        </div>
+
+        {showAllReviews && (
+          <div
+            role="presentation"
+            onMouseDown={event => {
+              if (event.target === event.currentTarget) {
+                setShowAllReviews(false)
+              }
+            }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 3500,
+              background: 'rgba(13, 27, 62, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                width: 'min(640px, 100%)',
+                maxHeight: '85vh',
+                overflowY: 'auto',
+                background: 'var(--card, #FFFFFF)',
+                borderRadius: 18,
+                padding: 20,
+                boxShadow: '0 24px 60px rgba(13,27,62,0.28)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 800,
+                      color: 'var(--text, #0D1B3E)',
+                    }}
+                  >
+                    Player reviews
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      color: 'var(--text-muted, #8892A4)',
+                    }}
+                  >
+                    ★ {reviewSummary.averageRating.toFixed(1)} ·{' '}
+                    {reviewSummary.reviewCount} review
+                    {reviewSummary.reviewCount === 1 ? '' : 's'}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  onClick={() => setShowAllReviews(false)}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                {coachReviews.map(review => (
+                  <div
+                    key={review.id}
+                    style={{
+                      padding: 13,
+                      borderRadius: 12,
+                      background: 'var(--soft, #F7F9FF)',
+                      border: '1px solid var(--line, #EEF1F8)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 10,
+                        flexWrap: 'wrap',
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: 'var(--text, #0D1B3E)',
+                        }}
+                      >
+                        {review.player_name || 'ShuttleTrack player'}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#F59E0B',
+                          fontWeight: 800,
+                        }}
+                      >
+                        {'★'.repeat(Number(review.rating || 0))}
+                        <span style={{ color: '#D1D5DB' }}>
+                          {'★'.repeat(
+                            Math.max(0, 5 - Number(review.rating || 0))
+                          )}
+                        </span>
+                      </div>
                     </div>
+
+                    {review.review_text && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: 'var(--text, #0D1B3E)',
+                          lineHeight: 1.6,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {review.review_text}
+                      </div>
+                    )}
 
                     <div
                       style={{
-                        fontSize: 12,
+                        marginTop: 6,
+                        fontSize: 10,
                         color: 'var(--text-muted, #8892A4)',
                       }}
                     >
-                      {progress?.focus_area ? (
-                        <>
-                          Focus:{' '}
-                          <strong>{progress.focus_area}</strong>
-                        </>
-                      ) : (
-                        <>
-                          Needs work:{' '}
-                          <strong>{player.weakestLabel}</strong>
-                          {player.weakestValue !== null
-                            ? ` (${player.weakestValue})`
-                            : ''}
-                        </>
-                      )}
+                      {new Date(
+                        review.updated_at || review.created_at
+                      ).toLocaleDateString('en-MY', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
                     </div>
                   </div>
-                </div>
-              )
-            })
-          )}
-
-          <button
-            className={styles.btnOutline}
-            style={{ marginTop: 12 }}
-            onClick={() => navigate('/coach/progress')}
-          >
-            View progress →
-          </button>
-        </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

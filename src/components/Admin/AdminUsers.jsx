@@ -12,25 +12,63 @@ import {
   buttonBase,
   inputStyle,
 } from "./AdminShared";
-
 const ACCOUNT_COLORS = {
   Active: { color: "#00976C", background: "#E0FAF3" },
   Suspended: { color: "#DC2626", background: "#FEE2E2" },
-  Disabled: { color: "#6B7280", background: "#F3F4F6" },
+  Terminated: { color: "#6B7280", background: "#F3F4F6" },
 };
-
 const ACTIVITY_COLORS = {
   Online: { color: "#00976C", background: "#E0FAF3" },
   Active: { color: "#1A5FFF", background: "#E8EFFE" },
   Inactive: { color: "#D97706", background: "#FEF3C7" },
   "Never active": { color: "#6B7280", background: "#F3F4F6" },
 };
-
 const SECURITY_COLORS = {
   "Reverify required": {
     color: "#B45309",
     background: "#FEF3C7",
   },
+};
+const toUiAccountStatus = (value) => {
+  const clean = String(value || "Active").trim().toLowerCase();
+
+  if (clean === "suspended") return "Suspended";
+  if (clean === "disabled" || clean === "terminated") return "Terminated";
+  return "Active";
+};
+
+const toDatabaseAccountStatus = (value) => {
+  if (value === "Terminated") return "disabled";
+  return String(value || "Active").toLowerCase();
+};
+
+const getSuspendedUntil = (amount, unit) => {
+  const value = Math.max(1, Number(amount) || 1);
+  const date = new Date();
+
+  if (unit === "weeks") {
+    date.setDate(date.getDate() + value * 7);
+  } else if (unit === "months") {
+    date.setMonth(date.getMonth() + value);
+  } else if (unit === "years") {
+    date.setFullYear(date.getFullYear() + value);
+  } else {
+    date.setDate(date.getDate() + value);
+  }
+
+  return date.toISOString();
+};
+
+const formatSuspensionDate = (value) => {
+  if (!value) return "—";
+
+  return new Date(value).toLocaleString("en-MY", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 function StatusPill({ value, colours }) {
@@ -38,7 +76,6 @@ function StatusPill({ value, colours }) {
     color: "#6B7280",
     background: "#F3F4F6",
   };
-
   return (
     <span
       style={{
@@ -57,7 +94,6 @@ function StatusPill({ value, colours }) {
     </span>
   );
 }
-
 export default function AdminUsers({
   users,
   currentAdminId,
@@ -66,21 +102,20 @@ export default function AdminUsers({
   const [roleFilter, setRoleFilter] = useState("All");
   const [activityFilter, setActivityFilter] = useState("All");
   const [search, setSearch] = useState("");
-
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({
     name: "",
     role: "Player",
     accountStatus: "Active",
+    suspensionAmount: 1,
+    suspensionUnit: "days",
   });
-
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [showRemoveConfirmation, setShowRemoveConfirmation] = useState(false);
   const [removing, setRemoving] = useState(false);
-
   const counts = useMemo(
     () => ({
       All: users.length,
@@ -90,41 +125,36 @@ export default function AdminUsers({
     }),
     [users]
   );
-
   const visibleUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
-
     return users.filter((item) => {
       const matchesRole =
         roleFilter === "All" || item.role === roleFilter;
-
       const matchesActivity =
         activityFilter === "All" ||
         item.activityStatus === activityFilter;
-
       const matchesSearch =
         !query ||
         item.name.toLowerCase().includes(query) ||
         item.email.toLowerCase().includes(query) ||
         item.username.toLowerCase().includes(query);
-
       return matchesRole && matchesActivity && matchesSearch;
     });
   }, [users, roleFilter, activityFilter, search]);
-
   const openEdit = (account) => {
     setSelected(account);
     setForm({
       name: account.name,
       role: account.role,
-      accountStatus: account.accountStatus,
+      accountStatus: toUiAccountStatus(account.accountStatus),
+      suspensionAmount: 1,
+      suspensionUnit: "days",
     });
     setFormError("");
     setShowConfirmation(false);
     setShowRemoveConfirmation(false);
     setSuccessMessage("");
   };
-
   const closeModal = () => {
     if (saving) return;
     setSelected(null);
@@ -132,125 +162,104 @@ export default function AdminUsers({
     setShowConfirmation(false);
     setShowRemoveConfirmation(false);
   };
-
   const requestSaveConfirmation = () => {
     if (!selected) return;
-
     if (!form.name.trim()) {
       setFormError("Full name is required.");
       return;
     }
-
     const isEditingSelf = selected.userId === currentAdminId;
-
     if (
       isEditingSelf &&
       (form.role !== "Admin" || form.accountStatus !== "Active")
     ) {
       setFormError(
-        "You cannot remove your own admin role or suspend your own account."
+        "You cannot remove your own admin role, suspend your own account, or terminate your own account."
       );
       return;
     }
-
     const hasChanges =
       form.name.trim() !== selected.name ||
       form.role !== selected.role ||
-      form.accountStatus !== selected.accountStatus;
-
+      form.accountStatus !== toUiAccountStatus(selected.accountStatus);
     if (!hasChanges) {
       setFormError("No changes were made.");
       return;
     }
-
     setFormError("");
     setShowConfirmation(true);
   };
-
   const requestRemoveUser = () => {
     if (!selected) return;
-
     if (selected.userId === currentAdminId) {
       setFormError("You cannot remove your own administrator account.");
       return;
     }
-
-    if (selected.accountStatus !== "Disabled") {
-      setFormError("Disable this account first before removing the user.");
+    if (toUiAccountStatus(selected.accountStatus) !== "Terminated") {
+      setFormError("Terminate this account first before removing the user.");
       return;
     }
-
     setFormError("");
     setShowRemoveConfirmation(true);
   };
-
   const removeUser = async () => {
     if (!selected) return;
-
     if (selected.userId === currentAdminId) {
       setFormError("You cannot remove your own administrator account.");
       return;
     }
-
-    if (selected.accountStatus !== "Disabled") {
-      setFormError("Disable this account first before removing the user.");
+    if (toUiAccountStatus(selected.accountStatus) !== "Terminated") {
+      setFormError("Terminate this account first before removing the user.");
       return;
     }
-
     setRemoving(true);
     setFormError("");
-
     const removedName = selected.name;
-
     const { error } = await supabase.rpc("admin_remove_app_user", {
       p_user_id: selected.userId,
     });
-
     if (error) {
       console.error("admin_remove_app_user error:", error);
       setFormError(error.message || "Unable to remove this user.");
       setRemoving(false);
       return;
     }
-
     await refreshUsers();
-
     setRemoving(false);
     setShowRemoveConfirmation(false);
     setSelected(null);
     setSuccessMessage(`${removedName} was removed from User Management.`);
   };
-
   const saveChanges = async () => {
     if (!selected) return;
-
     if (!form.name.trim()) {
       setFormError("Full name is required.");
       return;
     }
-
     const isEditingSelf = selected.userId === currentAdminId;
-
     if (
       isEditingSelf &&
       (form.role !== "Admin" || form.accountStatus !== "Active")
     ) {
       setFormError(
-        "You cannot remove your own admin role or suspend your own account."
+        "You cannot remove your own admin role, suspend your own account, or terminate your own account."
       );
       return;
     }
-
     setSaving(true);
     setFormError("");
+    const suspendedUntil =
+      form.accountStatus === "Suspended"
+        ? getSuspendedUntil(form.suspensionAmount, form.suspensionUnit)
+        : null;
 
     const { error } = await supabase.rpc("admin_update_app_user", {
       p_user_id: selected.userId,
       p_full_name: form.name.trim(),
       p_role: form.role.toLowerCase(),
-      p_account_status: form.accountStatus.toLowerCase(),
+      p_account_status: toDatabaseAccountStatus(form.accountStatus),
+      p_suspended_until: suspendedUntil,
     });
-
     if (error) {
       console.error("admin_update_app_user error:", error);
       setFormError(
@@ -259,14 +268,12 @@ export default function AdminUsers({
       setSaving(false);
       return;
     }
-
     await refreshUsers();
     setSaving(false);
     setShowConfirmation(false);
     setSuccessMessage(`${form.name.trim()} was updated successfully.`);
     setSelected(null);
   };
-
   return (
     <div className="adminReadablePage">
       <style>{`
@@ -275,25 +282,20 @@ export default function AdminUsers({
           font-size: 14px;
           font-weight: 400;
         }
-
         .adminReadablePage [style*='font-size: 10px'] {
           font-size: 12px !important;
         }
-
         .adminReadablePage [style*='font-size: 11px'] {
           font-size: 13px !important;
         }
-
         .adminReadablePage [style*='font-size: 12px'],
         .adminReadablePage [style*='font-size: 13px'] {
           font-size: 14px !important;
         }
-
         .adminReadablePage [style*='font-weight: 800'],
         .adminReadablePage [style*='font-weight: 900'] {
           font-weight: 700 !important;
         }
-
         .adminReadablePage button,
         .adminReadablePage input,
         .adminReadablePage select,
@@ -301,21 +303,17 @@ export default function AdminUsers({
           font-family: "DM Sans", sans-serif !important;
           font-size: 14px !important;
         }
-
         .adminReadablePage table {
           font-family: "DM Sans", sans-serif;
         }
-
         .adminReadablePage th {
           font-size: 13px !important;
           font-weight: 700 !important;
         }
-
         .adminReadablePage td {
           font-size: 14px !important;
         }
       `}</style>
-
       <SectionHeader
         title="User Management"
         subtitle="Manage registered ShuttleTrack accounts and activity"
@@ -334,7 +332,6 @@ export default function AdminUsers({
           </button>
         }
       />
-
       <div
         style={{
           display: "grid",
@@ -350,21 +347,18 @@ export default function AdminUsers({
           helper="All registered accounts"
           dark
         />
-
         <SummaryCard
           label="Players"
           value={counts.Player}
           helper="Registered player accounts"
           color="#00976C"
         />
-
         <SummaryCard
           label="Coaches"
           value={counts.Coach}
           helper="Registered coach accounts"
           color="#F59E0B"
         />
-
         <SummaryCard
           label="Administrators"
           value={counts.Admin}
@@ -372,7 +366,6 @@ export default function AdminUsers({
           color="#7C3AED"
         />
       </div>
-
       <div
         style={{
           marginBottom: 14,
@@ -391,7 +384,6 @@ export default function AdminUsers({
         and require email verification the next time the player
         logs in.
       </div>
-
       <TableCard>
         <div
           style={{
@@ -427,7 +419,6 @@ export default function AdminUsers({
               </button>
             ))}
           </div>
-
           <div
             style={{
               display: "flex",
@@ -448,7 +439,6 @@ export default function AdminUsers({
               <option>Inactive</option>
               <option>Never active</option>
             </select>
-
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -457,7 +447,6 @@ export default function AdminUsers({
             />
           </div>
         </div>
-
         <table
           style={{
             width: "100%",
@@ -499,7 +488,6 @@ export default function AdminUsers({
               ))}
             </tr>
           </thead>
-
           <tbody>
             {visibleUsers.length === 0 ? (
               <tr>
@@ -578,25 +566,21 @@ export default function AdminUsers({
                       </div>
                     </div>
                   </td>
-
                   <td style={{ padding: "13px 16px" }}>
                     <Badge value={account.role} type="role" />
                   </td>
-
                   <td style={{ padding: "13px 16px" }}>
                     <StatusPill
-                      value={account.accountStatus}
+                      value={toUiAccountStatus(account.accountStatus)}
                       colours={ACCOUNT_COLORS}
                     />
                   </td>
-
                   <td style={{ padding: "13px 16px" }}>
                     <StatusPill
                       value={account.activityStatus}
                       colours={ACTIVITY_COLORS}
                     />
                   </td>
-
                   <td style={{ padding: "13px 16px" }}>
                     {account.role === "Player" &&
                     account.accountStatus === "Active" &&
@@ -616,7 +600,6 @@ export default function AdminUsers({
                       </span>
                     )}
                   </td>
-
                   <td
                     style={{
                       padding: "13px 16px",
@@ -626,7 +609,6 @@ export default function AdminUsers({
                   >
                     {account.lastSeenLabel}
                   </td>
-
                   <td
                     style={{
                       padding: "13px 16px",
@@ -636,7 +618,6 @@ export default function AdminUsers({
                   >
                     {account.joined}
                   </td>
-
                   <td style={{ padding: "13px 16px" }}>
                     <StatusPill
                       value={
@@ -656,14 +637,12 @@ export default function AdminUsers({
                       }}
                     />
                   </td>
-
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </TableCard>
-
       {selected && (
         <Modal
           title={`Manage ${selected.name}`}
@@ -681,7 +660,6 @@ export default function AdminUsers({
               style={inputStyle}
             />
           </Field>
-
           <Field label="Email">
             <input
               value={selected.email}
@@ -693,7 +671,6 @@ export default function AdminUsers({
               readOnly
             />
           </Field>
-
           <div
             style={{
               display: "grid",
@@ -718,7 +695,6 @@ export default function AdminUsers({
                 <option>Admin</option>
               </select>
             </Field>
-
             <Field label="Account status">
               <select
                 value={form.accountStatus}
@@ -733,10 +709,83 @@ export default function AdminUsers({
               >
                 <option>Active</option>
                 <option>Suspended</option>
-                <option>Disabled</option>
+                <option>Terminated</option>
               </select>
             </Field>
           </div>
+
+          {form.accountStatus === "Suspended" && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 14,
+                marginBottom: 14,
+              }}
+            >
+              <Field label="Suspend for">
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={form.suspensionAmount}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      suspensionAmount: Math.max(
+                        1,
+                        Number(event.target.value) || 1,
+                      ),
+                    }))
+                  }
+                  style={inputStyle}
+                />
+              </Field>
+
+              <Field label="Duration">
+                <select
+                  value={form.suspensionUnit}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      suspensionUnit: event.target.value,
+                    }))
+                  }
+                  style={inputStyle}
+                >
+                  <option value="days">Day(s)</option>
+                  <option value="weeks">Week(s)</option>
+                  <option value="months">Month(s)</option>
+                  <option value="years">Year(s)</option>
+                </select>
+              </Field>
+            </div>
+          )}
+
+          {form.accountStatus === "Suspended" && (
+            <div
+              style={{
+                marginBottom: 14,
+                padding: 12,
+                borderRadius: 10,
+                background: "#FFF7ED",
+                color: "#9A3412",
+                fontSize: 12,
+                lineHeight: 1.6,
+              }}
+            >
+              Suspension ends on{" "}
+              <strong>
+                {formatSuspensionDate(
+                  getSuspendedUntil(
+                    form.suspensionAmount,
+                    form.suspensionUnit,
+                  ),
+                )}
+              </strong>
+              .
+            </div>
+          )}
 
           {selected.role === "Player" &&
             selected.accountStatus === "Active" &&
@@ -758,7 +807,6 @@ export default function AdminUsers({
                 the next time they log in.
               </div>
             )}
-
           <div
             style={{
               marginBottom: 18,
@@ -770,11 +818,10 @@ export default function AdminUsers({
               lineHeight: 1.6,
             }}
           >
-            Suspended or Disabled accounts are logged out during
+            Suspended or Terminated accounts are logged out during
             the next account check and cannot continue using the
             authenticated pages.
           </div>
-
           {formError && (
             <div
               style={{
@@ -789,7 +836,6 @@ export default function AdminUsers({
               {formError}
             </div>
           )}
-
           <div
             style={{
               display: "flex",
@@ -811,9 +857,8 @@ export default function AdminUsers({
             >
               Cancel
             </button>
-
             {selected.userId !== currentAdminId &&
-              selected.accountStatus === "Disabled" && (
+              toUiAccountStatus(selected.accountStatus) === "Terminated" && (
                 <button
                   type="button"
                   disabled={saving || removing}
@@ -830,7 +875,6 @@ export default function AdminUsers({
                   Remove user
                 </button>
               )}
-
             <button
               type="button"
               disabled={saving || removing}
@@ -848,8 +892,6 @@ export default function AdminUsers({
           </div>
         </Modal>
       )}
-
-
       {selected && showConfirmation && (
         <Modal
           title="Confirm account changes"
@@ -878,7 +920,6 @@ export default function AdminUsers({
               </div>
             </div>
           </div>
-
           <div
             style={{
               marginBottom: 18,
@@ -927,7 +968,6 @@ export default function AdminUsers({
               </div>
             ))}
           </div>
-
           {form.accountStatus === "Suspended" &&
             selected.accountStatus !== "Suspended" && (
               <div
@@ -946,9 +986,8 @@ export default function AdminUsers({
                 using authenticated pages.
               </div>
             )}
-
-          {form.accountStatus === "Disabled" &&
-            selected.accountStatus !== "Disabled" && (
+          {form.accountStatus === "Terminated" &&
+            toUiAccountStatus(selected.accountStatus) !== "Terminated" && (
               <div
                 style={{
                   marginBottom: 16,
@@ -964,9 +1003,8 @@ export default function AdminUsers({
                 the database but will not be allowed to use ShuttleTrack.
               </div>
             )}
-
           {form.accountStatus === "Active" &&
-            selected.accountStatus !== "Active" && (
+            toUiAccountStatus(selected.accountStatus) !== "Active" && (
               <div
                 style={{
                   marginBottom: 16,
@@ -982,7 +1020,6 @@ export default function AdminUsers({
                 access and can sign in again.
               </div>
             )}
-
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <button
               type="button"
@@ -998,7 +1035,6 @@ export default function AdminUsers({
             >
               Go back
             </button>
-
             <button
               type="button"
               disabled={saving}
@@ -1009,7 +1045,7 @@ export default function AdminUsers({
                 background:
                   form.accountStatus === "Suspended"
                     ? "#DC2626"
-                    : form.accountStatus === "Disabled"
+                    : form.accountStatus === "Terminated"
                     ? "#4B5563"
                     : "#1A5FFF",
                 color: "#fff",
@@ -1021,7 +1057,6 @@ export default function AdminUsers({
           </div>
         </Modal>
       )}
-
       {selected && showRemoveConfirmation && (
         <Modal
           title="Remove user"
@@ -1062,7 +1097,6 @@ export default function AdminUsers({
               </div>
             </div>
           </div>
-
           <div
             style={{
               marginBottom: 18,
@@ -1076,11 +1110,10 @@ export default function AdminUsers({
           >
             <strong>Are you sure you want to remove this user?</strong>
             <br />
-            The account is already disabled. Removing it will hide the user
+            The account is already terminated. Removing it will hide the user
             from User Management, but historical ShuttleTrack records will be
             kept.
           </div>
-
           {formError && (
             <div
               style={{
@@ -1095,7 +1128,6 @@ export default function AdminUsers({
               {formError}
             </div>
           )}
-
           <div
             style={{
               display: "flex",
@@ -1117,7 +1149,6 @@ export default function AdminUsers({
             >
               Cancel
             </button>
-
             <button
               type="button"
               disabled={removing}
@@ -1135,7 +1166,6 @@ export default function AdminUsers({
           </div>
         </Modal>
       )}
-
       {successMessage && !selected && (
         <Modal title="Changes saved" onClose={() => setSuccessMessage("")} maxWidth={430}>
           <div
