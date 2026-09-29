@@ -6,10 +6,8 @@ import {
   Navigate,
   useLocation,
 } from 'react-router-dom'
-
 import { useAuth } from './context/AuthContext'
 import Layout from './components/Layout/Layout'
-
 import Dashboard from './components/Player/Dashboard'
 import Profile from './components/Player/Profile'
 import Performance from './components/Player/Performance'
@@ -19,18 +17,14 @@ import Expenses from './components/Player/Expenses'
 import Players from './components/Player/Players'
 import Clubs from './components/Player/Clubs'
 import Settings from './components/Player/Settings'
-
 import Login from './components/Welcome/Login'
 import Register from './components/Welcome/Register'
 import ResetPassword from './components/Welcome/ResetPassword'
 import EmailVerified from './components/Welcome/EmailVerified'
 import VerifyReturningUser from './components/Welcome/VerifyReturningUser'
-
 import AuthCallback from './components/Welcome/AuthCallback'
 import AdminDashboard from './components/Admin/Admin'
-
 import Setup from './components/Welcome/Setup'
-
 import CoachDashboard from './components/Coach/CoachDashboard'
 import CoachPlayers from './components/Coach/CoachPlayers'
 import CoachSessions from './components/Coach/CoachSessions'
@@ -38,7 +32,6 @@ import CoachProgress from './components/Coach/CoachProgress'
 import CoachProfile from './components/Coach/CoachProfile'
 import CoachSettings from './components/Coach/CoachSettings'
 import CoachClubs from './components/Coach/CoachClubs'
-
 function LoadingScreen() {
   return (
     <div
@@ -55,80 +48,83 @@ function LoadingScreen() {
     </div>
   )
 }
-
 function getUserRole(profile, isAdmin) {
   if (isAdmin) return 'admin'
   return profile?.role || 'player'
 }
-
 function hasPlayerAccess(profile, isAdmin) {
   if (isAdmin) return false
-
   if (typeof profile?.has_player_access === 'boolean') {
     return profile.has_player_access
   }
-
   return profile?.role === 'player'
 }
-
 function hasCoachAccess(profile, isAdmin) {
   if (isAdmin) return false
-
   if (typeof profile?.has_coach_access === 'boolean') {
     return profile.has_coach_access
   }
-
   return profile?.role === 'coach'
 }
-
 function getSetupCompleted(profile) {
   return profile?.setup_completed === true
 }
-
 function getUserRedirectPath(profile, isAdmin) {
   if (profile?.requires_reverification === true) {
     return '/verify-returning-user'
   }
-
   const role = getUserRole(profile, isAdmin)
-
   if (role === 'admin') return '/admin'
-
   if (
     role === 'coach' &&
     hasCoachAccess(profile, isAdmin)
   ) {
     return '/coach'
   }
-
   if (
     hasPlayerAccess(profile, isAdmin) &&
     !getSetupCompleted(profile)
   ) {
     return '/setup'
   }
-
   if (hasPlayerAccess(profile, isAdmin)) {
     return '/dashboard'
   }
-
   if (hasCoachAccess(profile, isAdmin)) {
     return '/coach'
   }
-
   return '/login'
 }
-
 function PrivateRoute({ children }) {
   const { user, profile, loading } = useAuth()
-
+  const location = useLocation()
   if (loading) return <LoadingScreen />
-
   if (!user) {
-    return <Navigate to="/login" replace />
+    const returnTo = `${location.pathname}${location.search || ''}${location.hash || ''}`
+    if (
+      returnTo.startsWith('/') &&
+      !returnTo.startsWith('//') &&
+      returnTo !== '/login'
+    ) {
+      sessionStorage.setItem('shuttlePostLoginRedirect', returnTo)
+    }
+    return (
+      <Navigate
+        to={`/login?redirect=${encodeURIComponent(returnTo)}`}
+        replace
+        state={{ from: returnTo }}
+      />
+    )
   }
-
   if (profile?.requires_reverification === true) {
+    const returnTo = `${location.pathname}${location.search || ''}${location.hash || ''}`
+    if (
+      returnTo.startsWith('/') &&
+      !returnTo.startsWith('//') &&
+      returnTo !== '/verify-returning-user'
+    ) {
+      sessionStorage.setItem('shuttlePostLoginRedirect', returnTo)
+    }
     return (
       <Navigate
         to="/verify-returning-user"
@@ -136,10 +132,8 @@ function PrivateRoute({ children }) {
       />
     )
   }
-
   return children
 }
-
 function PublicRoute({ children }) {
   const {
     user,
@@ -147,11 +141,8 @@ function PublicRoute({ children }) {
     loading,
     isAdmin,
   } = useAuth()
-
   const location = useLocation()
-
   if (loading) return <LoadingScreen />
-
   const addingRole =
     sessionStorage.getItem(
       'shuttleAddingRole',
@@ -164,6 +155,51 @@ function PublicRoute({ children }) {
       addingRole
     )
   ) {
+    const params = new URLSearchParams(location.search)
+    const redirectFromQuery = params.get('redirect') || ''
+    const redirectFromSession =
+      sessionStorage.getItem('shuttlePostLoginRedirect') || ''
+    const pendingRedirect = redirectFromQuery || redirectFromSession
+
+    const isSafeRedirect =
+      pendingRedirect.startsWith('/') &&
+      !pendingRedirect.startsWith('//') &&
+      pendingRedirect !== '/login'
+
+    if (isSafeRedirect) {
+      const redirectUrl = new URL(
+        pendingRedirect,
+        window.location.origin,
+      )
+      const redirectPath = redirectUrl.pathname
+      const playerPaths = new Set([
+        '/dashboard',
+        '/profile',
+        '/performance',
+        '/fitness',
+        '/expenses',
+        '/players',
+        '/clubs',
+        '/settings',
+      ])
+
+      const canOpenRedirect =
+        (redirectPath.startsWith('/verify-skill/') &&
+          (hasPlayerAccess(profile, isAdmin) ||
+            hasCoachAccess(profile, isAdmin))) ||
+        (playerPaths.has(redirectPath) &&
+          hasPlayerAccess(profile, isAdmin) &&
+          getSetupCompleted(profile)) ||
+        ((redirectPath === '/coach' ||
+          redirectPath.startsWith('/coach/')) &&
+          hasCoachAccess(profile, isAdmin))
+
+      if (canOpenRedirect) {
+        sessionStorage.removeItem('shuttlePostLoginRedirect')
+        return <Navigate to={pendingRedirect} replace />
+      }
+    }
+
     return (
       <Navigate
         to={getUserRedirectPath(profile, isAdmin)}
@@ -171,10 +207,8 @@ function PublicRoute({ children }) {
       />
     )
   }
-
   return children
 }
-
 function AdminRoute({ children }) {
   const {
     user,
@@ -182,13 +216,10 @@ function AdminRoute({ children }) {
     isAdmin,
     loading,
   } = useAuth()
-
   if (loading) return <LoadingScreen />
-
   if (!user) {
     return <Navigate to="/login" replace />
   }
-
   if (getUserRole(profile, isAdmin) !== 'admin') {
     return (
       <Navigate
@@ -197,10 +228,8 @@ function AdminRoute({ children }) {
       />
     )
   }
-
   return children
 }
-
 function CoachRoute({ children }) {
   const {
     user,
@@ -208,17 +237,13 @@ function CoachRoute({ children }) {
     loading,
     isAdmin,
   } = useAuth()
-
   if (loading) return <LoadingScreen />
-
   if (!user) {
     return <Navigate to="/login" replace />
   }
-
   if (isAdmin) {
     return <Navigate to="/admin" replace />
   }
-
   if (!hasCoachAccess(profile, isAdmin)) {
     return (
       <Navigate
@@ -227,10 +252,8 @@ function CoachRoute({ children }) {
       />
     )
   }
-
   return children
 }
-
 function PlayerRoute({ children }) {
   const {
     user,
@@ -238,17 +261,13 @@ function PlayerRoute({ children }) {
     loading,
     isAdmin,
   } = useAuth()
-
   if (loading) return <LoadingScreen />
-
   if (!user) {
     return <Navigate to="/login" replace />
   }
-
   if (isAdmin) {
     return <Navigate to="/admin" replace />
   }
-
   if (!hasPlayerAccess(profile, isAdmin)) {
     return (
       <Navigate
@@ -257,14 +276,11 @@ function PlayerRoute({ children }) {
       />
     )
   }
-
   if (!getSetupCompleted(profile)) {
     return <Navigate to="/setup" replace />
   }
-
   return children
 }
-
 function PlayerSetupRoute({ children }) {
   const {
     user,
@@ -272,19 +288,14 @@ function PlayerSetupRoute({ children }) {
     loading,
     isAdmin,
   } = useAuth()
-
   const location = useLocation()
-
   if (loading) return <LoadingScreen />
-
   if (!user) {
     return <Navigate to="/login" replace />
   }
-
   if (isAdmin) {
     return <Navigate to="/admin" replace />
   }
-
   if (!hasPlayerAccess(profile, isAdmin)) {
     return (
       <Navigate
@@ -293,16 +304,12 @@ function PlayerSetupRoute({ children }) {
       />
     )
   }
-
   const searchParams =
     new URLSearchParams(location.search)
-
   const isRedoSetup =
     searchParams.get('redo') === '1'
-
   const isAddingRole =
     searchParams.get('addRole') === '1'
-
   if (
     getSetupCompleted(profile) &&
     !isRedoSetup &&
@@ -310,10 +317,8 @@ function PlayerSetupRoute({ children }) {
   ) {
     return <Navigate to="/dashboard" replace />
   }
-
   return children
 }
-
 function App() {
   return (
     <BrowserRouter>
@@ -327,7 +332,6 @@ function App() {
             </PublicRoute>
           }
         />
-
         <Route
           path="/login"
           element={
@@ -336,7 +340,6 @@ function App() {
             </PublicRoute>
           }
         />
-
         <Route
           path="/register"
           element={
@@ -345,27 +348,22 @@ function App() {
             </PublicRoute>
           }
         />
-
         <Route
           path="/reset-password"
           element={<ResetPassword />}
         />
-
         <Route
           path="/auth/callback"
           element={<AuthCallback />}
         />
-
         <Route
           path="/email-verified"
           element={<EmailVerified />}
         />
-
         <Route
           path="/verify-returning-user"
           element={<VerifyReturningUser />}
         />
-
         {/* Player setup */}
         <Route
           path="/setup"
@@ -375,12 +373,10 @@ function App() {
             </PlayerSetupRoute>
           }
         />
-
         <Route
           path="/player-setup"
           element={<Navigate to="/setup" replace />}
         />
-
         {/* Main application layout */}
         <Route
           element={
@@ -398,7 +394,6 @@ function App() {
               </PlayerRoute>
             }
           />
-
           <Route
             path="/profile"
             element={
@@ -407,7 +402,6 @@ function App() {
               </PlayerRoute>
             }
           />
-
           <Route
             path="/performance"
             element={
@@ -416,14 +410,12 @@ function App() {
               </PlayerRoute>
             }
           />
-
           {/* Shared logged-in route:
               both players and coaches can verify skill assessments */}
           <Route
             path="/verify-skill/:token"
             element={<VerifySkill />}
           />
-
           <Route
             path="/fitness"
             element={
@@ -432,7 +424,6 @@ function App() {
               </PlayerRoute>
             }
           />
-
           <Route
             path="/expenses"
             element={
@@ -441,7 +432,6 @@ function App() {
               </PlayerRoute>
             }
           />
-
           <Route
             path="/players"
             element={
@@ -450,7 +440,6 @@ function App() {
               </PlayerRoute>
             }
           />
-
           <Route
             path="/clubs"
             element={
@@ -459,7 +448,6 @@ function App() {
               </PlayerRoute>
             }
           />
-
           <Route
             path="/settings"
             element={
@@ -468,7 +456,6 @@ function App() {
               </PlayerRoute>
             }
           />
-
           {/* Coach routes */}
           <Route
             path="/coach"
@@ -478,7 +465,6 @@ function App() {
               </CoachRoute>
             }
           />
-
           <Route
             path="/coach/players"
             element={
@@ -487,7 +473,6 @@ function App() {
               </CoachRoute>
             }
           />
-
           <Route
             path="/coach/sessions"
             element={
@@ -496,7 +481,6 @@ function App() {
               </CoachRoute>
             }
           />
-
           <Route
             path="/coach/progress"
             element={
@@ -505,7 +489,6 @@ function App() {
               </CoachRoute>
             }
           />
-
           <Route
             path="/coach/clubs"
             element={
@@ -514,7 +497,6 @@ function App() {
               </CoachRoute>
             }
           />
-
           <Route
             path="/coach/profile"
             element={
@@ -523,7 +505,6 @@ function App() {
               </CoachRoute>
             }
           />
-
           <Route
             path="/coach/settings"
             element={
@@ -533,7 +514,6 @@ function App() {
             }
           />
         </Route>
-
         {/* Admin route */}
         <Route
           path="/admin"
@@ -543,7 +523,6 @@ function App() {
             </AdminRoute>
           }
         />
-
         {/* Development-only admin preview */}
         {process.env.NODE_ENV === 'development' && (
           <Route
@@ -551,7 +530,6 @@ function App() {
             element={<AdminDashboard />}
           />
         )}
-
         {/* Unknown routes */}
         <Route
           path="*"
@@ -561,5 +539,4 @@ function App() {
     </BrowserRouter>
   )
 }
-
 export default App
