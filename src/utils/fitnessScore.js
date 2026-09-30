@@ -218,32 +218,51 @@ export function calculateFitnessSummary({
     return clampScore(matchingTest.score)
   }
 
+  // Recovery uses equal weighting:
+  // 33.3% sleep + 33.3% tiredness + 33.3% muscle ache.
+  // Active injuries are kept separate for recovery suggestions and safety.
   const recoveryBase = latestRecovery
-    ? clampScore(
-        100 -
-          getRecoveryValue(
-            latestRecovery,
-            'tiredness',
-            'fatigue_level'
-          ) *
-            8 -
-          getRecoveryValue(
-            latestRecovery,
-            'muscleAche',
-            'soreness_level'
-          ) *
-            5 +
-          Math.min(
-            8,
-            getRecoveryValue(
-              latestRecovery,
-              'sleep',
-              'sleep_hours'
-            )
-          ) -
-          activeInjuries * 5
+    ? Math.round(
+        (
+          clampScore(
+            (
+              Math.min(
+                8,
+                getRecoveryValue(
+                  latestRecovery,
+                  'sleep',
+                  'sleep_hours'
+                )
+              ) / 8
+            ) * 100
+          ) +
+          clampScore(
+            (
+              (
+                10 -
+                getRecoveryValue(
+                  latestRecovery,
+                  'tiredness',
+                  'fatigue_level'
+                )
+              ) / 10
+            ) * 100
+          ) +
+          clampScore(
+            (
+              (
+                10 -
+                getRecoveryValue(
+                  latestRecovery,
+                  'muscleAche',
+                  'soreness_level'
+                )
+              ) / 10
+            ) * 100
+          )
+        ) / 3
       )
-    : 50
+    : 0
 
   const enduranceTestScore = latestScore('Endurance')
   const speedTestScore = latestScore('Speed')
