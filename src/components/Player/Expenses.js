@@ -5,7 +5,6 @@ import MonthlyTrendLineChart from '../Layout/MonthlyTrendLineChart'
 import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
-
 const categoryInfo = {
   Court: { label: 'Court rental', badge: 'blue', color: '#1A5FFF' },
   Equipment: { label: 'Equipment', badge: 'green', color: '#00C48C' },
@@ -13,27 +12,22 @@ const categoryInfo = {
   Transport: { label: 'Transport', badge: 'amber', color: '#F59E0B' },
   Other: { label: 'Other', badge: 'gray', color: '#8892A4' },
 }
-
 const MONTH_NAMES_LONG = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
-
 const MONTH_NAMES_SHORT = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ]
-
 const today = new Date()
 const currentYear = today.getFullYear()
 const currentMonthIndex = today.getMonth()
 const currentMonthKey = `${MONTH_NAMES_LONG[currentMonthIndex]} ${currentYear}`
-
 const baseMonthOptions = Array.from(
   { length: currentMonthIndex + 1 },
   (_, i) => `${MONTH_NAMES_LONG[i]} ${currentYear}`
 )
-
 const C = {
   text: 'var(--text, #0D1B3E)',
   muted: 'var(--text-muted, #8892A4)',
@@ -41,7 +35,6 @@ const C = {
   soft: 'var(--soft, #EEF1F8)',
   line: 'var(--line, #EEF1F8)',
 }
-
 function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
   const props = {
     width: size,
@@ -50,7 +43,6 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
     fill: 'none',
     'aria-hidden': true,
   }
-
   if (type === 'bell') {
     return (
       <svg {...props}>
@@ -70,7 +62,6 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
       </svg>
     )
   }
-
   if (type === 'wallet') {
     return (
       <svg {...props}>
@@ -97,7 +88,6 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
       </svg>
     )
   }
-
   if (type === 'budget') {
     return (
       <svg {...props}>
@@ -119,7 +109,6 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
       </svg>
     )
   }
-
   if (type === 'trend') {
     return (
       <svg {...props}>
@@ -140,7 +129,6 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
       </svg>
     )
   }
-
   if (type === 'average') {
     return (
       <svg {...props}>
@@ -161,7 +149,6 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
       </svg>
     )
   }
-
   if (type === 'warning') {
     return (
       <svg {...props}>
@@ -180,7 +167,6 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
       </svg>
     )
   }
-
   if (type === 'check') {
     return (
       <svg {...props}>
@@ -201,7 +187,6 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
       </svg>
     )
   }
-
   if (type === 'info') {
     return (
       <svg {...props}>
@@ -221,10 +206,8 @@ function ExpenseIcon({ type, color = 'currentColor', size = 18 }) {
       </svg>
     )
   }
-
   return null
 }
-
 function getSuggestionMeta(type) {
   if (type === 'danger') {
     return {
@@ -233,7 +216,6 @@ function getSuggestionMeta(type) {
       color: '#EF4444',
     }
   }
-
   if (type === 'warning') {
     return {
       icon: 'warning',
@@ -241,7 +223,6 @@ function getSuggestionMeta(type) {
       color: '#F59E0B',
     }
   }
-
   if (type === 'success') {
     return {
       icon: 'check',
@@ -249,30 +230,24 @@ function getSuggestionMeta(type) {
       color: '#00C48C',
     }
   }
-
   return {
     icon: 'info',
     background: '#E8EFFE',
     color: '#1A5FFF',
   }
 }
-
-
 function formatRM(v) {
   return `RM ${Number(v || 0).toFixed(2)}`
 }
-
 function formatRMNoDecimal(v) {
   return `RM ${Math.round(Number(v || 0))}`
 }
-
 function getTodayISO() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
     d.getDate()
   ).padStart(2, '0')}`
 }
-
 function createEmptyExpenseForm() {
   return {
     date: getTodayISO(),
@@ -281,7 +256,6 @@ function createEmptyExpenseForm() {
     amount: '',
   }
 }
-
 function parseMonth(monthStr) {
   const [monthName, yearText] = monthStr.split(' ')
   return {
@@ -289,7 +263,6 @@ function parseMonth(monthStr) {
     year: Number(yearText),
   }
 }
-
 function sortMonths(months) {
   return [...months].sort((a, b) => {
     const ma = parseMonth(a)
@@ -298,19 +271,15 @@ function sortMonths(months) {
     return ma.monthIdx - mb.monthIdx
   })
 }
-
 function isoToDisplay(iso) {
   if (!iso) return { dateStr: '', monthKey: '' }
-
   const [year, month, day] = iso.split('-').map(Number)
   const monthIdx = month - 1
-
   return {
     dateStr: `${day} ${MONTH_NAMES_SHORT[monthIdx]}`,
     monthKey: `${MONTH_NAMES_LONG[monthIdx]} ${year}`,
   }
 }
-
 function getCategoryBadgeClass(color) {
   if (color === 'blue') return styles.badgeBlue
   if (color === 'green') return styles.badgeGreen
@@ -318,7 +287,6 @@ function getCategoryBadgeClass(color) {
   if (color === 'amber') return styles.badgeAmber
   return styles.badgeGray
 }
-
 function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
   return (
     <div
@@ -330,7 +298,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
           <div className={styles.modalTitle}>{title}</div>
           <button className={styles.modalClose} onClick={onClose}>✕</button>
         </div>
-
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <div className={styles.formRow}>
             <label className={styles.formLabel}>Date</label>
@@ -341,7 +308,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
               onChange={e => onChange('date', e.target.value)}
             />
           </div>
-
           <div className={styles.formRow}>
             <label className={styles.formLabel}>Category</label>
             <select
@@ -357,7 +323,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
             </select>
           </div>
         </div>
-
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Description optional</label>
           <input
@@ -367,7 +332,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
             onChange={e => onChange('desc', e.target.value)}
           />
         </div>
-
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Amount RM</label>
           <input
@@ -378,7 +342,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
             onChange={e => onChange('amount', e.target.value)}
           />
         </div>
-
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
           {onDelete ? (
             <button
@@ -397,7 +360,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
               Delete
             </button>
           ) : <div />}
-
           <div style={{ display: 'flex', gap: 10 }}>
             <button className={styles.btnOutline} onClick={onClose}>Cancel</button>
             <button className={styles.btnPrimary} onClick={onSave}>Save</button>
@@ -407,7 +369,6 @@ function ExpenseModal({ title, form, onChange, onSave, onClose, onDelete }) {
     </div>
   )
 }
-
 function BudgetModal({
   monthlyBudget,
   setMonthlyBudget,
@@ -426,7 +387,6 @@ function BudgetModal({
           <div className={styles.modalTitle}>Set Monthly Budget</div>
           <button className={styles.modalClose} onClick={onClose}>✕</button>
         </div>
-
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Monthly badminton budget</label>
           <input
@@ -437,19 +397,16 @@ function BudgetModal({
             placeholder="Example: 200"
           />
         </div>
-
         <div className={styles.statRow}>
           <span className={styles.statLabel}>Current spending</span>
           <span className={styles.statVal}>{formatRM(selectedMonthTotal)}</span>
         </div>
-
         <div className={styles.statRow}>
           <span className={styles.statLabel}>Budget used</span>
           <span className={styles.statVal}>
             {Number.isFinite(budgetUsedPercent) ? `${budgetUsedPercent}%` : '—'}
           </span>
         </div>
-
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
           <button className={styles.btnOutline} onClick={onClose}>Cancel</button>
           <button className={styles.btnPrimary} onClick={onSave}>Save Budget</button>
@@ -458,16 +415,13 @@ function BudgetModal({
     </div>
   )
 }
-
 function RuleSuggestionsCard({ suggestions }) {
   return (
     <div className={styles.card}>
       <div className={styles.cardTitle}>Suggestions</div>
-
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {suggestions.map((s, i) => {
           const meta = getSuggestionMeta(s.type)
-
           return (
             <div
               key={i}
@@ -515,7 +469,6 @@ function RuleSuggestionsCard({ suggestions }) {
                   size={15}
                 />
               </span>
-
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
@@ -527,7 +480,6 @@ function RuleSuggestionsCard({ suggestions }) {
                 >
                   {s.title}
                 </div>
-
                 <div
                   style={{
                     fontSize: 12,
@@ -546,54 +498,44 @@ function RuleSuggestionsCard({ suggestions }) {
     </div>
   )
 }
-
 export default function Expenses() {
   const [expenses, setExpenses] = useState([])
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
-
   const [showAddExpense, setShowAddExpense] = useState(false)
   const [editingExpense, setEditingExpense] = useState(null)
   const [expenseForm, setExpenseForm] = useState(createEmptyExpenseForm)
-
   const [monthlyBudget, setMonthlyBudget] = useState(0)
   const [hasMonthlyBudget, setHasMonthlyBudget] = useState(false)
   const [showBudgetModal, setShowBudgetModal] = useState(false)
-
+  const [showAllExpenses, setShowAllExpenses] = useState(false)
   // Expense-page notification bell.
   // These notifications are calculated from the selected month's budget,
   // so this page only shows expense-related alerts.
   const [readExpenseNotificationKeys, setReadExpenseNotificationKeys] = useState([])
   const [clearedExpenseNotificationKeys, setClearedExpenseNotificationKeys] = useState([])
-
   const fetchExpenses = useCallback(async () => {
     setLoading(true)
-
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
-
     if (!user) {
       setLoading(false)
       return
     }
-
     const { data, error } = await supabase
       .from('expenses')
       .select('*')
       .eq('user_id', user.id)
       .order('date', { ascending: false })
-
     if (error) {
       console.log(error)
       setLoading(false)
       return
     }
-
     const formatted = (data || []).map(item => {
       const { dateStr, monthKey } = isoToDisplay(item.date)
       const cat = categoryInfo[item.category] || categoryInfo.Other
-
       return {
         id: item.id,
         isoDate: item.date,
@@ -605,62 +547,49 @@ export default function Expenses() {
         color: cat.badge,
       }
     })
-
     setExpenses(formatted)
     setLoading(false)
   }, [])
-
   const fetchBudget = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
-
     if (!user) {
       setMonthlyBudget(0)
       setHasMonthlyBudget(false)
       return
     }
-
     const { data, error } = await supabase
       .from('expense_budgets')
       .select('budget')
       .eq('user_id', user.id)
       .eq('month', selectedMonth)
       .maybeSingle()
-
     if (error) {
       console.log(error)
       return
     }
-
     const budgetExists =
       data?.budget !== undefined &&
       data?.budget !== null &&
       Number(data.budget) > 0
-
     setHasMonthlyBudget(budgetExists)
     setMonthlyBudget(budgetExists ? Number(data.budget) : 0)
   }, [selectedMonth])
-
   useEffect(() => {
     fetchExpenses()
   }, [fetchExpenses])
-
   useEffect(() => {
     fetchBudget()
   }, [fetchBudget])
-
   const saveBudget = async () => {
     const nextBudget = Number(monthlyBudget)
-
     if (!Number.isFinite(nextBudget) || nextBudget <= 0) {
       alert('Please enter a monthly budget greater than RM 0.')
       return
     }
-
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
     if (!user) return
-
     const { error } = await supabase.from('expense_budgets').upsert(
       {
         user_id: user.id,
@@ -671,77 +600,78 @@ export default function Expenses() {
         onConflict: 'user_id,month',
       }
     )
-
     if (error) {
       console.log(error)
       alert('Failed to save budget.')
       return
     }
-
     setHasMonthlyBudget(true)
     setMonthlyBudget(nextBudget)
     setShowBudgetModal(false)
   }
-
   const handleExpenseChange = (key, value) => {
     setExpenseForm(f => ({ ...f, [key]: value }))
   }
-
   const availableMonths = sortMonths(
     Array.from(new Set([...baseMonthOptions, ...expenses.map(e => e.month), selectedMonth]))
   )
+  const selectedMonthParts = parseMonth(selectedMonth)
+  const selectedMonthName = MONTH_NAMES_LONG[selectedMonthParts.monthIdx]
+  const selectedYear = selectedMonthParts.year
+  const availableYears = Array.from(
+    new Set([
+      currentYear,
+      ...expenses.map(expense => parseMonth(expense.month).year),
+      selectedYear,
+    ])
+  ).sort((a, b) => b - a)
 
+  const handleMonthSelect = monthName => {
+    setSelectedMonth(`${monthName} ${selectedYear}`)
+  }
+
+  const handleYearSelect = year => {
+    setSelectedMonth(`${selectedMonthName} ${Number(year)}`)
+  }
   const filteredExpenses = expenses
     .filter(e => e.month === selectedMonth)
     .sort((a, b) => b.isoDate.localeCompare(a.isoDate))
-
+  const dashboardExpenses = filteredExpenses.slice(0, 5)
   const selectedMonthTotal = filteredExpenses.reduce((s, e) => s + Number(e.amount), 0)
-
   const monthly = availableMonths.map(month => ({
     month,
     amt: expenses.filter(e => e.month === month).reduce((s, e) => s + Number(e.amount), 0),
     current: month === selectedMonth,
   }))
-
   const selectedMonthIndex = availableMonths.indexOf(selectedMonth)
   const previousMonthName = selectedMonthIndex > 0 ? availableMonths[selectedMonthIndex - 1] : null
-
   const previousMonthTotal = previousMonthName
     ? monthly.find(m => m.month === previousMonthName)?.amt || 0
     : 0
-
   const savedAmount = previousMonthTotal - selectedMonthTotal
-
   const savedPercent =
     previousMonthTotal > 0
       ? Math.abs((savedAmount / previousMonthTotal) * 100).toFixed(1)
       : 0
-
   const thisYearTotal = monthly
     .filter(m => {
       const parsed = parseMonth(m.month)
       return parsed.year === currentYear && parsed.monthIdx <= currentMonthIndex
     })
     .reduce((s, m) => s + m.amt, 0)
-
   const monthsPassed = currentMonthIndex + 1
   const avgMonth = monthsPassed > 0 ? thisYearTotal / monthsPassed : 0
-
   const budgetUsedPercent =
     hasMonthlyBudget && monthlyBudget > 0
       ? Math.round((selectedMonthTotal / monthlyBudget) * 100)
       : null
-
   const remainingBudget =
     hasMonthlyBudget ? monthlyBudget - selectedMonthTotal : null
-
   let budgetStatus = 'Not Set'
   if (hasMonthlyBudget && budgetUsedPercent >= 100) budgetStatus = 'Exceeded'
   else if (hasMonthlyBudget && budgetUsedPercent >= 80) budgetStatus = 'Near Limit'
   else if (hasMonthlyBudget) budgetStatus = 'Safe'
-
   const expenseNotifications = []
-
   if (hasMonthlyBudget && budgetStatus === 'Exceeded') {
     expenseNotifications.push({
       key: `budget-exceeded-${selectedMonth}`,
@@ -761,7 +691,6 @@ export default function Expenses() {
       type: 'warning',
     })
   }
-
   const visibleExpenseNotifications = expenseNotifications
     .filter(
       notification =>
@@ -776,7 +705,6 @@ export default function Expenses() {
       ),
       action_url: '/expenses',
     }))
-
   const markAllExpenseNotificationsRead = () => {
     setReadExpenseNotificationKeys(previous =>
       Array.from(
@@ -789,19 +717,16 @@ export default function Expenses() {
       )
     )
   }
-
   const clearExpenseNotifications = id => {
     const keys = id
       ? [id]
       : visibleExpenseNotifications.map(
           notification => notification.key
         )
-
     setClearedExpenseNotificationKeys(previous =>
       Array.from(new Set([...previous, ...keys]))
     )
   }
-
   const openExpenseNotification = notification => {
     setReadExpenseNotificationKeys(previous =>
       previous.includes(notification.key)
@@ -809,13 +734,11 @@ export default function Expenses() {
         : [...previous, notification.key]
     )
   }
-
   const byCategory = Object.keys(categoryInfo)
     .map(category => {
       const val = filteredExpenses
         .filter(e => e.category === category)
         .reduce((s, e) => s + Number(e.amount), 0)
-
       return {
         category,
         label: categoryInfo[category].label,
@@ -825,34 +748,26 @@ export default function Expenses() {
       }
     })
     .filter(e => e.val > 0)
-
   const highestCategory =
     byCategory.length > 0
       ? byCategory.reduce((max, e) => (e.val > max.val ? e : max), byCategory[0])
       : null
-
   const budgetAlertMessage = (() => {
     if (!hasMonthlyBudget) {
       return `No monthly budget has been set for ${selectedMonth}. Set a budget to receive expense notifications.`
     }
-
     if (selectedMonthTotal <= 0) {
       return `No expenses recorded for ${selectedMonth}. Add expenses to monitor budget usage.`
     }
-
     if (budgetStatus === 'Exceeded') {
       return `You have spent ${formatRM(selectedMonthTotal)}, which is over your monthly budget of ${formatRM(monthlyBudget)}.`
     }
-
     if (budgetStatus === 'Near Limit') {
       return `You have used ${budgetUsedPercent}% of your monthly budget. Remaining budget is ${formatRM(remainingBudget)}.`
     }
-
     return `You are within budget. Remaining budget for ${selectedMonth} is ${formatRM(remainingBudget)}.`
   })()
-
   const ruleSuggestions = []
-
   if (selectedMonthTotal <= 0) {
     ruleSuggestions.push({
       type: 'info',
@@ -860,7 +775,6 @@ export default function Expenses() {
       text: `No expenses are recorded for ${selectedMonth}. Add expenses to generate spending suggestions.`,
     })
   }
-
   if (budgetStatus === 'Exceeded') {
     ruleSuggestions.push({
       type: 'danger',
@@ -886,7 +800,6 @@ export default function Expenses() {
       text: `You have recorded ${formatRM(selectedMonthTotal)} in spending for ${selectedMonth}. Set a budget to track how much remains.`,
     })
   }
-
   if (highestCategory && highestCategory.pct >= 35) {
     ruleSuggestions.push({
       type: 'warning',
@@ -894,7 +807,6 @@ export default function Expenses() {
       text: `${highestCategory.label} takes up ${highestCategory.pct}% of this month’s spending. Review this category if you want to reduce cost.`,
     })
   }
-
   if (avgMonth > 0 && selectedMonthTotal > avgMonth) {
     ruleSuggestions.push({
       type: 'warning',
@@ -902,7 +814,6 @@ export default function Expenses() {
       text: `This month’s spending is higher than your average monthly spending this year of ${formatRM(avgMonth)}.`,
     })
   }
-
   if (byCategory.length >= 3) {
     ruleSuggestions.push({
       type: 'info',
@@ -910,12 +821,14 @@ export default function Expenses() {
       text: 'Your expenses are spread across several categories. Check which category affects your budget the most.',
     })
   }
-
+  const visibleRuleSuggestions =
+    selectedMonthTotal > 0
+      ? ruleSuggestions.slice(0, 3)
+      : []
   const openAddExpense = () => {
     setExpenseForm(createEmptyExpenseForm())
     setShowAddExpense(true)
   }
-
   const openEditExpense = expense => {
     setEditingExpense(expense)
     setExpenseForm({
@@ -925,35 +838,27 @@ export default function Expenses() {
       amount: String(expense.amount),
     })
   }
-
   const closeExpenseModal = () => {
     setShowAddExpense(false)
     setEditingExpense(null)
     setExpenseForm(createEmptyExpenseForm())
   }
-
   const validateExpense = () => {
     const amount = Number(expenseForm.amount)
-
     if (!expenseForm.date || !expenseForm.amount || Number.isNaN(amount) || amount <= 0) {
       alert('Please enter a valid date and amount.')
       return false
     }
-
     return true
   }
-
   const handleAddExpense = async () => {
     if (!validateExpense()) return
-
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
-
     if (!user) {
       alert('Please login first.')
       return
     }
-
     const { error } = await supabase.from('expenses').insert({
       user_id: user.id,
       date: expenseForm.date,
@@ -961,23 +866,18 @@ export default function Expenses() {
       description: expenseForm.desc.trim() || null,
       amount: Number(expenseForm.amount),
     })
-
     if (error) {
       console.log(error)
       alert('Failed to add expense.')
       return
     }
-
     const { monthKey } = isoToDisplay(expenseForm.date)
     setSelectedMonth(monthKey)
-
     await fetchExpenses()
     closeExpenseModal()
   }
-
   const handleSaveEditExpense = async () => {
     if (!validateExpense()) return
-
     const { error } = await supabase
       .from('expenses')
       .update({
@@ -987,36 +887,29 @@ export default function Expenses() {
         amount: Number(expenseForm.amount),
       })
       .eq('id', editingExpense.id)
-
     if (error) {
       console.log(error)
       alert('Failed to update expense.')
       return
     }
-
     const { monthKey } = isoToDisplay(expenseForm.date)
     setSelectedMonth(monthKey)
-
     await fetchExpenses()
     closeExpenseModal()
   }
-
   const handleDeleteExpense = async () => {
     const { error } = await supabase
       .from('expenses')
       .delete()
       .eq('id', editingExpense.id)
-
     if (error) {
       console.log(error)
       alert('Failed to delete expense.')
       return
     }
-
     await fetchExpenses()
     closeExpenseModal()
   }
-
   const pencilIcon = (
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: C.muted, flexShrink: 0 }}>
       <path
@@ -1028,11 +921,9 @@ export default function Expenses() {
       />
     </svg>
   )
-
   if (loading && !showLoader) {
     return null
   }
-
   if (showLoader) {
     return (
       <div className={styles.card}>
@@ -1040,7 +931,6 @@ export default function Expenses() {
       </div>
     )
   }
-
   return (
     <div className={styles.playerReadablePage}>
       <div className={styles.pageHead}>
@@ -1049,7 +939,6 @@ export default function Expenses() {
             <div className={styles.pageTitle}>Expense Tracker</div>
             <div className={styles.pageSub}>Record and monitor all badminton-related spending</div>
           </div>
-
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button
               className={styles.btnPrimary}
@@ -1070,11 +959,9 @@ export default function Expenses() {
               onLocalClear={clearExpenseNotifications}
               onLocalItemClick={openExpenseNotification}
             />
-
           </div>
         </div>
       </div>
-
       <div className={styles.g4} style={{ marginBottom: 16 }}>
         <div className={styles.metricHighlight}>
           <div
@@ -1092,7 +979,6 @@ export default function Expenses() {
           >
             <ExpenseIcon type="wallet" color="#F59E0B" size={18} />
           </div>
-
           <div
             className={styles.metricVal}
             style={{
@@ -1102,12 +988,10 @@ export default function Expenses() {
           >
             {formatRMNoDecimal(selectedMonthTotal)}
           </div>
-
           <div className={styles.metricLbl} style={{ color: 'rgba(255,255,255,0.6)' }}>
             {selectedMonth}
           </div>
         </div>
-
         <div className={styles.metric}>
           <div
             style={{
@@ -1124,7 +1008,6 @@ export default function Expenses() {
           >
             <ExpenseIcon type="budget" color="#1A5FFF" size={18} />
           </div>
-
           <div
             className={styles.metricVal}
             style={{
@@ -1136,9 +1019,7 @@ export default function Expenses() {
               ? formatRMNoDecimal(monthlyBudget)
               : 'Not set'}
           </div>
-
           <div className={styles.metricLbl}>Monthly budget</div>
-
           <button
             className={styles.btnOutline}
             style={{ marginTop: 10, fontSize: 11, padding: '6px 10px', borderRadius: 8 }}
@@ -1147,7 +1028,6 @@ export default function Expenses() {
             {hasMonthlyBudget ? 'Edit Budget' : 'Set Budget'}
           </button>
         </div>
-
         <div className={styles.metric}>
           <div
             style={{
@@ -1164,7 +1044,6 @@ export default function Expenses() {
           >
             <ExpenseIcon type="trend" color="#F59E0B" size={18} />
           </div>
-
           <div
             className={styles.metricVal}
             style={{
@@ -1174,10 +1053,8 @@ export default function Expenses() {
           >
             {formatRMNoDecimal(thisYearTotal)}
           </div>
-
           <div className={styles.metricLbl}>This year</div>
         </div>
-
         <div className={styles.metric}>
           <div
             style={{
@@ -1194,7 +1071,6 @@ export default function Expenses() {
           >
             <ExpenseIcon type="average" color="#00C48C" size={18} />
           </div>
-
           <div
             className={styles.metricVal}
             style={{
@@ -1204,16 +1080,13 @@ export default function Expenses() {
           >
             {formatRMNoDecimal(avgMonth)}
           </div>
-
           <div className={styles.metricLbl}>Avg / month this year</div>
         </div>
       </div>
-
       <div className={styles.g2}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className={styles.card}>
             <div className={styles.cardTitle}>By category — {selectedMonth}</div>
-
             {byCategory.length === 0 ? (
               <div style={{ textAlign: 'center', color: C.muted, padding: 20, fontSize: 13 }}>
                 No category breakdown for this month.
@@ -1238,7 +1111,6 @@ export default function Expenses() {
                   >
                     {e.label}
                   </div>
-
                   <div
                     style={{
                       height: 8,
@@ -1262,7 +1134,6 @@ export default function Expenses() {
                       }}
                     />
                   </div>
-
                   <div
                     style={{
                       width: 92,
@@ -1280,36 +1151,87 @@ export default function Expenses() {
               ))
             )}
           </div>
-
           <div className={styles.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12 }}>
               <div>
-                <div className={styles.cardTitle} style={{ marginBottom: 0 }}>
-                  Expense log — {selectedMonth}
-                </div>
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
-                  Click any expense to edit
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (filteredExpenses.length > 0) {
+                      setShowAllExpenses(true)
+                    }
+                  }}
+                  disabled={filteredExpenses.length === 0}
+                  style={{
+                    margin: 0,
+                    padding: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    textAlign: 'left',
+                    cursor: filteredExpenses.length > 0 ? 'pointer' : 'default',
+                  }}
+                  title={
+                    filteredExpenses.length > 0
+                      ? `View all expenses for ${selectedMonth}`
+                      : 'No expenses to view'
+                  }
+                >
+                  <div
+                    className={styles.cardTitle}
+                    style={{
+                      marginBottom: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 7,
+                    }}
+                  >
+                    Expense log — {selectedMonth}
+                  </div>
+                </button>
               </div>
-
-              <select
-                className={styles.formSelect}
-                value={selectedMonth}
-                onChange={e => setSelectedMonth(e.target.value)}
-                style={{ width: 170 }}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  justifyContent: 'flex-end',
+                }}
               >
-                {availableMonths.map(month => (
-                  <option key={month}>{month}</option>
-                ))}
-              </select>
+                <select
+                  className={styles.formSelect}
+                  value={selectedMonthName}
+                  onChange={e => handleMonthSelect(e.target.value)}
+                  aria-label="Select expense month"
+                  style={{ width: 128 }}
+                >
+                  {MONTH_NAMES_LONG.map(month => (
+                    <option key={month} value={month}>
+                      {month}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={styles.formSelect}
+                  value={selectedYear}
+                  onChange={e => handleYearSelect(e.target.value)}
+                  aria-label="Select expense year"
+                  style={{ width: 96 }}
+                >
+                  {availableYears.map(year => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-
             {filteredExpenses.length === 0 ? (
               <div style={{ textAlign: 'center', color: C.muted, padding: 20, fontSize: 13 }}>
                 No expenses recorded for this month.
               </div>
             ) : (
-              filteredExpenses.map(expense => (
+              dashboardExpenses.map(expense => (
                 <div
                   key={expense.id}
                   className={styles.listRow}
@@ -1321,19 +1243,16 @@ export default function Expenses() {
                   <div style={{ width: 56, fontSize: 11, fontWeight: 700, color: C.muted }}>
                     {expense.date}
                   </div>
-
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                       <span className={getCategoryBadgeClass(expense.color)}>
                         {expense.category}
                       </span>
-
                       <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
                         {expense.desc}
                       </span>
                     </div>
                   </div>
-
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
                       {formatRM(expense.amount)}
@@ -1343,7 +1262,6 @@ export default function Expenses() {
                 </div>
               ))
             )}
-
             <div style={{ borderTop: `2px solid ${C.line}`, marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>Total</span>
               <span style={{ fontSize: 18, fontWeight: 800, color: C.text }}>
@@ -1352,12 +1270,10 @@ export default function Expenses() {
             </div>
           </div>
         </div>
-
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className={styles.card}>
             <div className={styles.cardTitle}>Monthly trend</div>
             <MonthlyTrendLineChart monthly={monthly} />
-
             {previousMonthName && previousMonthTotal > 0 ? (
               <div
                 style={{
@@ -1380,7 +1296,6 @@ export default function Expenses() {
               </div>
             )}
           </div>
-
           <div
             className={styles.card}
             style={{
@@ -1410,11 +1325,9 @@ export default function Expenses() {
             >
               Budget Alert
             </div>
-
             <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, fontWeight: 600 }}>
               {budgetAlertMessage}
             </div>
-
             <div style={{ marginTop: 12 }}>
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Budget used</span>
@@ -1434,7 +1347,6 @@ export default function Expenses() {
                   {hasMonthlyBudget ? `${budgetUsedPercent}%` : '—'}
                 </span>
               </div>
-
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Remaining</span>
                 <span
@@ -1451,7 +1363,6 @@ export default function Expenses() {
                   {hasMonthlyBudget ? formatRM(remainingBudget) : '—'}
                 </span>
               </div>
-
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Status</span>
                 <span className={styles.statVal}>
@@ -1471,18 +1382,148 @@ export default function Expenses() {
                 </span>
               </div>
             </div>
-
             {highestCategory && (
               <div style={{ marginTop: 10, fontSize: 12, color: C.muted, fontWeight: 600 }}>
                 Highest category: {highestCategory.label} — {formatRM(highestCategory.val)} ({highestCategory.pct}%)
               </div>
             )}
           </div>
-
-          <RuleSuggestionsCard suggestions={ruleSuggestions} />
+          {visibleRuleSuggestions.length > 0 && (
+            <RuleSuggestionsCard suggestions={visibleRuleSuggestions} />
+          )}
         </div>
       </div>
-
+      {showAllExpenses && (
+        <div
+          className={styles.modalOverlay}
+          onClick={event =>
+            event.target === event.currentTarget &&
+            setShowAllExpenses(false)
+          }
+        >
+          <div
+            className={styles.modal}
+            style={{
+              maxWidth: 720,
+              width: 'min(92vw, 720px)',
+              maxHeight: '84vh',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div className={styles.modalHead}>
+              <div>
+                <div className={styles.modalTitle}>
+                  All Expenses — {selectedMonth}
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 11,
+                    color: C.muted,
+                  }}
+                >
+                  {filteredExpenses.length} expense
+                  {filteredExpenses.length === 1 ? '' : 's'} ·{' '}
+                  {formatRM(selectedMonthTotal)}
+                </div>
+              </div>
+              <button
+                className={styles.modalClose}
+                onClick={() => setShowAllExpenses(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ overflowY: 'auto', paddingRight: 2 }}>
+              {filteredExpenses.length === 0 ? (
+                <div
+                  style={{
+                    padding: 24,
+                    textAlign: 'center',
+                    color: C.muted,
+                    fontSize: 13,
+                  }}
+                >
+                  No expenses recorded for this month.
+                </div>
+              ) : (
+                filteredExpenses.map(expense => (
+                  <button
+                    key={expense.id}
+                    type="button"
+                    onClick={() => {
+                      setShowAllExpenses(false)
+                      openEditExpense(expense)
+                    }}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '12px 4px',
+                      border: 'none',
+                      borderBottom: `1px solid ${C.line}`,
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 56,
+                        flexShrink: 0,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: C.muted,
+                      }}
+                    >
+                      {expense.date}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span className={getCategoryBadgeClass(expense.color)}>
+                          {expense.category}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: C.text,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {expense.desc}
+                        </span>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        flexShrink: 0,
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: C.text,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {formatRM(expense.amount)}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {showAddExpense && (
         <ExpenseModal
           title="Add Expense"
@@ -1492,7 +1533,6 @@ export default function Expenses() {
           onClose={closeExpenseModal}
         />
       )}
-
       {editingExpense && (
         <ExpenseModal
           title="Edit Expense"
@@ -1503,7 +1543,6 @@ export default function Expenses() {
           onDelete={handleDeleteExpense}
         />
       )}
-
       {showBudgetModal && (
         <BudgetModal
           monthlyBudget={monthlyBudget}
