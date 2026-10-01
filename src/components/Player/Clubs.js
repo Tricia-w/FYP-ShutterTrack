@@ -779,6 +779,7 @@ const twoColumnStyle = {
 
 function ClubDetail({
   club,
+  currentAcceptedClub,
   actionId,
   onJoin,
   onCancel,
@@ -800,6 +801,16 @@ function ClubDetail({
     >
       You manage this club. Open <strong>My club</strong> to manage members.
     </div>
+  ) : club.isManager ? (
+    <div
+      style={{
+        fontSize: 12,
+        color: C.muted,
+        lineHeight: 1.5,
+      }}
+    >
+      You are a manager of this club. The club owner must remove the manager role before you can leave.
+    </div>
   ) : club.membershipStatus === "accepted" ? (
     <button
       className={styles.btnOutline}
@@ -814,6 +825,25 @@ function ClubDetail({
     >
       {busy ? "Leaving..." : "Leave club"}
     </button>
+  ) : currentAcceptedClub &&
+    String(currentAcceptedClub.id) !== String(club.id) ? (
+    <div
+      style={{
+        padding: "12px 14px",
+        borderRadius: 12,
+        background: "#F8FAFC",
+        border: "1px solid #E2E8F0",
+        color: C.muted,
+        fontSize: 12,
+        lineHeight: 1.55,
+      }}
+    >
+      You are already a member of{" "}
+      <strong style={{ color: C.text }}>
+        {currentAcceptedClub.shortName || currentAcceptedClub.name}
+      </strong>
+      . Leave your current club before joining another club.
+    </div>
   ) : club.membershipStatus === "pending" &&
     club.membershipRequestType === "invite" ? (
     <div
@@ -1201,11 +1231,13 @@ function ClubDetail({
                   </div>
 
                   <div style={{ fontSize: 11, color: C.muted }}>
-                    {member.memberRole === "manager"
-                      ? "Club manager"
-                      : member.memberRole === "coach"
-                        ? "Club coach"
-                        : "Club player"}
+                    {member.isOwner
+                      ? "Club owner"
+                      : member.memberRole === "manager"
+                        ? "Club manager"
+                        : member.memberRole === "coach"
+                          ? "Club coach"
+                          : "Club player"}
                     {member.playerState && member.playerState !== "—"
                       ? ` · ${member.playerState}`
                       : ""}
@@ -2408,6 +2440,9 @@ function ManageClub({
   onCopyInviteLink,
   onViewPlayer,
   onEditClub,
+  onSetManagerRole,
+  onTransferOwnership,
+  onDeleteClub,
 }) {
   if (!club) {
     return (
@@ -2448,27 +2483,46 @@ function ManageClub({
                 flexWrap: "wrap",
               }}
             >
-              <button
-                type="button"
-                className={styles.btnOutline}
-                onClick={() => onEditClub(club)}
-              >
-                Edit club
-              </button>
+              {(club.isOwner || club.isManager) && (
+                <>
+                  <button
+                    type="button"
+                    className={styles.btnOutline}
+                    onClick={() => onEditClub(club)}
+                  >
+                    Edit club
+                  </button>
 
-              <button
-                type="button"
-                className={
-                  club.acceptingMembers
-                    ? styles.btnOutline
-                    : styles.btnPrimary
-                }
-                onClick={() => onToggleMembership(club)}
-              >
-              {club.acceptingMembers
-                ? "Pause join requests"
-                : "Allow join requests"}
-              </button>
+                  <button
+                    type="button"
+                    className={
+                      club.acceptingMembers
+                        ? styles.btnOutline
+                        : styles.btnPrimary
+                    }
+                    onClick={() => onToggleMembership(club)}
+                  >
+                    {club.acceptingMembers
+                      ? "Pause join requests"
+                      : "Allow join requests"}
+                  </button>
+                </>
+              )}
+
+              {club.isOwner && (
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  onClick={() => onDeleteClub(club)}
+                  style={{
+                    color: "#DC2626",
+                    borderColor: "#FECACA",
+                    background: "#FEF2F2",
+                  }}
+                >
+                  Delete club
+                </button>
+              )}
             </div>
 
             <div
@@ -2700,21 +2754,67 @@ function ManageClub({
               </div>
 
               {!member.isOwner && (
-                <button
-                  className={styles.btnOutline}
-                  disabled={busyId === member.id}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRemoveMember(member);
-                  }}
+                <div
                   style={{
-                    color: "#DC2626",
-                    borderColor: "#FECACA",
-                    background: "#FEF2F2",
+                    display: "flex",
+                    gap: 7,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    justifyContent: "flex-end",
                   }}
                 >
-                  Remove
-                </button>
+                  {club.isOwner && (
+                    <>
+                      <button
+                        type="button"
+                        className={styles.btnOutline}
+                        disabled={busyId === member.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSetManagerRole(
+                            member,
+                            member.memberRole !== "manager",
+                          );
+                        }}
+                      >
+                        {member.memberRole === "manager"
+                          ? "Remove manager role"
+                          : "Make manager"}
+                      </button>
+
+                      <button
+                        type="button"
+                        className={styles.btnOutline}
+                        disabled={busyId === member.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onTransferOwnership(member);
+                        }}
+                      >
+                        Transfer ownership
+                      </button>
+                    </>
+                  )}
+
+                  {(club.isOwner || member.memberRole !== "manager") && (
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      disabled={busyId === member.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRemoveMember(member);
+                      }}
+                      style={{
+                        color: "#DC2626",
+                        borderColor: "#FECACA",
+                        background: "#FEF2F2",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ))
@@ -2763,6 +2863,17 @@ export default function Clubs() {
         (club) =>
           club.membershipStatus === "pending" &&
           club.membershipRequestType === "invite",
+      ) || null,
+    [clubs],
+  );
+
+  const currentAcceptedClub = useMemo(
+    () =>
+      clubs.find(
+        (club) =>
+          club.membershipStatus === "accepted" ||
+          club.isOwner ||
+          club.isManager,
       ) || null,
     [clubs],
   );
@@ -3103,6 +3214,9 @@ export default function Clubs() {
           ownerId: club.owner_id,
           ownerName: club.owner_name || "Club manager",
           isOwner: Boolean(user && club.owner_id === user.id),
+          isManager:
+            membership?.status === "accepted" &&
+            membership?.member_role === "manager",
           acceptingMembers: club.accepting_members !== false,
           memberCount: countByClub.get(club.id) || 0,
           membershipId: membership?.id || null,
@@ -3121,7 +3235,7 @@ export default function Clubs() {
       }
 
       const nextOwnedClub =
-        formatted.find((club) => club.isOwner) || null;
+        formatted.find((club) => club.isOwner || club.isManager) || null;
 
       setClubs(formatted);
       setOwnedClub(nextOwnedClub);
@@ -3239,9 +3353,16 @@ export default function Clubs() {
           setInvitePlayers([]);
         } else {
           const existingUserIds = new Set(rows.map((row) => row.user_id));
+          const globallyAcceptedUserIds = new Set(
+            acceptedMemberRows.map((row) => row.user_id).filter(Boolean),
+          );
+
           setInvitePlayers(
             (inviteProfileRows || []).filter(
-              (profile) => profile.user_id && !existingUserIds.has(profile.user_id),
+              (profile) =>
+                profile.user_id &&
+                !existingUserIds.has(profile.user_id) &&
+                !globallyAcceptedUserIds.has(profile.user_id),
             ),
           );
         }
@@ -3684,19 +3805,13 @@ export default function Clubs() {
         if (locationError) throw locationError;
       }
 
-      const { error: membershipError } = await supabase
-        .from("club_members")
-        .upsert(
-          {
-            club_id: created.id,
-            user_id: user.id,
-            status: "accepted",
-            member_role: "manager",
-            member_name: ownerName,
-            responded_at: new Date().toISOString(),
-          },
-          { onConflict: "club_id,user_id" },
-        );
+      const { error: membershipError } = await supabase.rpc(
+        "add_club_manager_membership",
+        {
+          p_club_id: created.id,
+          p_member_name: ownerName,
+        },
+      );
 
       if (membershipError) throw membershipError;
 
@@ -3727,6 +3842,16 @@ export default function Clubs() {
       return;
     }
 
+    if (
+      currentAcceptedClub &&
+      String(currentAcceptedClub.id) !== String(club.id)
+    ) {
+      alert(
+        `You are already a member of ${currentAcceptedClub.shortName || currentAcceptedClub.name}. Leave your current club before joining another club.`,
+      );
+      return;
+    }
+
     setActionId(club.id);
 
     try {
@@ -3743,21 +3868,13 @@ export default function Clubs() {
         user.email?.split("@")[0] ||
         "Player";
 
-      const { error } = await supabase
-        .from("club_members")
-        .upsert(
-          {
-            club_id: club.id,
-            user_id: user.id,
-            member_name: memberName,
-            status: "pending",
-            request_type: "request",
-            member_role: "player",
-            requested_at: new Date().toISOString(),
-            responded_at: null,
-          },
-          { onConflict: "club_id,user_id" },
-        );
+      const { error } = await supabase.rpc(
+        "request_club_membership",
+        {
+          p_club_id: club.id,
+          p_member_name: memberName,
+        },
+      );
 
       if (error) throw error;
 
@@ -3949,15 +4066,29 @@ export default function Clubs() {
 
   async function respondToClubInvitation(club, status) {
     if (!club?.membershipId) return;
+
+    if (status === "accepted") {
+      if (
+        currentAcceptedClub &&
+        String(currentAcceptedClub.id) !== String(club.id)
+      ) {
+        alert(
+          `You are already a member of ${currentAcceptedClub.shortName || currentAcceptedClub.name}. Leave your current club before accepting another invitation.`,
+        );
+        return;
+      }
+    }
+
     setActionId(club.id);
     try {
       const nextStatus = status === "accepted" ? "accepted" : "rejected";
-      const { error } = await supabase
-        .from("club_members")
-        .update({ status: nextStatus, responded_at: new Date().toISOString() })
-        .eq("id", club.membershipId)
-        .eq("status", "pending")
-        .eq("request_type", "invite");
+      const { error } = await supabase.rpc(
+        "respond_to_club_invitation",
+        {
+          p_membership_id: club.membershipId,
+          p_status: nextStatus,
+        },
+      );
       if (error) throw error;
 
       const { data: { user } } = await supabase.auth.getUser();
@@ -3982,6 +4113,16 @@ export default function Clubs() {
   }
 
   async function acceptClubInviteLink(club) {
+    if (
+      currentAcceptedClub &&
+      String(currentAcceptedClub.id) !== String(club.id)
+    ) {
+      alert(
+        `You are already a member of ${currentAcceptedClub.shortName || currentAcceptedClub.name}. Leave your current club before accepting another invitation.`,
+      );
+      return;
+    }
+
     setActionId(club.id);
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -3995,19 +4136,13 @@ export default function Clubs() {
 
       const memberName = ownProfile?.display_name || user.user_metadata?.display_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "Player";
 
-      const { error } = await supabase
-        .from("club_members")
-        .upsert({
-          club_id: club.id,
-          user_id: user.id,
-          member_name: memberName,
-          status: "accepted",
-          request_type: "invite_link",
-          member_role: "player",
-          requested_at: new Date().toISOString(),
-          responded_at: new Date().toISOString(),
-          invited_by: club.ownerId,
-        }, { onConflict: "club_id,user_id" });
+      const { error } = await supabase.rpc(
+        "accept_club_invite_link",
+        {
+          p_club_id: club.id,
+          p_member_name: memberName,
+        },
+      );
       if (error) throw error;
 
       await syncPlayerProfileClub(user.id, club.shortName);
@@ -4032,19 +4167,14 @@ export default function Clubs() {
     setManageBusyId(request.id);
 
     try {
-      const { error } = await supabase
-        .from("club_members")
-        .update({
-          status,
-          responded_at: new Date().toISOString(),
-        })
-        .eq("id", request.id)
-        .eq("status", "pending")
-        .neq("request_type", "invite");
-
-      if (error) throw error;
-
       if (status === "accepted") {
+        const { error } = await supabase.rpc(
+          "accept_club_membership_request",
+          { p_membership_id: request.id },
+        );
+
+        if (error) throw error;
+
         await syncPlayerProfileClub(
           request.user_id,
           ownedClub?.shortName,
@@ -4058,6 +4188,18 @@ export default function Clubs() {
           actionUrl: "/clubs",
         });
       } else {
+        const { error } = await supabase
+          .from("club_members")
+          .update({
+            status: "rejected",
+            responded_at: new Date().toISOString(),
+          })
+          .eq("id", request.id)
+          .eq("status", "pending")
+          .neq("request_type", "invite");
+
+        if (error) throw error;
+
         await sendClubNotification({
           recipientUserId: request.user_id,
           type: "club_request_declined",
@@ -4075,16 +4217,115 @@ export default function Clubs() {
     }
   }
 
+  async function setManagerRole(member, makeManager) {
+    if (!ownedClub?.id || !member?.user_id || !ownedClub?.isOwner) return;
+
+    const confirmed = window.confirm(
+      makeManager
+        ? `Make ${member.playerName || "this member"} a club manager?`
+        : `Remove the manager role from ${member.playerName || "this member"}?`,
+    );
+
+    if (!confirmed) return;
+
+    setManageBusyId(member.id);
+
+    try {
+      const { error } = await supabase.rpc(
+        "set_club_manager_role",
+        {
+          p_club_id: ownedClub.id,
+          p_member_user_id: member.user_id,
+          p_make_manager: makeManager,
+        },
+      );
+
+      if (error) throw error;
+
+      await sendClubNotification({
+        recipientUserId: member.user_id,
+        type: makeManager
+          ? "club_manager_added"
+          : "club_manager_removed",
+        title: makeManager
+          ? "Club manager role added"
+          : "Club manager role removed",
+        message: makeManager
+          ? `You are now a manager of ${ownedClub.shortName || ownedClub.name}.`
+          : `Your manager role for ${ownedClub.shortName || ownedClub.name} was removed.`,
+        actionUrl: "/clubs",
+      });
+
+      await fetchClubs();
+
+      alert(
+        makeManager
+          ? "Manager role added successfully."
+          : "Manager role removed successfully.",
+      );
+    } catch (error) {
+      console.error("Failed to update manager role:", error);
+      alert(error.message || "Failed to update manager role.");
+    } finally {
+      setManageBusyId(null);
+    }
+  }
+
+  async function transferClubOwnership(member) {
+    if (!ownedClub?.id || !member?.user_id || !ownedClub?.isOwner) return;
+
+    const confirmed = window.confirm(
+      `Transfer club ownership to ${member.playerName || "this member"}? You will remain a club manager after the transfer.`,
+    );
+
+    if (!confirmed) return;
+
+    setManageBusyId(member.id);
+
+    try {
+      const { error } = await supabase.rpc(
+        "transfer_club_owner",
+        {
+          p_club_id: ownedClub.id,
+          p_new_owner_user_id: member.user_id,
+        },
+      );
+
+      if (error) throw error;
+
+      await sendClubNotification({
+        recipientUserId: member.user_id,
+        type: "club_owner_transferred",
+        title: "Club ownership transferred",
+        message: `You are now the owner of ${ownedClub.shortName || ownedClub.name}.`,
+        actionUrl: "/clubs",
+      });
+
+      await fetchClubs();
+
+      alert(
+        "Club ownership transferred successfully. You remain a club manager.",
+      );
+    } catch (error) {
+      console.error("Failed to transfer club ownership:", error);
+      alert(error.message || "Failed to transfer club ownership.");
+    } finally {
+      setManageBusyId(null);
+    }
+  }
+
   async function removeMember(member) {
     if (!window.confirm(`Remove ${member.playerName} from this club?`)) return;
 
     setManageBusyId(member.id);
 
     try {
-      const { error } = await supabase
-        .from("club_members")
-        .delete()
-        .eq("id", member.id);
+      const { error } = await supabase.rpc(
+        "remove_club_member",
+        {
+          p_membership_id: member.id,
+        },
+      );
 
       if (error) throw error;
 
@@ -4157,18 +4398,19 @@ export default function Clubs() {
         nextLogoUrl = publicUrlData?.publicUrl || null;
       }
 
-      const { error } = await supabase
-        .from("clubs")
-        .update({
-          short_name: shortName,
-          name: form.name.trim(),
-          state: form.state.trim(),
-          location: form.location.trim(),
-          description: form.description.trim() || null,
-          related_url: form.relatedUrl.trim() || null,
-          logo_url: nextLogoUrl,
-        })
-        .eq("id", editingClub.id);
+      const { error } = await supabase.rpc(
+        "update_managed_club",
+        {
+          p_club_id: editingClub.id,
+          p_short_name: shortName,
+          p_name: form.name.trim(),
+          p_state: form.state.trim(),
+          p_location: form.location.trim(),
+          p_description: form.description.trim() || null,
+          p_related_url: form.relatedUrl.trim() || null,
+          p_logo_url: nextLogoUrl,
+        },
+      );
 
       if (error && uploadedLogoPath) {
         await supabase.storage
@@ -4243,12 +4485,72 @@ export default function Clubs() {
     }
   }
 
+  async function deleteClub(club) {
+    if (!club?.id || !club?.isOwner) {
+      alert("Only the club owner can delete this club.");
+      return;
+    }
+
+    const firstConfirm = window.confirm(
+      `Delete ${club.shortName || club.name}? This will permanently remove the club, all memberships, join requests, invitations and club locations.`,
+    );
+
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm(
+      "This action cannot be undone. Are you sure you want to permanently delete this club?",
+    );
+
+    if (!secondConfirm) return;
+
+    setManageBusyId(`delete-${club.id}`);
+
+    try {
+      const { error } = await supabase.rpc(
+        "delete_owned_club",
+        {
+          p_club_id: club.id,
+        },
+      );
+
+      if (error) throw error;
+
+      window.dispatchEvent(
+        new CustomEvent("club-membership-updated"),
+      );
+      window.dispatchEvent(
+        new CustomEvent("profile-updated", {
+          detail: { club: "" },
+        }),
+      );
+
+      setOwnedClub(null);
+      setSelectedClub(null);
+      setRequests([]);
+      setMembers([]);
+      setInvitations([]);
+      setInvitePlayers([]);
+      setTab("find");
+
+      await fetchClubs();
+      alert("Club deleted successfully.");
+    } catch (error) {
+      console.error("Failed to delete club:", error);
+      alert(error.message || "Failed to delete club.");
+    } finally {
+      setManageBusyId(null);
+    }
+  }
+
   async function toggleMembership(club) {
     try {
-      const { error } = await supabase
-        .from("clubs")
-        .update({ accepting_members: !club.acceptingMembers })
-        .eq("id", club.id);
+      const { error } = await supabase.rpc(
+        "set_club_accepting_members",
+        {
+          p_club_id: club.id,
+          p_accepting_members: !club.acceptingMembers,
+        },
+      );
 
       if (error) throw error;
       await fetchClubs();
@@ -4460,6 +4762,7 @@ export default function Clubs() {
             {effectiveSelectedClub ? (
               <ClubDetail
                 club={effectiveSelectedClub}
+                currentAcceptedClub={currentAcceptedClub}
                 actionId={actionId}
                 onJoin={requestJoin}
                 onCancel={cancelRequest}
@@ -4509,6 +4812,9 @@ export default function Clubs() {
             onCopyInviteLink={copyClubInviteLink}
             onViewPlayer={openClubMemberProfile}
             onEditClub={setEditingClub}
+            onSetManagerRole={setManagerRole}
+            onTransferOwnership={transferClubOwnership}
+            onDeleteClub={deleteClub}
           />
         ) : (
           <CreateClubForm submitting={creating} onCreate={createClub} />

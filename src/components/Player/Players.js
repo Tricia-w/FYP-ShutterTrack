@@ -65,88 +65,256 @@ function SkillBar({ name, val, dim }) {
   );
 }
 
+function normaliseMatchGender(value) {
+  const gender = String(value || "").trim().toLowerCase();
+
+  if (["female", "f", "woman", "women", "girl"].includes(gender)) {
+    return "female";
+  }
+
+  if (["male", "m", "man", "men", "boy"].includes(gender)) {
+    return "male";
+  }
+
+  return "";
+}
+
+function getPlayingLevelGroup(level) {
+  const value = String(level || "").trim();
+
+  if (["Lower Beginner", "Beginner", "Upper Beginner"].includes(value)) {
+    return "Beginner";
+  }
+
+  if (["Lower Intermediate", "Intermediate", "Upper Intermediate"].includes(value)) {
+    return "Intermediate";
+  }
+
+  if (["Lower Advanced", "Advanced", "Upper Advanced"].includes(value)) {
+    return "Advanced";
+  }
+
+  if (value === "Elite") {
+    return "Elite";
+  }
+
+  return "";
+}
+
 function getPartnerMatch(player, criteria, currentPlayer = {}) {
   let score = 0;
   const reasons = [];
 
-  if (criteria.level === "Any" || player.level === criteria.level) {
-    score += 25;
-    reasons.push(criteria.level === "Any" ? "Level suitable" : "Same level");
+  const levelOrder = [
+    "Lower Beginner",
+    "Beginner",
+    "Upper Beginner",
+    "Lower Intermediate",
+    "Intermediate",
+    "Upper Intermediate",
+    "Lower Advanced",
+    "Advanced",
+    "Upper Advanced",
+    "Elite",
+  ];
+
+  const currentLevelIndex = levelOrder.indexOf(currentPlayer.level);
+  const playerLevelIndex = levelOrder.indexOf(player.level);
+  const preferredLevelIndex = levelOrder.indexOf(criteria.level);
+
+  // PARTNER LEVEL
+  if (criteria.level === "Any") {
+    if (
+      currentLevelIndex >= 0 &&
+      playerLevelIndex >= 0
+    ) {
+      const levelGap = Math.abs(
+        playerLevelIndex - currentLevelIndex
+      );
+
+      if (levelGap === 0) {
+        score += 20;
+        reasons.push("Similar level");
+      } else if (levelGap === 1) {
+        score += 15;
+        reasons.push("Compatible level");
+      } else if (levelGap === 2) {
+        score += 8;
+      }
+    } else {
+      score += 8;
+    }
+  } else if (
+    preferredLevelIndex >= 0 &&
+    playerLevelIndex >= 0
+  ) {
+    const levelGap = Math.abs(
+      playerLevelIndex - preferredLevelIndex
+    );
+
+    if (levelGap === 0) {
+      score += 25;
+      reasons.push("Preferred level");
+    } else if (levelGap === 1) {
+      score += 12;
+      reasons.push("Close to preferred level");
+    }
   }
 
-  if (criteria.state === "Any" || player.state === criteria.state) {
+  // PARTNER STATE
+  if (criteria.state === "Any") {
+    score += 5;
+  } else if (player.state === criteria.state) {
     score += 20;
-    reasons.push(criteria.state === "Any" ? "Location okay" : "Same state");
+    reasons.push("Same state");
   }
 
-  if (criteria.style === "Auto") {
-    const currentStyle = String(currentPlayer.style || "").trim();
+  // PARTNER STYLE
+  if (criteria.style === "Any") {
+    score += 5;
+  } else if (player.style === criteria.style) {
+    score += 20;
+    reasons.push("Preferred style");
+  }
+
+  // GAME TYPE
+  if (criteria.gameType === "Singles") {
+    const singlesScore =
+      Number(player.footwork || 0) +
+      Number(player.smash || 0) +
+      Number(player.serve || 0) +
+      Number(player.defense || 0);
+
+    if (singlesScore >= 280) {
+      score += 15;
+      reasons.push("Strong singles skills");
+    } else if (singlesScore >= 220) {
+      score += 9;
+    }
+  } else {
+    if (Number(player.net || 0) >= 70) {
+      score += 10;
+      reasons.push("Good net play");
+    }
+
+    if (Number(player.defense || 0) >= 70) {
+      score += 8;
+      reasons.push("Strong defense");
+    }
+  }
+
+  // GOAL
+  if (criteria.goal === "Casual") {
+    if (
+      criteria.state !== "Any" &&
+      player.state === criteria.state
+    ) {
+      score += 8;
+    }
+
+    if (
+      ["All-round", "Defensive"].includes(player.style)
+    ) {
+      score += 8;
+      reasons.push("Good casual fit");
+    }
+  }
+
+  if (criteria.goal === "Training") {
+    const weakness = String(
+      currentPlayer.weakness || ""
+    )
+      .trim()
+      .toLowerCase();
+
+    let coversWeakness = false;
+
+    if (
+      weakness.includes("defen") &&
+      Number(player.defense || 0) >= 75
+    ) {
+      coversWeakness = true;
+    } else if (
+      weakness.includes("net") &&
+      Number(player.net || 0) >= 75
+    ) {
+      coversWeakness = true;
+    } else if (
+      weakness.includes("smash") &&
+      Number(player.smash || 0) >= 75
+    ) {
+      coversWeakness = true;
+    } else if (
+      weakness.includes("footwork") &&
+      Number(player.footwork || 0) >= 75
+    ) {
+      coversWeakness = true;
+    } else if (
+      weakness.includes("drop") &&
+      Number(player.dropShot || 0) >= 75
+    ) {
+      coversWeakness = true;
+    } else if (
+      weakness.includes("serve") &&
+      Number(player.serve || 0) >= 75
+    ) {
+      coversWeakness = true;
+    }
+
+    if (coversWeakness) {
+      score += 18;
+      reasons.push("Covers your weakness");
+    }
+
+    const currentStyle = String(
+      currentPlayer.style || ""
+    ).trim();
 
     if (
       ["Aggressive", "Attacking"].includes(currentStyle) &&
       ["Defensive", "All-round"].includes(player.style)
     ) {
-      score += 20;
-      reasons.push("Balances your attacking style");
+      score += 10;
+      reasons.push("Complementary style");
     } else if (
       currentStyle === "Defensive" &&
       ["Aggressive", "Attacking", "All-round"].includes(player.style)
     ) {
-      score += 20;
-      reasons.push("Adds attacking balance");
-    } else if (player.style === "All-round") {
-      score += 15;
-      reasons.push("Flexible style");
-    } else if (currentStyle && player.style === currentStyle) {
-      score += 12;
-      reasons.push("Similar playing style");
-    }
-  } else if (criteria.style === "Any" || player.style === criteria.style) {
-    score += 18;
-    reasons.push(
-      criteria.style === "Any" ? "Style suitable" : `Matches ${criteria.style}`,
-    );
-  }
-
-  if (criteria.gameType !== "Singles") {
-    if (player.net >= 70) {
-      score += 12;
-      reasons.push("Good net play");
-    }
-
-    if (player.defense >= 70) {
       score += 10;
-      reasons.push("Strong defense");
+      reasons.push("Complementary style");
     }
   }
 
-  const weakness = String(currentPlayer.weakness || "")
-    .trim()
-    .toLowerCase();
+  if (criteria.goal === "Tournament") {
+    const matches = Number(player.matches || 0);
+    const winRate = Number(player.winRate || 0);
 
-  if (weakness.includes("defen") && player.defense >= 75) {
-    score += 13;
-    reasons.push("Covers defense weakness");
-  } else if (weakness.includes("net") && player.net >= 75) {
-    score += 13;
-    reasons.push("Supports your net play");
-  } else if (weakness.includes("smash") && player.smash >= 75) {
-    score += 13;
-    reasons.push("Adds strong attacking power");
-  } else if (weakness.includes("footwork") && player.footwork >= 75) {
-    score += 13;
-    reasons.push("Supports movement and court coverage");
-  } else if (weakness.includes("drop") && player.dropShot >= 75) {
-    score += 13;
-    reasons.push("Adds strong drop-shot control");
-  } else if (weakness.includes("serve") && player.serve >= 75) {
-    score += 13;
-    reasons.push("Adds reliable serving");
+    if (matches >= 10) {
+      score += 10;
+      reasons.push("Match experience");
+    } else if (matches >= 5) {
+      score += 6;
+    }
+
+    if (winRate >= 60) {
+      score += 12;
+      reasons.push("Strong win rate");
+    } else if (winRate >= 50) {
+      score += 7;
+    }
+
+    if (
+      currentLevelIndex >= 0 &&
+      playerLevelIndex >= currentLevelIndex
+    ) {
+      score += 8;
+      reasons.push("Tournament-ready level");
+    }
   }
 
   return {
-    score: Math.min(score, 100),
-    reasons: reasons.slice(0, 3),
+    score: Math.min(Math.round(score), 100),
+    reasons: [...new Set(reasons)].slice(0, 4),
   };
 }
 
@@ -1009,7 +1177,7 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
                 : "—"
             }
           />
-          <SmallInfo label="State" value={p.state} />
+          <SmallInfo label="Partner state" value={p.state} />
 
           {p.showGender && p.gender ? (
             <SmallInfo label="Gender" value={p.gender} />
@@ -1379,8 +1547,18 @@ function CoachDetail({
                     </div>
                     {venue.isPrimary && <span className={styles.badgeBlue}>Primary</span>}
                   </div>
-                  {getCoachVenueMapEmbedUrl(venue, coach.state) && <iframe title={`${coach.name} ${venue.venueName} map`} src={getCoachVenueMapEmbedUrl(venue, coach.state)} width="100%" height="220" loading="lazy" referrerPolicy="no-referrer-when-downgrade" style={{ display: "block", border: 0 }} />}
-                  {venue.locationUrl && <div style={{ padding: "9px 14px 12px" }}><a href={venue.locationUrl} target="_blank" rel="noreferrer" style={{ color: "#1A5FFF", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>Open in Google Maps ↗</a></div>}
+                  {getCoachVenueMapEmbedUrl(venue, coach.state) && 
+                    <iframe 
+                      title={`${coach.name} ${venue.venueName} map`} 
+                      src={getCoachVenueMapEmbedUrl(venue, coach.state)} width="100%" height="220" loading="lazy" referrerPolicy="no-referrer-when-downgrade" 
+                      style={{ display: "block", border: 0 }} />}
+                  {venue.locationUrl && 
+                    <div 
+                      style={{ padding: "9px 14px 12px" }}><a 
+                      href={venue.locationUrl} 
+                      target="_blank" rel="noreferrer" 
+                      style={{ color: "#1A5FFF", fontSize: 12, fontWeight: 800, textDecoration: "none" }}
+                      >Open in Google Maps ↗</a></div>}
                 </div>
               ))}
             </div>
@@ -2009,6 +2187,7 @@ export default function Players() {
     style: "",
     state: "",
     weakness: "",
+    gender: "",
   });
   const [showMyQr, setShowMyQr] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
@@ -2033,7 +2212,7 @@ export default function Players() {
   const [partnerCriteria, setPartnerCriteria] = useState({
     gameType: "Doubles",
     level: "Any",
-    style: "Auto",
+    style: "Any",
     state: "Any",
     goal: "Training",
   });
@@ -2446,11 +2625,16 @@ export default function Players() {
         currentPlayerProfile?.weakness ||
         "";
 
+      const currentPlayerGender =
+        currentPlayerProfile?.gender ||
+        "";
+
       setCurrentPlayerMatchProfile({
         level: currentPlayerLevel,
         style: currentPlayerStyle,
         state: currentPlayerState,
         weakness: currentPlayerWeakness,
+        gender: currentPlayerGender,
       });
 
       setPartnerCriteria((previous) => ({
@@ -2675,6 +2859,10 @@ export default function Players() {
               (player.show_gender === true || publicPlayer?.show_gender === true)
                 ? (player.gender || publicPlayer?.gender || null)
                 : null,
+            matchGender:
+              player.gender ||
+              publicPlayer?.gender ||
+              null,
             showGender:
               player.show_gender === true ||
               publicPlayer?.show_gender === true,
@@ -2889,6 +3077,7 @@ export default function Players() {
               player.show_gender === true
                 ? player.gender || null
                 : null,
+            matchGender: player.gender || null,
             showGender: player.show_gender === true,
             startedPlayingAge: player.started_playing_age !== null && player.started_playing_age !== undefined ? Number(player.started_playing_age) : null,
             experienceYears: calculatePlayerExperience(player),
@@ -3179,14 +3368,87 @@ export default function Players() {
   });
 
   const partnerRecommendations = useMemo(() => {
-    return players.map((player) => {
-      const match = getPartnerMatch(
-        player,
-        partnerCriteria,
-        currentPlayerMatchProfile,
-      );
-      return { ...player, matchScore: match.score, reasons: match.reasons };
-    }).filter((player) => player.matchScore >= 45).sort((a, b) => b.matchScore - a.matchScore);
+    const currentGender = normaliseMatchGender(
+      currentPlayerMatchProfile.gender
+    );
+
+    return players
+      .filter((player) => {
+        // Mixed Doubles must use the opposite gender.
+        if (partnerCriteria.gameType === "Mixed Doubles") {
+          const candidateGender = normaliseMatchGender(
+            player.matchGender
+          );
+
+          if (!currentGender || !candidateGender) {
+            return false;
+          }
+
+          if (candidateGender === currentGender) {
+            return false;
+          }
+        }
+
+        // State is a hard filter when a specific state is selected.
+        if (
+          partnerCriteria.state !== "Any" &&
+          player.state !== partnerCriteria.state
+        ) {
+          return false;
+        }
+
+        // Style is a hard filter when a specific style is selected.
+        if (
+          partnerCriteria.style !== "Any" &&
+          player.style !== partnerCriteria.style
+        ) {
+          return false;
+        }
+
+        // Level is grouped:
+        // Lower / normal / Upper Beginner = Beginner group
+        // Lower / normal / Upper Intermediate = Intermediate group
+        // Lower / normal / Upper Advanced = Advanced group
+        if (partnerCriteria.level !== "Any") {
+          const selectedLevelGroup = getPlayingLevelGroup(
+            partnerCriteria.level
+          );
+          const playerLevelGroup = getPlayingLevelGroup(
+            player.level
+          );
+
+          if (
+            selectedLevelGroup &&
+            playerLevelGroup !== selectedLevelGroup
+          ) {
+            return false;
+          }
+
+          if (
+            !selectedLevelGroup &&
+            player.level !== partnerCriteria.level
+          ) {
+            return false;
+          }
+        }
+
+        return true;
+      })
+      .map((player) => {
+        const match = getPartnerMatch(
+          player,
+          partnerCriteria,
+          currentPlayerMatchProfile,
+        );
+
+        return {
+          ...player,
+          matchScore: match.score,
+          reasons: match.reasons,
+        };
+      })
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, 6);
   }, [players, partnerCriteria, currentPlayerMatchProfile]);
 
   const savedPartners = players.filter((player) => player.isPartner);
@@ -3208,7 +3470,7 @@ export default function Players() {
     setSelected(player);
     setSelectedCoach(null);
 
-    if (isMobileDirectory) {
+    if (isMobileDirectory || tab === "partner") {
       setShowMobilePlayerDetail(true);
       setShowMobileCoachDetail(false);
     }
@@ -3950,7 +4212,7 @@ export default function Players() {
               <div className={styles.cardTitle}>Find suitable partner</div>
               <FormSelect label="Game type" value={partnerCriteria.gameType} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, gameType: value }))} options={["Singles", "Doubles", "Mixed Doubles"]} />
               <FormSelect
-                label="Preferred level"
+                label="Partner level"
                 value={partnerCriteria.level}
                 onChange={(value) =>
                   setPartnerCriteria((previous) => ({
@@ -3960,19 +4222,10 @@ export default function Players() {
                 }
                 options={["Any", ...PLAYING_LEVEL_OPTIONS]}
               />
-              <FormSelect label="Preferred style" value={partnerCriteria.style} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, style: value }))} options={["Auto", "Any", "Aggressive", "Defensive", "All-round", "Attacking"]} />
+              <FormSelect label="Partner style" value={partnerCriteria.style} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, style: value }))} options={["Any", "Aggressive", "Defensive", "All-round", "Attacking"]} />
               <FormSelect label="State" value={partnerCriteria.state} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, state: value }))} options={["Any", "Penang", "Selangor", "Kuala Lumpur", "Johor"]} />
               <FormSelect label="Goal" value={partnerCriteria.goal} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, goal: value }))} options={["Casual", "Training", "Tournament"]} />
 
-              <div style={{ marginTop: 14, padding: 14, background: C.soft, border: `1px solid ${C.line}`, borderRadius: 12, color: C.text }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 10 }}>Your profile used for matching</div>
-                <div style={{ display: "grid", gridTemplateColumns: "88px minmax(0, 1fr)", rowGap: 7, columnGap: 10, fontSize: 12, lineHeight: 1.5 }}>
-                  <span style={{ color: C.muted }}>Level</span><strong style={{ color: C.text }}>{currentPlayerMatchProfile.level || "Not specified"}</strong>
-                  <span style={{ color: C.muted }}>Style</span><strong style={{ color: C.text }}>{currentPlayerMatchProfile.style || "Not specified"}</strong>
-                  <span style={{ color: C.muted }}>State</span><strong style={{ color: C.text }}>{currentPlayerMatchProfile.state || "Not specified"}</strong>
-                  <span style={{ color: C.muted }}>Weakness</span><strong style={{ color: C.text }}>{currentPlayerMatchProfile.weakness || "Not specified"}</strong>
-                </div>
-              </div>
             </div>
 
             <div className={styles.card} style={{ marginTop: 12 }}>
@@ -3991,8 +4244,40 @@ export default function Players() {
           <div className={styles.card}>
             <div className={styles.cardTitle}>Recommended partners</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {partnerRecommendations.length === 0 && (
+                <div
+                  style={{
+                    padding: 28,
+                    textAlign: "center",
+                    color: C.muted,
+                    fontSize: 12,
+                  }}
+                >
+                  No eligible partners are currently available.
+                </div>
+              )}
               {partnerRecommendations.map((player) => (
-                <div key={player.id} style={{ display: "grid", gridTemplateColumns: "44px minmax(0,1fr) 76px 110px", gap: 12, alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${C.line}` }}>
+                <div
+                  key={player.id}
+                  onClick={() => openPlayerDetail(player)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openPlayerDetail(player);
+                    }
+                  }}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "44px minmax(0,1fr) 76px 110px",
+                    gap: 12,
+                    alignItems: "center",
+                    padding: "12px 0",
+                    borderBottom: `1px solid ${C.line}`,
+                    cursor: "pointer",
+                  }}
+                >
                   <div className={styles.av}>{player.init}</div>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{player.name}</div>
@@ -4003,7 +4288,51 @@ export default function Players() {
                     </div>
                   </div>
                   <div style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: C.muted }}>Match</div><div style={{ fontSize: 20, fontWeight: 900, color: player.matchScore >= 75 ? "#00976C" : "#1A5FFF" }}>{player.matchScore}%</div></div>
-                  {player.isPartner ? <button className={styles.btnOutline} style={{ color: "#DC2626", borderColor: "#FECACA", background: "#FEF2F2" }} onClick={() => removeConnection(player, "partner")}>Remove</button> : player.partnerRequestStatus === "pending" ? <button className={styles.btnOutline} onClick={() => cancelPartnerRequest(player)} style={{ color: "#DC2626", borderColor: "#FECACA", background: "#FEF2F2" }}>Cancel</button> : <button className={styles.btnPrimary} style={{ justifyContent: "center", textAlign: "center" }} onClick={() => requestPartner(player)}>Request</button>}
+                  {player.isPartner ? (
+                    <button
+                      className={styles.btnOutline}
+                      style={{
+                        color: "#DC2626",
+                        borderColor: "#FECACA",
+                        background: "#FEF2F2",
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeConnection(player, "partner");
+                      }}
+                    >
+                      Remove
+                    </button>
+                  ) : player.partnerRequestStatus === "pending" ? (
+                    <button
+                      className={styles.btnOutline}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        cancelPartnerRequest(player);
+                      }}
+                      style={{
+                        color: "#DC2626",
+                        borderColor: "#FECACA",
+                        background: "#FEF2F2",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  ) : (
+                    <button
+                      className={styles.btnPrimary}
+                      style={{
+                        justifyContent: "center",
+                        textAlign: "center",
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        requestPartner(player);
+                      }}
+                    >
+                      Request
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -4058,7 +4387,7 @@ export default function Players() {
         </div>
       )}
 
-      {isMobileDirectory && showMobilePlayerDetail && selected && (
+      {(isMobileDirectory || tab === "partner") && showMobilePlayerDetail && selected && (
         <div
           role="presentation"
           onMouseDown={(event) => {

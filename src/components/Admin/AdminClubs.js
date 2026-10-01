@@ -16,6 +16,7 @@ import {
   buttonBase,
   inputStyle,
 } from "./AdminShared";
+
 const formatDate = (value) => {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("en-MY", {
@@ -24,12 +25,14 @@ const formatDate = (value) => {
     year: "numeric",
   });
 };
+
 const normaliseStatus = (value) => {
   const clean = String(value || "active").trim().toLowerCase();
   if (clean === "paused") return "Paused";
   if (clean === "removed") return "Removed";
   return "Active";
 };
+
 export default function AdminClubs() {
   const [clubs, setClubs] = useState([]);
   const [search, setSearch] = useState("");
@@ -40,9 +43,11 @@ export default function AdminClubs() {
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
   const loadClubs = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
+
     try {
       const { data: clubRows, error: clubError } = await supabase
         .from("clubs")
@@ -63,18 +68,26 @@ export default function AdminClubs() {
           updated_at
         `)
         .order("created_at", { ascending: false });
+
       if (clubError) throw clubError;
+
       const clubIds = (clubRows || []).map((club) => club.id);
+
       let memberships = [];
+
       if (clubIds.length > 0) {
         const { data, error } = await supabase
           .from("club_members")
           .select("club_id, status, member_role")
           .in("club_id", clubIds);
+
         if (error) throw error;
+
         memberships = data || [];
       }
+
       const countsByClub = new Map();
+
       memberships.forEach((membership) => {
         const current = countsByClub.get(membership.club_id) || {
           accepted: 0,
@@ -82,8 +95,10 @@ export default function AdminClubs() {
           coaches: 0,
           players: 0,
         };
+
         if (membership.status === "accepted") {
           current.accepted += 1;
+
           if (
             membership.member_role === "coach" ||
             membership.member_role === "manager"
@@ -93,11 +108,14 @@ export default function AdminClubs() {
             current.players += 1;
           }
         }
+
         if (membership.status === "pending") {
           current.pending += 1;
         }
+
         countsByClub.set(membership.club_id, current);
       });
+
       setClubs(
         (clubRows || []).map((club) => {
           const counts = countsByClub.get(club.id) || {
@@ -106,11 +124,11 @@ export default function AdminClubs() {
             coaches: 0,
             players: 0,
           };
-          const acceptedNonManagerCount = memberships.filter(
+
+          const acceptedMemberCount = memberships.filter(
             (membership) =>
               membership.club_id === club.id &&
-              membership.status === "accepted" &&
-              membership.member_role !== "manager",
+              membership.status === "accepted",
           ).length;
 
           return {
@@ -129,7 +147,7 @@ export default function AdminClubs() {
             createdAt: club.created_at,
             updatedAt: club.updated_at,
             memberCount: counts.accepted,
-            acceptedNonManagerCount,
+            acceptedMemberCount,
             pendingCount: counts.pending,
             coachCount: counts.coaches,
             playerCount: counts.players,
@@ -145,9 +163,11 @@ export default function AdminClubs() {
       setLoading(false);
     }
   }, []);
+
   useEffect(() => {
     loadClubs();
   }, [loadClubs]);
+
   const counts = useMemo(
     () => ({
       total: clubs.length,
@@ -160,11 +180,14 @@ export default function AdminClubs() {
     }),
     [clubs],
   );
+
   const visibleClubs = useMemo(() => {
     const query = search.trim().toLowerCase();
+
     return clubs.filter((club) => {
       const matchesStatus =
         statusFilter === "All" || club.status === statusFilter;
+
       const matchesSearch =
         !query ||
         [
@@ -176,13 +199,16 @@ export default function AdminClubs() {
         ].some((value) =>
           String(value || "").toLowerCase().includes(query),
         );
+
       return matchesStatus && matchesSearch;
     });
   }, [clubs, search, statusFilter]);
+
   const openClub = async (club) => {
     setSelectedClub(club);
     setMembers([]);
     setLoadingMembers(true);
+
     try {
       const { data: membershipRows, error: membershipError } =
         await supabase
@@ -198,15 +224,21 @@ export default function AdminClubs() {
             responded_at
           `)
           .eq("club_id", club.id)
+          .in("status", ["accepted", "pending"])
           .order("requested_at", { ascending: true });
+
       if (membershipError) throw membershipError;
+
       const rows = membershipRows || [];
+
       const userIds = [
         ...new Set(rows.map((row) => row.user_id).filter(Boolean)),
       ];
+
       let appUsersById = new Map();
       let playersById = new Map();
       let coachesById = new Map();
+
       if (userIds.length > 0) {
         const [appUserResult, playerResult, coachResult] =
           await Promise.all([
@@ -223,28 +255,42 @@ export default function AdminClubs() {
               .select("user_id, display_name, state, coaching_level")
               .in("user_id", userIds),
           ]);
+
         if (appUserResult.error) throw appUserResult.error;
+
         if (playerResult.error) {
-          console.error("Unable to load player club profiles:", playerResult.error);
+          console.error(
+            "Unable to load player club profiles:",
+            playerResult.error,
+          );
         }
+
         if (coachResult.error) {
-          console.error("Unable to load coach club profiles:", coachResult.error);
+          console.error(
+            "Unable to load coach club profiles:",
+            coachResult.error,
+          );
         }
+
         appUsersById = new Map(
           (appUserResult.data || []).map((row) => [row.user_id, row]),
         );
+
         playersById = new Map(
           (playerResult.data || []).map((row) => [row.user_id, row]),
         );
+
         coachesById = new Map(
           (coachResult.data || []).map((row) => [row.user_id, row]),
         );
       }
+
       setMembers(
         rows.map((row) => {
           const appUser = appUsersById.get(row.user_id);
           const player = playersById.get(row.user_id);
           const coach = coachesById.get(row.user_id);
+
           return {
             ...row,
             name:
@@ -277,10 +323,12 @@ export default function AdminClubs() {
       setLoadingMembers(false);
     }
   };
+
   const writeAdminLog = async (action, detail, club) => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+
     const { error } = await supabase
       .from("admin_activity_logs")
       .insert({
@@ -289,10 +337,12 @@ export default function AdminClubs() {
         action,
         detail,
       });
+
     if (error) {
       console.error("Unable to save club admin log:", error);
     }
   };
+
   const changeClubStatus = async (club, nextStatus) => {
     const label =
       nextStatus === "paused"
@@ -300,6 +350,7 @@ export default function AdminClubs() {
         : nextStatus === "active"
           ? "enable"
           : "remove";
+
     if (
       !window.confirm(
         `Are you sure you want to ${label} ${club.shortName} · ${club.name}?`,
@@ -307,20 +358,26 @@ export default function AdminClubs() {
     ) {
       return;
     }
+
     setSaving(true);
     setErrorMessage("");
+
     try {
       const updateData = {
         status: nextStatus,
       };
+
       if (nextStatus === "paused" || nextStatus === "removed") {
         updateData.accepting_members = false;
       }
+
       const { error } = await supabase
         .from("clubs")
         .update(updateData)
         .eq("id", club.id);
+
       if (error) throw error;
+
       await writeAdminLog(
         nextStatus === "paused"
           ? "Club disabled"
@@ -330,10 +387,12 @@ export default function AdminClubs() {
         `${club.shortName} · ${club.name} was changed to ${nextStatus}.`,
         club,
       );
+
       setSelectedClub(null);
       await loadClubs();
     } catch (error) {
       console.error("Admin club status error:", error);
+
       setErrorMessage(
         error.message || "Unable to update the club.",
       );
@@ -341,13 +400,15 @@ export default function AdminClubs() {
       setSaving(false);
     }
   };
+
   const deleteClub = async (club) => {
-    if (Number(club.acceptedNonManagerCount || 0) > 0) {
+    if (Number(club.acceptedMemberCount || 0) > 0) {
       setErrorMessage(
-        "This club cannot be permanently deleted because it still has accepted members other than the manager. Disable the club instead.",
+        "This club cannot be permanently deleted because it still has an accepted manager or member. Disable the club instead.",
       );
       return;
     }
+
     if (
       !window.confirm(
         `Permanently delete ${club.shortName} · ${club.name}? This action cannot be undone.`,
@@ -355,43 +416,56 @@ export default function AdminClubs() {
     ) {
       return;
     }
+
     setSaving(true);
     setErrorMessage("");
+
     try {
-      const { data: acceptedMembers, error: memberCheckError } = await supabase
-        .from("club_members")
-        .select("id")
-        .eq("club_id", club.id)
-        .eq("status", "accepted")
-        .neq("member_role", "manager")
-        .limit(1);
+      const { data: acceptedMembers, error: memberCheckError } =
+        await supabase
+          .from("club_members")
+          .select("id")
+          .eq("club_id", club.id)
+          .eq("status", "accepted")
+          .limit(1);
+
       if (memberCheckError) throw memberCheckError;
+
       if ((acceptedMembers || []).length > 0) {
         setErrorMessage(
-          "This club cannot be permanently deleted because it still has accepted members other than the manager. Disable the club instead.",
+          "This club cannot be permanently deleted because it still has an accepted manager or member. Disable the club instead.",
         );
+
         await loadClubs();
         return;
       }
+
       const { error } = await supabase
         .from("clubs")
         .delete()
         .eq("id", club.id);
+
       if (error) throw error;
+
       await writeAdminLog(
         "Club deleted",
-        `${club.shortName} · ${club.name} was permanently deleted because it had no accepted members.`,
+        `${club.shortName} · ${club.name} was permanently deleted because it had no accepted managers or members.`,
         club,
       );
+
       setSelectedClub(null);
       await loadClubs();
     } catch (error) {
       console.error("Admin club delete error:", error);
-      setErrorMessage(error.message || "Unable to delete the club.");
+
+      setErrorMessage(
+        error.message || "Unable to delete the club.",
+      );
     } finally {
       setSaving(false);
     }
   };
+
   return (
     <div className="adminReadablePage">
       <style>{`
@@ -400,20 +474,25 @@ export default function AdminClubs() {
           font-size: 14px;
           font-weight: 400;
         }
+
         .adminReadablePage [style*='font-size: 10px'] {
           font-size: 12px !important;
         }
+
         .adminReadablePage [style*='font-size: 11px'] {
           font-size: 13px !important;
         }
+
         .adminReadablePage [style*='font-size: 12px'],
         .adminReadablePage [style*='font-size: 13px'] {
           font-size: 14px !important;
         }
+
         .adminReadablePage [style*='font-weight: 800'],
         .adminReadablePage [style*='font-weight: 900'] {
           font-weight: 700 !important;
         }
+
         .adminReadablePage button,
         .adminReadablePage input,
         .adminReadablePage select,
@@ -421,21 +500,26 @@ export default function AdminClubs() {
           font-family: "DM Sans", sans-serif !important;
           font-size: 14px !important;
         }
+
         .adminReadablePage table {
           font-family: "DM Sans", sans-serif;
         }
+
         .adminReadablePage th {
           font-size: 13px !important;
           font-weight: 700 !important;
         }
+
         .adminReadablePage td {
           font-size: 14px !important;
         }
       `}</style>
+
       <SectionHeader
         title="Club Management"
         subtitle="Review clubs, managers, members and club status"
       />
+
       {errorMessage && (
         <div
           style={{
@@ -450,6 +534,7 @@ export default function AdminClubs() {
           {errorMessage}
         </div>
       )}
+
       <div
         style={{
           display: "grid",
@@ -480,6 +565,7 @@ export default function AdminClubs() {
           color="#1A5FFF"
         />
       </div>
+
       <div
         style={{
           display: "flex",
@@ -505,6 +591,7 @@ export default function AdminClubs() {
           <option>Removed</option>
         </select>
       </div>
+
       <TableCard>
         {loading ? (
           <EmptyState text="Loading clubs..." />
@@ -582,6 +669,7 @@ export default function AdminClubs() {
                       ) : (
                         <Avatar name={club.shortName} role="Player" />
                       )}
+
                       <div>
                         <div
                           style={{
@@ -592,6 +680,7 @@ export default function AdminClubs() {
                         >
                           {club.shortName} · {club.name}
                         </div>
+
                         <div
                           style={{
                             marginTop: 2,
@@ -606,21 +695,27 @@ export default function AdminClubs() {
                       </div>
                     </div>
                   </td>
+
                   <td style={{ padding: "14px 16px", fontSize: 12 }}>
                     {club.ownerName}
                   </td>
+
                   <td style={{ padding: "14px 16px", fontSize: 12 }}>
                     {club.location} · {club.state}
                   </td>
+
                   <td style={{ padding: "14px 16px", fontSize: 12 }}>
                     {club.memberCount}
                   </td>
+
                   <td style={{ padding: "14px 16px", fontSize: 12 }}>
                     {club.pendingCount}
                   </td>
+
                   <td style={{ padding: "14px 16px", fontSize: 12 }}>
                     {formatDate(club.createdAt)}
                   </td>
+
                   <td style={{ padding: "14px 16px" }}>
                     <Badge value={club.status} />
                   </td>
@@ -630,6 +725,7 @@ export default function AdminClubs() {
           </table>
         )}
       </TableCard>
+
       {selectedClub && (
         <Modal
           title={`${selectedClub.shortName} · ${selectedClub.name}`}
@@ -665,6 +761,7 @@ export default function AdminClubs() {
                 <div style={{ fontSize: 10, color: "#8892A4" }}>
                   {label}
                 </div>
+
                 <div
                   style={{
                     marginTop: 3,
@@ -678,6 +775,7 @@ export default function AdminClubs() {
               </div>
             ))}
           </div>
+
           <div style={{ marginBottom: 18 }}>
             <div
               style={{
@@ -691,6 +789,7 @@ export default function AdminClubs() {
             >
               Description
             </div>
+
             <div
               style={{
                 fontSize: 13,
@@ -702,6 +801,7 @@ export default function AdminClubs() {
               {selectedClub.description || "No club description."}
             </div>
           </div>
+
           <div
             style={{
               fontSize: 11,
@@ -714,6 +814,7 @@ export default function AdminClubs() {
           >
             Members and requests
           </div>
+
           <div
             style={{
               border: "1px solid #EEF1F8",
@@ -746,6 +847,7 @@ export default function AdminClubs() {
                         : "Player"
                     }
                   />
+
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
@@ -756,6 +858,7 @@ export default function AdminClubs() {
                     >
                       {member.name}
                     </div>
+
                     <div
                       style={{
                         marginTop: 2,
@@ -766,6 +869,7 @@ export default function AdminClubs() {
                       {member.email} · {member.state} · {member.level}
                     </div>
                   </div>
+
                   <Badge
                     value={
                       member.member_role === "manager"
@@ -776,6 +880,7 @@ export default function AdminClubs() {
                     }
                     type="role"
                   />
+
                   <Badge
                     value={
                       member.status === "accepted"
@@ -789,6 +894,7 @@ export default function AdminClubs() {
               ))
             )}
           </div>
+
           <div
             style={{
               display: "flex",
@@ -830,32 +936,40 @@ export default function AdminClubs() {
                 Enable club
               </button>
             )}
+
             <button
               type="button"
-              disabled={saving || Number(selectedClub.acceptedNonManagerCount || 0) > 0}
+              disabled={
+                saving ||
+                Number(selectedClub.acceptedMemberCount || 0) > 0
+              }
               onClick={() => deleteClub(selectedClub)}
               title={
-                Number(selectedClub.acceptedNonManagerCount || 0) > 0
-                  ? "Cannot delete while accepted members other than the manager are still in the club. Disable the club instead."
+                Number(selectedClub.acceptedMemberCount || 0) > 0
+                  ? "Cannot delete while an accepted manager or member is still in the club. Disable the club instead."
                   : "Permanently delete this empty club"
               }
               style={{
                 ...buttonBase,
                 padding: "10px 15px",
                 background:
-                  Number(selectedClub.acceptedNonManagerCount || 0) > 0
+                  Number(selectedClub.acceptedMemberCount || 0) > 0
                     ? "#F3F4F6"
                     : "#FEE2E2",
                 color:
-                  Number(selectedClub.acceptedNonManagerCount || 0) > 0
+                  Number(selectedClub.acceptedMemberCount || 0) > 0
                     ? "#9CA3AF"
                     : "#DC2626",
                 cursor:
-                  saving || Number(selectedClub.acceptedNonManagerCount || 0) > 0
+                  saving ||
+                  Number(selectedClub.acceptedMemberCount || 0) > 0
                     ? "not-allowed"
                     : "pointer",
                 opacity:
-                  saving || Number(selectedClub.acceptedNonManagerCount || 0) > 0 ? 0.7 : 1,
+                  saving ||
+                  Number(selectedClub.acceptedMemberCount || 0) > 0
+                    ? 0.7
+                    : 1,
               }}
             >
               Delete club
