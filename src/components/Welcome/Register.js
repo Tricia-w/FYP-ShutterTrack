@@ -443,9 +443,81 @@ export default function Register() {
 
     if (signupError || isExistingSignupResponse(signupError, data?.user)) {
       if (isExistingSignupResponse(signupError, data?.user)) {
+        /*
+         * Supabase may return an obfuscated existing-user response even when
+         * this is the user's first visible registration attempt and the account
+         * was just created but is still waiting for email confirmation.
+         *
+         * Try the supplied email/password once:
+         * - if it signs in, the account is already confirmed
+         * - if Supabase says email not confirmed, show the verification screen
+         * - otherwise fall back to the normal existing-account guidance
+         */
+        try {
+          const {
+            data: existingLoginData,
+            error: existingLoginError,
+          } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: form.password,
+          })
+
+          if (
+            existingLoginData?.user?.id &&
+            existingLoginData?.session
+          ) {
+            setAccountMode('existing')
+            setError(
+              'This email is already registered and verified. Please use Login, or choose "Add Role" if another ShuttleTrack role is needed.',
+            )
+            setLoading(false)
+            return
+          }
+
+          if (
+            isEmailNotConfirmedError(
+              existingLoginError
+            )
+          ) {
+            const {
+              error: resendError,
+            } = await supabase.auth.resend({
+              type: 'signup',
+              email: cleanEmail,
+              options: {
+                emailRedirectTo:
+                  `${AUTH_REDIRECT_ORIGIN}/email-verified`,
+              },
+            })
+
+            if (resendError) {
+              console.warn(
+                'Unable to resend verification email:',
+                resendError,
+              )
+            }
+
+            setVerificationEmail(cleanEmail)
+            setRegistrationComplete(true)
+            setError('')
+            setSuccess(
+              resendError
+                ? 'Your account was created successfully and is waiting for email verification. Please check your email for the verification link.'
+                : 'Your account was created successfully. A verification email has been sent. Please check your email and verify your account before logging in.',
+            )
+            setLoading(false)
+            return
+          }
+        } catch (existingCheckError) {
+          console.warn(
+            'Unable to check whether the existing signup is awaiting verification:',
+            existingCheckError,
+          )
+        }
+
         setAccountMode('existing')
         setError(
-          'This email is already registered. If the account has not been verified yet, check your email for the verification link. Otherwise, choose "Add Role" to add another role or go to Login.',
+          'This email is already registered. Please use Login, or choose "Add Role" if another ShuttleTrack role is needed.',
         )
         setLoading(false)
         return

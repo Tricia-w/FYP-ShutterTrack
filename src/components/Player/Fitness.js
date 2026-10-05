@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import NotificationBell from '../Notifications/NotificationBell'
 import { supabase } from '../../lib/supabaseClient'
 import { calculateFitnessSummary } from '../../utils/fitnessScore'
@@ -9,8 +9,8 @@ import { createWorker, PSM } from 'tesseract.js'
 import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
-  createGoogleCalendarEvent,
-  ensureGoogleCalendarAccess,
+  getGoogleAccountEmail,
+  syncShuttleTrackGoogleCalendar,
 } from '../../lib/googleCalendar'
 
 
@@ -5817,6 +5817,8 @@ function ScheduleModal({
   venueHistory = [],
   saving,
   error = '',
+  availabilityError = '',
+  checkingAvailability = false,
 }) {
   const selectedType = String(form.type || 'Training')
   const typeLower = selectedType.toLowerCase()
@@ -5910,6 +5912,33 @@ function ScheduleModal({
       onClose={onClose}
       maxWidth={820}
     >
+      {(checkingAvailability || availabilityError) && (
+        <div
+          role={availabilityError ? 'alert' : 'status'}
+          style={{
+            marginBottom: 14,
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: availabilityError
+              ? '1px solid color-mix(in srgb, #EF4444 30%, var(--line, #EEF1F8))'
+              : '1px solid color-mix(in srgb, #2563EB 24%, var(--line, #EEF1F8))',
+            background: availabilityError
+              ? 'color-mix(in srgb, #EF4444 8%, var(--card, #FFFFFF))'
+              : 'color-mix(in srgb, #2563EB 7%, var(--card, #FFFFFF))',
+            color: availabilityError
+              ? '#B91C1C'
+              : 'var(--text, #0D1B3E)',
+            fontSize: 12,
+            lineHeight: 1.5,
+            fontWeight: 700,
+          }}
+        >
+          {checkingAvailability
+            ? 'Checking schedule availability...'
+            : availabilityError}
+        </div>
+      )}
+
       {error && (
         <div
           role="alert"
@@ -7740,6 +7769,8 @@ export default function Fitness() {
   const [trainingSectionHeight, setTrainingSectionHeight] = useState(null)
 
   const [scheduleForm, setScheduleForm] = useState(emptySchedule())
+  const [scheduleAvailabilityError, setScheduleAvailabilityError] = useState('')
+  const [checkingScheduleAvailability, setCheckingScheduleAvailability] = useState(false)
   const [trainingForm, setTrainingForm] = useState(emptyTraining())
   const [testForm, setTestForm] = useState(emptyTest())
   const [recoveryForm, setRecoveryForm] = useState(emptyRecovery())
@@ -8251,7 +8282,10 @@ export default function Fitness() {
     }
   }, [userId])
 
-  const saveGoogleCalendarPreference = async enabled => {
+  const saveGoogleCalendarPreference = async (
+    enabled,
+    googleEmail = null
+  ) => {
     const uid = userId || (await getUserId())
 
     const { error } = await supabase
@@ -8260,6 +8294,10 @@ export default function Fitness() {
         {
           user_id: uid,
           enabled,
+          google_email:
+            enabled
+              ? googleEmail
+              : null,
           updated_at: new Date().toISOString(),
         },
         {
@@ -8293,7 +8331,14 @@ export default function Fitness() {
         prompt: 'consent',
       })
 
-      await saveGoogleCalendarPreference(true)
+      const googleEmail =
+        await getGoogleAccountEmail()
+
+      await saveGoogleCalendarPreference(
+        true,
+        googleEmail
+      )
+
       setGoogleSyncEnabled(true)
 
       alert(
@@ -9032,6 +9077,8 @@ export default function Fitness() {
   const openAddSchedule = date => {
     setEditingSchedule(null)
     setLoadError('')
+    setScheduleAvailabilityError('')
+    setCheckingScheduleAvailability(false)
     setScheduleForm(
       emptySchedule(
         date ||
@@ -9045,6 +9092,8 @@ export default function Fitness() {
   const openEditSchedule = row => {
     setEditingSchedule(row)
     setLoadError('')
+    setScheduleAvailabilityError('')
+    setCheckingScheduleAvailability(false)
     setScheduleForm({
       date: row.date,
       time: row.time ? row.time.slice(0, 5) : '',
@@ -9065,15 +9114,95 @@ export default function Fitness() {
     })
   }
 
-  const checkPlayerScheduleConflict = async uid => {
+  const checkPlayerScheduleConflict = useCallback(async uid => {
     if (
       !uid ||
       !scheduleForm.date ||
-      !scheduleForm.time ||
-      !scheduleForm.endTime ||
+      !scheduleForm.type
+    ) {
+      return null
+    }
+
+    /*
+     * First check the selected date directly.
+     * This is needed for Rest Day because Rest Day has no start/end time.
+     * It also lets a normal activity detect an existing Rest Day immediately.
+     */
+    let dayQuery = supabase
+      .from('player_schedule')
+      .select(
+        'id, event_date, event_time, title, schedule_type, notes, coach_session_id, is_coach_created'
+      )
+      .eq('user_id', uid)
+      .eq('event_date', scheduleForm.date)
+
+    if (editingSchedule?.id) {
+      dayQuery = dayQuery.neq(
+        'id',
+        editingSchedule.id
+      )
+    }
+
+    const {
+      data: daySchedules,
+      error: dayScheduleError,
+    } = await dayQuery
+
+    if (dayScheduleError) {
+      throw dayScheduleError
+    }
+
+    const existingRows =
+      daySchedules || []
+
+    const existingRestDay =
+      existingRows.find(row => {
+        const rowType =
+          String(
+            row.schedule_type ||
+            row.title ||
+            ''
+          )
+            .trim()
+            .toLowerCase()
+
+        return rowType === 'rest day'
+      }) || null
+
+    if (
       scheduleForm.type === 'Rest Day'
     ) {
-      return false
+      if (existingRows.length > 0) {
+        return {
+          type: 'rest_day_conflict',
+          message:
+            `${fmtDate(scheduleForm.date)} already contains a scheduled activity. ` +
+            'Remove or reschedule the activity before setting this date as a Rest Day.',
+        }
+      }
+
+      return null
+    }
+
+    if (existingRestDay) {
+      return {
+        type: 'existing_rest_day',
+        message:
+          `${fmtDate(scheduleForm.date)} is already marked as a Rest Day. ` +
+          'Remove the Rest Day or select another date.',
+      }
+    }
+
+    /*
+     * Timed conflict checking is still handled by the existing database RPC.
+     * This catches overlaps with player-created activities and coach-created
+     * sessions using the same server-side rule already used before saving.
+     */
+    if (
+      !scheduleForm.time ||
+      !scheduleForm.endTime
+    ) {
+      return null
     }
 
     const {
@@ -9098,8 +9227,115 @@ export default function Fitness() {
       throw error
     }
 
-    return Boolean(data)
-  }
+    if (Boolean(data)) {
+      return {
+        type: 'time_conflict',
+        message:
+          'This time slot is not available because you already have another activity or coach session scheduled.',
+      }
+    }
+
+    return null
+  }, [
+    scheduleForm.date,
+    scheduleForm.type,
+    scheduleForm.time,
+    scheduleForm.endTime,
+    editingSchedule?.id,
+  ])
+
+  /*
+   * Check availability before Save.
+   * - Rest Day: check immediately after date + type are selected.
+   * - Other activities: check once date + start + end time are available.
+   *
+   * A small debounce avoids unnecessary database requests while the form
+   * is still being changed.
+   */
+  useEffect(() => {
+    if (
+      !showSchedule &&
+      !editingSchedule
+    ) {
+      setScheduleAvailabilityError('')
+      setCheckingScheduleAvailability(false)
+      return undefined
+    }
+
+    if (
+      !userId ||
+      !scheduleForm.date ||
+      !scheduleForm.type
+    ) {
+      setScheduleAvailabilityError('')
+      setCheckingScheduleAvailability(false)
+      return undefined
+    }
+
+    if (
+      scheduleForm.type !== 'Rest Day' &&
+      (
+        !scheduleForm.time ||
+        !scheduleForm.endTime
+      )
+    ) {
+      setScheduleAvailabilityError('')
+      setCheckingScheduleAvailability(false)
+      return undefined
+    }
+
+    let cancelled = false
+
+    const timer = window.setTimeout(
+      async () => {
+        setCheckingScheduleAvailability(true)
+
+        try {
+          const conflict =
+            await checkPlayerScheduleConflict(
+              userId
+            )
+
+          if (cancelled) return
+
+          setScheduleAvailabilityError(
+            conflict?.message || ''
+          )
+        } catch (availabilityError) {
+          if (cancelled) return
+
+          console.error(
+            'Player schedule availability check error:',
+            availabilityError
+          )
+
+          setScheduleAvailabilityError(
+            availabilityError?.message ||
+              'Unable to check schedule availability.'
+          )
+        } finally {
+          if (!cancelled) {
+            setCheckingScheduleAvailability(false)
+          }
+        }
+      },
+      300
+    )
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    showSchedule,
+    editingSchedule,
+    userId,
+    scheduleForm.date,
+    scheduleForm.type,
+    scheduleForm.time,
+    scheduleForm.endTime,
+    checkPlayerScheduleConflict,
+  ])
 
   const saveSchedule = async () => {
     if (saving) return
@@ -9155,15 +9391,16 @@ export default function Fitness() {
     try {
       const uid = await getUserId()
 
-      const hasConflict =
+      const conflict =
         await checkPlayerScheduleConflict(
           uid
         )
 
-      if (hasConflict) {
-        setLoadError(
-          'This time slot is not available because you already have another activity scheduled.'
+      if (conflict) {
+        setScheduleAvailabilityError(
+          conflict.message
         )
+        setLoadError('')
         return
       }
 
@@ -9217,75 +9454,52 @@ export default function Fitness() {
 
       let savedRow = data
 
-      if (
-        !editingSchedule &&
-        googleSyncEnabled
-      ) {
-        try {
-          await ensureGoogleCalendarAccess()
+      /*
+       * Direct server-side Google Calendar sync.
+       *
+       * Always call this after the Player schedule is saved. It must not
+       * depend on the Player's own Google Calendar setting because a tagged
+       * connected Coach should still receive the event even when the Player
+       * has not connected Google Calendar.
+       *
+       * The sync function reads the saved schedule, checks the accepted
+       * Coach relationship, and updates every connected target calendar.
+       */
+      try {
+        const calendarSync =
+          await syncShuttleTrackGoogleCalendar({
+            action: 'upsert',
+            sourceType: 'player_schedule',
+            sourceId: data.id,
+          })
 
-          const googleEvent =
-            await createGoogleCalendarEvent({
-              title: scheduleTitle,
-              date: scheduleForm.date,
-              startTime:
-                scheduleForm.time || '09:00',
-              endTime:
-                scheduleForm.endTime || '',
-              venue:
-                scheduleForm.venue.trim(),
-              scheduleType:
-                scheduleForm.type,
-              description: [
-                `ShuttleTrack ${scheduleForm.type}`,
-                ['Competition', 'Friendly Match'].includes(
-                  scheduleForm.type
-                ) && scheduleForm.matchType
-                  ? `Match type: ${scheduleForm.matchType}`
-                  : '',
-                scheduleForm.notes.trim(),
-              ]
-                .filter(Boolean)
-                .join('\n'),
-            })
-
-          if (googleEvent?.id) {
-            const {
-              data: googleLinkedRow,
-              error: googleIdError,
-            } = await supabase
-              .from('player_schedule')
-              .update({
-                google_event_id:
-                  googleEvent.id,
-              })
-              .eq('id', data.id)
-              .eq('user_id', uid)
-              .select('*')
-              .single()
-
-            if (googleIdError) {
-              console.error(
-                'Unable to save Google event ID:',
-                googleIdError
-              )
-            } else if (googleLinkedRow) {
-              savedRow = googleLinkedRow
-            }
-          }
-        } catch (googleError) {
+        if (
+          Array.isArray(calendarSync?.errors) &&
+          calendarSync.errors.length > 0
+        ) {
           console.error(
-            'Google Calendar event creation error:',
-            googleError
-          )
-
-          setLoadError(
-            `Schedule saved in ShuttleTrack, but Google Calendar sync failed: ${
-              googleError?.message ||
-              'Unable to create Google Calendar event.'
-            }`
+            'Some Google Calendar targets could not be synced:',
+            calendarSync.errors
           )
         }
+      } catch (googleError) {
+        console.error(
+          editingSchedule
+            ? 'Direct Google Calendar schedule update error:'
+            : 'Direct Google Calendar schedule creation error:',
+          googleError
+        )
+
+        setLoadError(
+          `${
+            editingSchedule
+              ? 'Schedule updated'
+              : 'Schedule saved'
+          } in ShuttleTrack, but Google Calendar sync failed: ${
+            googleError?.message ||
+            'Unable to sync connected Google Calendars.'
+          }`
+        )
       }
 
       const item = rowToSchedule(savedRow)
@@ -9334,10 +9548,56 @@ export default function Fitness() {
 
     try {
       const uid = await getUserId()
-      const { error } = await supabase.from('player_schedule').delete().eq('id', editingSchedule.id).eq('user_id', uid)
+
+      /*
+       * Remove mapped Google Calendar events BEFORE deleting the
+       * ShuttleTrack schedule because the Edge Function verifies the source.
+       */
+      try {
+        const calendarSync =
+          await syncShuttleTrackGoogleCalendar({
+            action: 'delete',
+            sourceType: 'player_schedule',
+            sourceId: editingSchedule.id,
+          })
+
+        if (
+          Array.isArray(calendarSync?.errors) &&
+          calendarSync.errors.length > 0
+        ) {
+          console.error(
+            'Some Google Calendar events could not be removed:',
+            calendarSync.errors
+          )
+        }
+      } catch (googleError) {
+        console.error(
+          'Direct Google Calendar schedule delete error:',
+          googleError
+        )
+
+        setLoadError(
+          `The ShuttleTrack schedule will still be deleted, but connected Google Calendar events could not all be removed: ${
+            googleError?.message ||
+            'Unable to remove connected Google Calendar events.'
+          }`
+        )
+      }
+
+      const { error } = await supabase
+        .from('player_schedule')
+        .delete()
+        .eq('id', editingSchedule.id)
+        .eq('user_id', uid)
+
       if (error) throw error
 
-      setScheduleList(prev => prev.filter(s => s.id !== editingSchedule.id))
+      setScheduleList(prev =>
+        prev.filter(
+          schedule =>
+            schedule.id !== editingSchedule.id
+        )
+      )
       setEditingSchedule(null)
       setScheduleForm(emptySchedule())
     } catch (err) {
@@ -12963,11 +13223,15 @@ export default function Fitness() {
             setEditingSchedule(null)
             setScheduleForm(emptySchedule())
             setLoadError('')
+            setScheduleAvailabilityError('')
+            setCheckingScheduleAvailability(false)
           }}
           coachOptions={coachOptions}
           venueHistory={venueHistory}
           saving={saving}
           error={loadError}
+          availabilityError={scheduleAvailabilityError}
+          checkingAvailability={checkingScheduleAvailability}
         />
       )}
 
@@ -12981,11 +13245,15 @@ export default function Fitness() {
             setEditingSchedule(null)
             setScheduleForm(emptySchedule())
             setLoadError('')
+            setScheduleAvailabilityError('')
+            setCheckingScheduleAvailability(false)
           }}
           onDelete={requestDeleteSchedule}
           scheduleItem={editingSchedule}
           canChangeStatus={isScheduleFinished(editingSchedule)}
           coachOptions={coachOptions}
+          availabilityError={scheduleAvailabilityError}
+          checkingAvailability={checkingScheduleAvailability}
           onComplete={async () => {
             const item = editingSchedule
             setEditingSchedule(null)

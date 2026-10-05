@@ -17,6 +17,13 @@ const CLUB_NOTIFICATION_TYPES = [
   "club_invitation",
   "club_invitation_accepted",
   "club_invitation_declined",
+  "club_coach_request_accepted",
+  "club_coach_request_declined",
+  "club_coach_role_added",
+  "club_coach_role_removed",
+  "club_manager_added",
+  "club_manager_removed",
+  "club_owner_transferred",
 ];
 
 // Local development continues to run on localhost.
@@ -30,6 +37,50 @@ const C = {
   soft: "var(--soft, #F6F8FF)",
   line: "var(--line, #EEF1F8)",
 };
+
+function calculateAgeFromDob(dateOfBirth) {
+  if (!dateOfBirth) return null;
+
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+
+  if (Number.isNaN(birthDate.getTime())) return null;
+
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDifference = today.getMonth() - birthDate.getMonth();
+
+  if (
+    monthDifference < 0 ||
+    (monthDifference === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age -= 1;
+  }
+
+  return age >= 0 ? age : null;
+}
+
+function calculateExperienceYears(
+  dateOfBirth,
+  startedPlayingAge,
+  fallback = 0,
+) {
+  const currentAge = calculateAgeFromDob(dateOfBirth);
+  const startAge = Number(startedPlayingAge);
+
+  if (
+    currentAge !== null &&
+    startedPlayingAge !== null &&
+    startedPlayingAge !== undefined &&
+    startedPlayingAge !== "" &&
+    Number.isFinite(startAge) &&
+    startAge >= 0 &&
+    startAge <= currentAge
+  ) {
+    return currentAge - startAge;
+  }
+
+  return Number(fallback || 0);
+}
 
 function getVenueMapEmbedUrl(venue, club) {
   const address = String(venue?.address || "").trim();
@@ -91,6 +142,28 @@ function SmallInfo({ label, value }) {
       </div>
     </div>
   );
+}
+
+function getClubRoleLabel(member) {
+  if (!member) return "Club member";
+
+  if (member.isOwner) {
+    return member.isClubCoach
+      ? "Club owner · Club coach"
+      : "Club owner";
+  }
+
+  if (member.memberRole === "manager") {
+    return member.isClubCoach
+      ? "Club manager · Club coach"
+      : "Club manager";
+  }
+
+  if (member.isClubCoach) {
+    return "Club coach";
+  }
+
+  return "Club member";
 }
 
 function StatusBadge({ status, requestType }) {
@@ -781,6 +854,7 @@ function ClubDetail({
   club,
   currentAcceptedClub,
   actionId,
+  readOnly = false,
   onJoin,
   onCancel,
   onLeave,
@@ -791,7 +865,7 @@ function ClubDetail({
 }) {
   const busy = actionId === club.id;
 
-  const membershipAction = club.isOwner ? (
+  const membershipAction = readOnly ? null : club.isOwner ? (
     <div
       style={{
         fontSize: 12,
@@ -801,31 +875,8 @@ function ClubDetail({
     >
       You manage this club. Open <strong>My club</strong> to manage members.
     </div>
-  ) : club.isManager ? (
-    <div
-      style={{
-        fontSize: 12,
-        color: C.muted,
-        lineHeight: 1.5,
-      }}
-    >
-      You are a manager of this club. The club owner must remove the manager role before you can leave.
-    </div>
-  ) : club.membershipStatus === "accepted" ? (
-    <button
-      className={styles.btnOutline}
-      disabled={busy}
-      onClick={() => onLeave(club)}
-      style={{
-        width: "100%",
-        color: "#DC2626",
-        borderColor: "#FECACA",
-        background: "#FEF2F2",
-      }}
-    >
-      {busy ? "Leaving..." : "Leave club"}
-    </button>
-  ) : currentAcceptedClub &&
+  ) : club.membershipStatus === "accepted" ? null
+  : currentAcceptedClub &&
     String(currentAcceptedClub.id) !== String(club.id) ? (
     <div
       style={{
@@ -1002,7 +1053,9 @@ function ClubDetail({
           </div>
         </div>
 
-        {!club.isOwner && (
+        {!readOnly &&
+          !club.isOwner &&
+          club.membershipStatus !== "accepted" && (
           <div
             style={{
               marginBottom: 18,
@@ -1231,13 +1284,7 @@ function ClubDetail({
                   </div>
 
                   <div style={{ fontSize: 11, color: C.muted }}>
-                    {member.isOwner
-                      ? "Club owner"
-                      : member.memberRole === "manager"
-                        ? "Club manager"
-                        : member.memberRole === "coach"
-                          ? "Club coach"
-                          : "Club player"}
+                    {getClubRoleLabel(member)}
                     {member.playerState && member.playerState !== "—"
                       ? ` · ${member.playerState}`
                       : ""}
@@ -1266,210 +1313,229 @@ function ClubDetail({
 }
 
 function ClubPlayerProfileModal({ member, onClose }) {
+  const safeMember = member || {};
+
+  const [profileTab, setProfileTab] = useState(
+    safeMember.playerProfile ? "player" : "coach",
+  );
+
+  const playerProfile = safeMember.playerProfile || null;
+  const coachProfile = safeMember.coachProfile || null;
+  const playerSetup = safeMember.playerSetup || null;
+  const publicPlayerProfile = safeMember.publicPlayerProfile || null;
+  const memberUserId = safeMember.user_id || safeMember.userId || "";
+
+  const hasPlayerProfile = Boolean(playerProfile);
+  const hasCoachProfile = Boolean(coachProfile);
+
+  useEffect(() => {
+    if (hasPlayerProfile && !hasCoachProfile) {
+      setProfileTab("player");
+    } else if (hasCoachProfile && !hasPlayerProfile) {
+      setProfileTab("coach");
+    } else if (hasPlayerProfile && hasCoachProfile) {
+      setProfileTab("player");
+    }
+  }, [
+    safeMember.user_id,
+    safeMember.userId,
+    hasPlayerProfile,
+    hasCoachProfile,
+  ]);
+
   if (!member) return null;
 
-  const playerProfile = member.playerProfile || null;
-  const coachProfile = member.coachProfile || null;
-
-  const isCoachProfile =
-    member.memberRole === "coach" ||
-    member.memberRole === "manager";
-
-  const activeProfile =
-    isCoachProfile && coachProfile
-      ? coachProfile
-      : playerProfile || coachProfile || {};
-
   const displayName =
-    activeProfile.display_name ||
-    activeProfile.full_name ||
-    activeProfile.name ||
+    playerProfile?.display_name ||
+    coachProfile?.display_name ||
     member.playerName ||
     member.member_name ||
     "Member";
 
-  const state =
-    activeProfile.state ||
-    activeProfile.location ||
-    activeProfile.coaching_state ||
-    member.playerState ||
-    "Not set";
+  const clubRole = getClubRoleLabel({
+    ...member,
+    isClubCoach:
+      member.isClubCoach === true ||
+      member.is_club_coach === true,
+  });
 
-  const clubRole =
-    member.memberRole === "manager"
-      ? "Club manager"
-      : member.memberRole === "coach"
-        ? "Club coach"
-        : "Club player";
-
-  const isPrivatePlayer =
-    clubRole === "Club player" &&
-    member.profilePrivate === true;
-
-  if (isPrivatePlayer) {
-    const privateDisplayName =
-      member.playerName ||
-      member.member_name ||
-      "Club member";
-
-    return (
-      <div
-        role="presentation"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) onClose();
-        }}
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 3000,
-          background: "rgba(13,27,62,0.48)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 18,
-        }}
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${privateDisplayName} private profile`}
-          style={{
-            width: "min(520px, 100%)",
-            background: C.card,
-            border: `1px solid ${C.line}`,
-            borderRadius: 20,
-            padding: 22,
-            boxShadow: "0 24px 65px rgba(13,27,62,0.28)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-              gap: 14,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-              <div
-                className={styles.av}
-                style={{ width: 62, height: 62, fontSize: 18 }}
-              >
-                {privateDisplayName.charAt(0).toUpperCase()}
-              </div>
-
-              <div>
-                <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
-                  {privateDisplayName}
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 4,
-                    fontSize: 12,
-                    color: C.muted,
-                  }}
-                >
-                  Club player
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 5,
-                    flexWrap: "wrap",
-                    marginTop: 7,
-                  }}
-                >
-                  <span className={styles.badgeGray}>Private profile</span>
-                  <span className={styles.badgeBlue}>{clubRole}</span>
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close profile"
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 999,
-                border: `1px solid ${C.line}`,
-                background: C.card,
-                color: C.muted,
-                cursor: "pointer",
-                fontSize: 18,
-              }}
-            >
-              ×
-            </button>
-          </div>
-
-          <div
-            style={{
-              marginTop: 20,
-              padding: 18,
-              borderRadius: 14,
-              border: `1px solid ${C.line}`,
-              background: C.soft,
-              textAlign: "center",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 900,
-                color: C.text,
-              }}
-            >
-              This player&apos;s profile is private
-            </div>
-            <div
-              style={{
-                marginTop: 7,
-                fontSize: 12,
-                lineHeight: 1.65,
-                color: C.muted,
-              }}
-            >
-              Their name and club role remain visible for membership purposes,
-              but personal profile details are hidden.
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const profileLabel = isCoachProfile
-    ? "Coach profile"
-    : "Player profile";
-
-  const categoryLabel = isCoachProfile
-    ? "Coaching level"
-    : "Player category";
-
-  const categoryValue = isCoachProfile
-    ? coachProfile?.coaching_level ||
-      coachProfile?.level ||
-      coachProfile?.certification ||
-      "Not set"
-    : playerProfile?.player_category || "Not set";
+  const activeProfile =
+    profileTab === "coach" && hasCoachProfile
+      ? coachProfile
+      : playerProfile || coachProfile || {};
 
   const avatarUrl =
-    coachProfile?.avatar_url ||
-    coachProfile?.profile_photo_url ||
-    coachProfile?.photo_url ||
-    playerProfile?.profile_photo_url ||
+    activeProfile.profile_photo_url ||
+    activeProfile.avatar_url ||
+    activeProfile.photo_url ||
     member.playerAvatarUrl ||
     null;
 
-  const experienceYears = Number(
-    activeProfile.experience_years ??
-    activeProfile.years_experience ??
-    0,
-  );
+  const getValue = (...values) => {
+    const found = values.find(
+      (value) =>
+        value !== null &&
+        value !== undefined &&
+        String(value).trim() !== "",
+    );
+    return found === undefined ? "Not set" : found;
+  };
+
+  const playerRows = playerProfile
+    ? [
+        ["Playing level", getValue(
+          playerProfile.level,
+          playerProfile.skill_level,
+          playerSetup?.playing_level,
+          publicPlayerProfile?.level,
+          publicPlayerProfile?.skill_level,
+        )],
+        ["Preferred event", getValue(
+          playerSetup?.preferred_event,
+          playerProfile.preferred_event,
+          playerProfile.player_category,
+          playerProfile.category,
+          publicPlayerProfile?.preferred_event,
+          publicPlayerProfile?.player_category,
+        )],
+        ["Style", getValue(
+          playerSetup?.play_style,
+          playerSetup?.playing_style,
+          publicPlayerProfile?.play_style,
+          publicPlayerProfile?.playing_style,
+          publicPlayerProfile?.style,
+          playerProfile.playing_style,
+          playerProfile.play_style,
+          playerProfile.style,
+        )],
+        ["Strength", getValue(
+          playerSetup?.biggest_strength,
+          playerSetup?.strength,
+          publicPlayerProfile?.biggest_strength,
+          publicPlayerProfile?.strength,
+          playerProfile.biggest_strength,
+          playerProfile.strength,
+        )],
+        ["What player are you?", (() => {
+          const value = getValue(
+            playerSetup?.pressure_reaction,
+            playerSetup?.player_type,
+            publicPlayerProfile?.pressure_reaction,
+            publicPlayerProfile?.player_type,
+            playerProfile.pressure_reaction,
+            playerProfile.player_type,
+          );
+
+          if (value === "Not set") return value;
+
+          return String(value).toLowerCase().includes("player")
+            ? String(value)
+            : `${value} Player`;
+        })()],
+        ["Club", getValue(
+          playerProfile.club,
+          publicPlayerProfile?.club,
+        )],
+        ["Hand", getValue(
+          playerProfile.dominant_hand,
+          playerProfile.playing_hand,
+          playerProfile.hand,
+          publicPlayerProfile?.dominant_hand,
+          publicPlayerProfile?.playing_hand,
+          publicPlayerProfile?.hand,
+        )],
+        ["Experience", (() => {
+          const years = calculateExperienceYears(
+            playerProfile.date_of_birth ||
+              publicPlayerProfile?.date_of_birth,
+            playerProfile.started_playing_age ??
+              publicPlayerProfile?.started_playing_age,
+            playerProfile.experience_years ??
+              playerProfile.years_experience ??
+              publicPlayerProfile?.experience_years ??
+              publicPlayerProfile?.years_experience ??
+              0,
+          );
+
+          return years > 0 ? `${years} year(s)` : "Not set";
+        })()],
+        ["Partner state", getValue(
+          playerProfile.state,
+          playerProfile.location,
+          publicPlayerProfile?.state,
+          publicPlayerProfile?.location,
+        )],
+      ]
+    : [];
+
+  const coachRows = coachProfile
+    ? [
+        ["Coaching level", getValue(
+          coachProfile.coaching_level,
+          coachProfile.level,
+          coachProfile.certification,
+        )],
+        ["State", getValue(
+          coachProfile.state,
+          coachProfile.location,
+          coachProfile.coaching_state,
+        )],
+        ["Club", getValue(coachProfile.club)],
+        ["Experience", getValue(
+          coachProfile.experience_years,
+          coachProfile.years_experience,
+        ) === "Not set"
+          ? "Not set"
+          : `${getValue(
+              coachProfile.experience_years,
+              coachProfile.years_experience,
+            )} year(s)`],
+        ["Specialty", getValue(
+          coachProfile.specialty,
+          coachProfile.specialties,
+          coachProfile.focus_area,
+        )],
+        ["Qualification", getValue(
+          coachProfile.qualification,
+          coachProfile.certification,
+        )],
+        ["Accepting players", coachProfile.accepting_players === true
+          ? "Yes"
+          : coachProfile.accepting_players === false
+            ? "No"
+            : "Not set"],
+      ]
+    : [];
+
+  const rows = profileTab === "coach" ? coachRows : playerRows;
+
+  const about =
+    profileTab === "coach"
+      ? getValue(
+          coachProfile?.bio,
+          coachProfile?.about,
+          coachProfile?.description,
+        )
+      : getValue(
+          playerProfile?.bio,
+          playerProfile?.about,
+          playerProfile?.description,
+        );
+
+  const openViewMore = () => {
+    if (!memberUserId) return;
+
+    if (profileTab === "coach") {
+      window.location.assign(
+        `/players?tab=coach&coach=${encodeURIComponent(memberUserId)}`,
+      );
+      return;
+    }
+
+    window.location.assign(
+      `/players?player=${encodeURIComponent(memberUserId)}`,
+    );
+  };
 
   return (
     <div
@@ -1493,8 +1559,8 @@ function ClubPlayerProfileModal({ member, onClose }) {
         aria-modal="true"
         aria-label={`${displayName} profile`}
         style={{
-          width: "min(620px, 100%)",
-          maxHeight: "86vh",
+          width: "min(760px, 100%)",
+          maxHeight: "88vh",
           overflowY: "auto",
           background: C.card,
           border: `1px solid ${C.line}`,
@@ -1506,20 +1572,19 @@ function ClubPlayerProfileModal({ member, onClose }) {
         <div
           style={{
             display: "flex",
-            alignItems: "flex-start",
             justifyContent: "space-between",
+            alignItems: "flex-start",
             gap: 14,
-            marginBottom: 18,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             {avatarUrl ? (
               <img
                 src={avatarUrl}
                 alt={`${displayName} profile`}
                 style={{
-                  width: 62,
-                  height: 62,
+                  width: 72,
+                  height: 72,
                   borderRadius: "50%",
                   objectFit: "cover",
                 }}
@@ -1527,37 +1592,18 @@ function ClubPlayerProfileModal({ member, onClose }) {
             ) : (
               <div
                 className={styles.av}
-                style={{ width: 62, height: 62, fontSize: 18 }}
+                style={{ width: 72, height: 72, fontSize: 22 }}
               >
                 {displayName.charAt(0).toUpperCase()}
               </div>
             )}
 
             <div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: C.text }}>
                 {displayName}
               </div>
-
-              <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
-                {categoryValue}
-                {isCoachProfile ? " Coach" : " Player"} · {state}
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 5,
-                  flexWrap: "wrap",
-                  marginTop: 7,
-                }}
-              >
-                <span className={styles.badgeBlue}>
-                  {profileLabel}
-                </span>
-
-                <span className={styles.badgeGray}>
-                  {clubRole}
-                </span>
+              <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
+                {clubRole}
               </div>
             </div>
           </div>
@@ -1583,45 +1629,114 @@ function ClubPlayerProfileModal({ member, onClose }) {
 
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 14,
-            paddingTop: 16,
-            borderTop: `1px solid ${C.line}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginTop: 18,
+            flexWrap: "wrap",
           }}
         >
-          <SmallInfo label={categoryLabel} value={categoryValue} />
-          <SmallInfo label="State" value={state} />
-          <SmallInfo label="Club role" value={clubRole} />
+          <div
+            style={{
+              display: "inline-flex",
+              padding: 4,
+              borderRadius: 12,
+              background: C.soft,
+              gap: 4,
+            }}
+          >
+            {hasPlayerProfile && (
+              <button
+                type="button"
+                className={
+                  profileTab === "player"
+                    ? styles.btnPrimary
+                    : styles.btnOutline
+                }
+                onClick={() => setProfileTab("player")}
+              >
+                Player profile
+              </button>
+            )}
 
-          {!isCoachProfile && (
-            <SmallInfo
-              label="Playing hand"
-              value={playerProfile?.playing_hand || "Not set"}
-            />
-          )}
+            {hasCoachProfile && (
+              <button
+                type="button"
+                className={
+                  profileTab === "coach"
+                    ? styles.btnPrimary
+                    : styles.btnOutline
+                }
+                onClick={() => setProfileTab("coach")}
+              >
+                Coach profile
+              </button>
+            )}
+          </div>
 
-          <SmallInfo
-            label="Experience"
-            value={
-              experienceYears > 0
-                ? `${experienceYears} ${
-                    experienceYears === 1 ? "year" : "years"
-                  }`
-                : "Not set"
-            }
-          />
+          <button
+            type="button"
+            className={styles.btnOutline}
+            onClick={openViewMore}
+          >
+            View more
+          </button>
         </div>
 
         <div
           style={{
             marginTop: 18,
-            paddingTop: 16,
+            paddingTop: 18,
             borderTop: `1px solid ${C.line}`,
           }}
         >
-          <div className={styles.cardTitle}>
-            {isCoachProfile ? "About coach" : "About player"}
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              color: C.text,
+              marginBottom: 12,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+            }}
+          >
+            {profileTab === "coach"
+              ? "Coach information"
+              : "Player information"}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: "14px 26px",
+            }}
+          >
+            {rows.map(([label, value]) => (
+              <SmallInfo key={label} label={label} value={String(value)} />
+            ))}
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: 20,
+            paddingTop: 18,
+            borderTop: `1px solid ${C.line}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              color: C.text,
+              marginBottom: 9,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+            }}
+          >
+            About {profileTab === "coach" ? "Coach" : "Player"}
           </div>
 
           <div
@@ -1632,36 +1747,13 @@ function ClubPlayerProfileModal({ member, onClose }) {
               whiteSpace: "pre-wrap",
             }}
           >
-            {activeProfile.bio ||
-              activeProfile.about ||
-              activeProfile.description ||
-              `This ${isCoachProfile ? "coach" : "player"} has not added a biography yet.`}
+            {about === "Not set"
+              ? `This ${profileTab} has not added a biography yet.`
+              : String(about)}
           </div>
         </div>
 
-        {activeProfile.instagram && (
-          <a
-            href={`https://instagram.com/${String(
-              activeProfile.instagram,
-            ).replace("@", "")}`}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display: "inline-flex",
-              marginTop: 16,
-              padding: "6px 12px",
-              borderRadius: 999,
-              background: "#FFF0F6",
-              border: "1px solid #FBC8DC",
-              color: "#B5305A",
-              textDecoration: "none",
-              fontSize: 11,
-              fontWeight: 700,
-            }}
-          >
-            {activeProfile.instagram}
-          </a>
-        )}
+
       </div>
     </div>
   );
@@ -2429,10 +2521,13 @@ function ManageClub({
   requests,
   members,
   invitations,
+  clubCoachRequests,
   invitePlayers,
   inviteBusyId,
   busyId,
   onRespond,
+  onRespondClubCoachRequest,
+  onSetClubCoachRole,
   onRemoveMember,
   onToggleMembership,
   onInvitePlayer,
@@ -2443,6 +2538,8 @@ function ManageClub({
   onSetManagerRole,
   onTransferOwnership,
   onDeleteClub,
+  onLeaveClub,
+  leaveBusyId,
 }) {
   if (!club) {
     return (
@@ -2521,6 +2618,22 @@ function ManageClub({
                   }}
                 >
                   Delete club
+                </button>
+              )}
+
+              {!club.isOwner && (
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  disabled={leaveBusyId === club.id}
+                  onClick={() => onLeaveClub(club)}
+                  style={{
+                    color: "#DC2626",
+                    borderColor: "#FECACA",
+                    background: "#FEF2F2",
+                  }}
+                >
+                  {leaveBusyId === club.id ? "Leaving..." : "Leave club"}
                 </button>
               )}
             </div>
@@ -2696,6 +2809,87 @@ function ManageClub({
         )}
       </div>
 
+      {(club.isOwner || club.isManager) && (
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>
+            Club Coach applications ({clubCoachRequests.length})
+          </div>
+
+          {clubCoachRequests.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.muted }}>
+              No pending Club Coach applications.
+            </div>
+          ) : (
+            clubCoachRequests.map((request) => (
+              <div
+                key={request.id}
+                className={styles.listRow}
+                style={{ alignItems: "center" }}
+              >
+                {request.playerAvatarUrl ? (
+                  <img
+                    src={request.playerAvatarUrl}
+                    alt={`${request.playerName || "Coach"} profile`}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                    }}
+                  />
+                ) : (
+                  <div className={styles.av}>
+                    {(request.playerName || "C").charAt(0).toUpperCase()}
+                  </div>
+                )}
+
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: C.text,
+                    }}
+                  >
+                    {request.playerName}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted }}>
+                    Applied to become Club Coach
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  disabled={busyId === request.id}
+                  onClick={() =>
+                    onRespondClubCoachRequest(request, "rejected")
+                  }
+                  style={{
+                    color: "#DC2626",
+                    borderColor: "#FECACA",
+                    marginRight: 7,
+                  }}
+                >
+                  Decline
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  disabled={busyId === request.id}
+                  onClick={() =>
+                    onRespondClubCoachRequest(request, "accepted")
+                  }
+                >
+                  Accept
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       <div className={styles.card}>
         <div className={styles.cardTitle}>
           Current members ({members.length})
@@ -2745,11 +2939,7 @@ function ManageClub({
                   {member.playerName}
                 </div>
                 <div style={{ fontSize: 11, color: C.muted }}>
-                  {member.memberRole === "manager"
-                    ? "Club manager"
-                    : member.memberRole === "coach"
-                      ? "Club coach"
-                      : "Club member"}
+                  <span>{getClubRoleLabel(member)}</span>
                 </div>
               </div>
 
@@ -2793,8 +2983,49 @@ function ManageClub({
                       >
                         Transfer ownership
                       </button>
+
+                      {(club.isOwner || club.isManager) &&
+                        member.hasCoachAccount && (
+                          <button
+                            type="button"
+                            className={styles.btnOutline}
+                            disabled={busyId === member.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onSetClubCoachRole(
+                                member,
+                                !member.isClubCoach,
+                              );
+                            }}
+                          >
+                            {member.isClubCoach
+                              ? "Remove Club Coach role"
+                              : "Make Club Coach"}
+                          </button>
+                        )}
                     </>
                   )}
+
+                  {!club.isOwner &&
+                    club.isManager &&
+                    member.hasCoachAccount && (
+                      <button
+                        type="button"
+                        className={styles.btnOutline}
+                        disabled={busyId === member.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSetClubCoachRole(
+                            member,
+                            !member.isClubCoach,
+                          );
+                        }}
+                      >
+                        {member.isClubCoach
+                          ? "Remove Club Coach role"
+                          : "Make Club Coach"}
+                      </button>
+                    )}
 
                   {(club.isOwner || member.memberRole !== "manager") && (
                     <button
@@ -2834,6 +3065,10 @@ export default function Clubs() {
   const [requests, setRequests] = useState([]);
   const [members, setMembers] = useState([]);
   const [invitations, setInvitations] = useState([]);
+  const [clubCoachRequests, setClubCoachRequests] = useState([]);
+  const [myClubCoachRequestStatus, setMyClubCoachRequestStatus] = useState(null);
+  const [clubCoachBusy, setClubCoachBusy] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
   const [invitePlayers, setInvitePlayers] = useState([]);
   const [inviteBusyId, setInviteBusyId] = useState(null);
   const [selectedMemberProfile, setSelectedMemberProfile] = useState(null);
@@ -2856,6 +3091,19 @@ export default function Clubs() {
   const inviteClubId = String(
     clubSearchParams.get("clubInvite") || "",
   ).trim();
+
+  // Notifications can deep-link directly to the My club tab.
+  useEffect(() => {
+    if (inviteClubId) return;
+
+    const requestedTab = String(
+      clubSearchParams.get("tab") || "",
+    ).trim().toLowerCase();
+
+    if (requestedTab === "manage") {
+      setTab("manage");
+    }
+  }, [clubSearchParams, inviteClubId]);
 
   const pendingManagerInvitation = useMemo(
     () =>
@@ -2943,6 +3191,7 @@ export default function Clubs() {
       } = await supabase.auth.getUser();
 
       if (authError) throw authError;
+      setCurrentUserId(user?.id || "");
 
       const [
         clubResult,
@@ -2960,7 +3209,7 @@ export default function Clubs() {
           .eq("status", "accepted"),
         supabase
           .from("club_members")
-          .select("id, club_id, user_id, status, member_role, member_name")
+          .select("id, club_id, user_id, status, member_role, member_name, is_club_coach")
           .eq("status", "accepted"),
         supabase
           .from("club_locations")
@@ -3060,10 +3309,6 @@ export default function Clubs() {
         const coachProfile =
           publicCoachProfilesByUserId.get(membership.user_id) || null;
 
-        const isCoachMember =
-          membership.member_role === "coach" ||
-          membership.member_role === "manager";
-
         const normalisedCoachProfile = coachProfile
           ? {
               ...coachProfile,
@@ -3105,13 +3350,11 @@ export default function Clubs() {
           : null;
 
         const normalisedPreferredProfile =
-          isCoachMember && normalisedCoachProfile
-            ? normalisedCoachProfile
-            : playerProfile || normalisedCoachProfile;
+          playerProfile || normalisedCoachProfile;
 
         const isPrivatePlayer =
-          !isCoachMember &&
-          playerProfile?.profile_public === false;
+          playerProfile?.profile_public === false &&
+          !normalisedCoachProfile;
 
         const member = {
           ...membership,
@@ -3126,18 +3369,21 @@ export default function Clubs() {
             : normalisedPreferredProfile?.state || "—",
           playerLevel: isPrivatePlayer
             ? "—"
-            : isCoachMember
-              ? normalisedCoachProfile?.coaching_level || "Coach"
-              : playerProfile?.player_category || "—",
+            : playerProfile?.player_category ||
+              normalisedCoachProfile?.coaching_level ||
+              "—",
           playerAvatarUrl: isPrivatePlayer
             ? null
-            : normalisedCoachProfile?.avatar_url ||
-              playerProfile?.profile_photo_url ||
+            : playerProfile?.profile_photo_url ||
+              normalisedCoachProfile?.avatar_url ||
+              normalisedCoachProfile?.profile_photo_url ||
               null,
           playerProfile: isPrivatePlayer ? null : playerProfile,
           coachProfile: normalisedCoachProfile,
           profilePrivate: isPrivatePlayer,
-          memberRole: membership.member_role || "player",
+          memberRole: membership.member_role || "member",
+          isClubCoach: membership.is_club_coach === true,
+          hasCoachAccount: Boolean(normalisedCoachProfile),
         };
 
         const current = membersByClubId.get(membership.club_id) || [];
@@ -3222,7 +3468,13 @@ export default function Clubs() {
           membershipId: membership?.id || null,
           membershipStatus: membership?.status || null,
           membershipRequestType: membership?.request_type || "request",
-          members: membersByClubId.get(club.id) || [],
+          members: (membersByClubId.get(club.id) || []).map(
+            (member) => ({
+              ...member,
+              isOwner:
+                String(member.user_id) === String(club.owner_id),
+            }),
+          ),
         };
       });
 
@@ -3239,6 +3491,76 @@ export default function Clubs() {
 
       setClubs(formatted);
       setOwnedClub(nextOwnedClub);
+
+      const { data: coachRequestRows, error: coachRequestError } =
+        await supabase
+          .from("club_coach_requests")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+      if (coachRequestError) {
+        console.error(
+          "Failed to load club coach requests:",
+          coachRequestError,
+        );
+        setClubCoachRequests([]);
+        setMyClubCoachRequestStatus(null);
+      } else {
+        const visibleCoachRequests = coachRequestRows || [];
+
+        const acceptedClubForUser =
+          formatted.find(
+            (club) =>
+              club.membershipStatus === "accepted" ||
+              club.isOwner ||
+              club.isManager,
+          ) || null;
+
+        const myCoachRequest =
+          user && acceptedClubForUser
+            ? visibleCoachRequests.find(
+                (request) =>
+                  String(request.club_id) ===
+                    String(acceptedClubForUser.id) &&
+                  String(request.requester_user_id) === String(user.id),
+              )
+            : null;
+
+        setMyClubCoachRequestStatus(myCoachRequest?.status || null);
+
+        const ownerClub =
+          formatted.find((club) => club.isOwner) || null;
+
+        const ownerRequests = ownerClub
+          ? visibleCoachRequests
+              .filter(
+                (request) =>
+                  String(request.club_id) === String(ownerClub.id) &&
+                  request.status === "pending",
+              )
+              .map((request) => {
+                const member =
+                  (membersByClubId.get(ownerClub.id) || []).find(
+                    (item) =>
+                      String(item.user_id) ===
+                      String(request.requester_user_id),
+                  ) || null;
+
+                return {
+                  ...request,
+                  playerName:
+                    member?.playerName ||
+                    request.requester_name ||
+                    "Coach",
+                  playerAvatarUrl:
+                    member?.playerAvatarUrl || null,
+                  member,
+                };
+              })
+          : [];
+
+        setClubCoachRequests(ownerRequests);
+      }
 
       // If the page was opened from a shared invitation URL, select that
       // exact club immediately. Otherwise preserve the user's manual selection.
@@ -3297,8 +3619,13 @@ export default function Clubs() {
         const formattedMemberships = rows.map((row) => {
           const playerProfile =
             profilesByUserId.get(row.user_id) || null;
+          const baseMember =
+            (membersByClubId.get(nextOwnedClub.id) || []).find(
+              (item) =>
+                String(item.user_id) === String(row.user_id),
+            ) || null;
           const isPrivatePlayer =
-            row.member_role !== "coach" &&
+            !baseMember?.coachProfile &&
             row.member_role !== "manager" &&
             playerProfile?.profile_public === false;
 
@@ -3322,9 +3649,14 @@ export default function Clubs() {
               ? null
               : playerProfile?.profile_photo_url || null,
             playerProfile: isPrivatePlayer ? null : playerProfile,
+            coachProfile: baseMember?.coachProfile || null,
             profilePrivate: isPrivatePlayer,
             isOwner: row.user_id === nextOwnedClub.ownerId,
-            memberRole: row.member_role || "player",
+            memberRole: row.member_role || "member",
+            isClubCoach:
+              row.is_club_coach === true ||
+              baseMember?.isClubCoach === true,
+            hasCoachAccount: Boolean(baseMember?.coachProfile),
           };
         });
 
@@ -3371,6 +3703,7 @@ export default function Clubs() {
         setInvitations([]);
         setInvitePlayers([]);
         setMembers([]);
+        setClubCoachRequests([]);
       }
     } catch (error) {
       console.error("Failed to load clubs:", error);
@@ -3538,24 +3871,35 @@ export default function Clubs() {
     setLoadingMemberProfile(true);
 
     try {
-      const [playerResult, coachResult, appUserResult] =
-        await Promise.all([
-          supabase
-            .from("player_profiles")
-            .select("*")
-            .eq("user_id", member.user_id)
-            .maybeSingle(),
-          supabase
-            .from("coach_profiles")
-            .select("*")
-            .eq("user_id", member.user_id)
-            .maybeSingle(),
-          supabase
-            .from("app_users")
-            .select("user_id, full_name, username")
-            .eq("user_id", member.user_id)
-            .maybeSingle(),
-        ]);
+      const [
+        playerResult,
+        coachResult,
+        appUserResult,
+        playerSetupResult,
+        publicPlayerResult,
+      ] = await Promise.all([
+        supabase
+          .from("player_profiles")
+          .select("*")
+          .eq("user_id", member.user_id)
+          .maybeSingle(),
+        supabase
+          .from("coach_profiles")
+          .select("*")
+          .eq("user_id", member.user_id)
+          .maybeSingle(),
+        supabase
+          .from("app_users")
+          .select("user_id, full_name, username")
+          .eq("user_id", member.user_id)
+          .maybeSingle(),
+        supabase.rpc("get_public_player_setup_directory"),
+        supabase
+          .from("public_players")
+          .select("*")
+          .eq("user_id", member.user_id)
+          .maybeSingle(),
+      ]);
 
       if (playerResult.error) {
         console.error(
@@ -3577,6 +3921,33 @@ export default function Clubs() {
           appUserResult.error,
         );
       }
+      if (playerSetupResult.error) {
+        console.error(
+          "Unable to load club member player setup:",
+          playerSetupResult.error,
+        );
+      }
+
+      if (publicPlayerResult.error) {
+        console.error(
+          "Unable to load club member public player profile:",
+          publicPlayerResult.error,
+        );
+      }
+
+
+      const memberPlayerSetup =
+        (playerSetupResult.data || []).find((setupRow) => {
+          const setupUserId =
+            setupRow?.user_id ||
+            setupRow?.player_user_id ||
+            null;
+
+          return (
+            setupUserId &&
+            String(setupUserId) === String(member.user_id)
+          );
+        }) || null;
 
       const rawCoachProfile = coachResult.data || null;
 
@@ -3625,9 +3996,9 @@ export default function Clubs() {
       const rawPlayerProfile = playerResult.data || null;
 
       const isCoachMember =
-        member.memberRole === "coach" ||
+        member.isClubCoach === true ||
+        member.is_club_coach === true ||
         member.memberRole === "manager" ||
-        member.member_role === "coach" ||
         member.member_role === "manager";
 
       const isPrivatePlayer =
@@ -3676,11 +4047,17 @@ export default function Clubs() {
             null,
         playerProfile,
         coachProfile,
+        playerSetup: memberPlayerSetup,
+        publicPlayerProfile: publicPlayerResult.data || null,
         profilePrivate: isPrivatePlayer,
         memberRole:
           member.memberRole ||
           member.member_role ||
-          "player",
+          "member",
+        isClubCoach:
+          member.isClubCoach === true ||
+          member.is_club_coach === true,
+        hasCoachAccount: Boolean(coachProfile),
       });
     } catch (error) {
       console.error("Unable to open club member profile:", error);
@@ -3698,6 +4075,14 @@ export default function Clubs() {
 
     if (authError || !user) {
       alert("Please log in again.");
+      return;
+    }
+
+    if (currentAcceptedClub) {
+      alert(
+        `You are already a member of ${currentAcceptedClub.shortName || currentAcceptedClub.name}. Leave your current club before creating another club.`,
+      );
+      setTab("manage");
       return;
     }
 
@@ -3961,11 +4346,12 @@ export default function Clubs() {
 
       if (!user) throw new Error("Please log in again.");
 
-      const { error } = await supabase
-        .from("club_members")
-        .delete()
-        .eq("club_id", club.id)
-        .eq("user_id", user.id);
+      const { error } = await supabase.rpc(
+        "leave_club_membership",
+        {
+          p_club_id: club.id,
+        },
+      );
 
       if (error) throw error;
 
@@ -4212,6 +4598,115 @@ export default function Clubs() {
       await fetchClubs();
     } catch (error) {
       alert(error.message || "Failed to update join request.");
+    } finally {
+      setManageBusyId(null);
+    }
+  }
+
+  async function applyForClubCoach() {
+    if (!currentAcceptedClub?.id || clubCoachBusy) return;
+
+    setClubCoachBusy(true);
+
+    try {
+      const { error } = await supabase.rpc("apply_for_club_coach", {
+        p_club_id: currentAcceptedClub.id,
+      });
+
+      if (error) throw error;
+
+      await fetchClubs();
+      alert("Club Coach application sent to the club owner.");
+    } catch (error) {
+      console.error("Failed to apply for Club Coach:", error);
+      alert(error.message || "Failed to apply for Club Coach.");
+    } finally {
+      setClubCoachBusy(false);
+    }
+  }
+
+  async function respondToClubCoachRequest(request, status) {
+    if (!request?.id) return;
+
+    setManageBusyId(request.id);
+
+    try {
+      const { error } = await supabase.rpc(
+        "respond_to_club_coach_request",
+        {
+          p_request_id: request.id,
+          p_status: status,
+        },
+      );
+
+      if (error) throw error;
+
+      await sendClubNotification({
+        recipientUserId: request.requester_user_id,
+        type:
+          status === "accepted"
+            ? "club_coach_request_accepted"
+            : "club_coach_request_declined",
+        title:
+          status === "accepted"
+            ? "Club Coach application accepted"
+            : "Club Coach application declined",
+        message:
+          status === "accepted"
+            ? `Your Club Coach application for ${ownedClub?.shortName || ownedClub?.name || "the club"} was accepted.`
+            : `Your Club Coach application for ${ownedClub?.shortName || ownedClub?.name || "the club"} was declined.`,
+        actionUrl: "/clubs",
+      });
+
+      await fetchClubs();
+    } catch (error) {
+      console.error("Failed to respond to Club Coach request:", error);
+      alert(error.message || "Failed to update Club Coach application.");
+    } finally {
+      setManageBusyId(null);
+    }
+  }
+
+  async function setClubCoachRole(member, makeClubCoach) {
+    if (!ownedClub?.id || !member?.user_id) return;
+
+    const confirmed = window.confirm(
+      makeClubCoach
+        ? `Make ${member.playerName || "this member"} a Club Coach?`
+        : `Remove the Club Coach role from ${member.playerName || "this member"}?`,
+    );
+
+    if (!confirmed) return;
+
+    setManageBusyId(member.id);
+
+    try {
+      const { error } = await supabase.rpc("set_club_coach_role", {
+        p_club_id: ownedClub.id,
+        p_user_id: member.user_id,
+        p_make_club_coach: makeClubCoach,
+      });
+
+      if (error) throw error;
+
+      await sendClubNotification({
+        recipientUserId: member.user_id,
+        type: makeClubCoach
+          ? "club_coach_role_added"
+          : "club_coach_role_removed",
+        title: makeClubCoach
+          ? "Club Coach role added"
+          : "Club Coach role removed",
+        message: makeClubCoach
+          ? `You are now a Club Coach in ${ownedClub.shortName || ownedClub.name}.`
+          : `Your Club Coach role in ${ownedClub.shortName || ownedClub.name} was removed. Your other club roles are unchanged.`,
+        actionUrl: "/clubs",
+      });
+
+      await fetchClubs();
+    } catch (error) {
+      console.error("Failed to update Club Coach role:", error);
+      alert(error.message || "Failed to update Club Coach role.");
     } finally {
       setManageBusyId(null);
     }
@@ -4609,7 +5104,7 @@ export default function Clubs() {
           }`}
           onClick={() => setTab("manage")}
         >
-          {ownedClub ? "My club" : "Create club"}
+          {currentAcceptedClub ? "My club" : "Create club"}
         </button>
       </div>
 
@@ -4801,10 +5296,13 @@ export default function Clubs() {
             requests={requests}
             members={members}
             invitations={invitations}
+            clubCoachRequests={clubCoachRequests}
             invitePlayers={invitePlayers}
             inviteBusyId={inviteBusyId}
             busyId={manageBusyId}
             onRespond={respondToRequest}
+            onRespondClubCoachRequest={respondToClubCoachRequest}
+            onSetClubCoachRole={setClubCoachRole}
             onRemoveMember={removeMember}
             onToggleMembership={toggleMembership}
             onInvitePlayer={invitePlayerToClub}
@@ -4815,7 +5313,129 @@ export default function Clubs() {
             onSetManagerRole={setManagerRole}
             onTransferOwnership={transferClubOwnership}
             onDeleteClub={deleteClub}
+            onLeaveClub={leaveClub}
+            leaveBusyId={actionId}
           />
+        ) : currentAcceptedClub ? (
+          <>
+          <ClubDetail
+            club={currentAcceptedClub}
+            currentAcceptedClub={currentAcceptedClub}
+            actionId={actionId}
+            readOnly
+            onJoin={requestJoin}
+            onCancel={cancelRequest}
+            onLeave={leaveClub}
+            onAcceptInvite={(club) =>
+              respondToClubInvitation(club, "accepted")
+            }
+            onDeclineInvite={(club) =>
+              respondToClubInvitation(club, "rejected")
+            }
+            onAcceptInviteLink={acceptClubInviteLink}
+            onViewMember={openClubMemberProfile}
+          />
+
+          {!currentAcceptedClub.isOwner &&
+            !currentAcceptedClub.isManager && (
+              <button
+                type="button"
+                className={styles.btnOutline}
+                disabled={actionId === currentAcceptedClub.id}
+                onClick={() => leaveClub(currentAcceptedClub)}
+                style={{
+                  width: "100%",
+                  marginTop: 12,
+                  color: "#DC2626",
+                  borderColor: "#FECACA",
+                  background: "#FEF2F2",
+                }}
+              >
+                {actionId === currentAcceptedClub.id
+                  ? "Leaving..."
+                  : "Leave club"}
+              </button>
+            )}
+
+          {(() => {
+            const ownMembership =
+              currentAcceptedClub?.members?.find(
+                (member) =>
+                  String(member.user_id) === String(currentUserId),
+              ) || null;
+
+            const hasCoachAccountRole = Boolean(
+              ownMembership?.coachProfile,
+            );
+
+            if (
+              !hasCoachAccountRole ||
+              ownMembership?.isClubCoach ||
+              ownMembership?.isOwner
+            ) {
+              return null;
+            }
+
+            return (
+              <div className={styles.card}>
+                <div className={styles.cardTitle}>Club Coach</div>
+
+                {myClubCoachRequestStatus === "pending" ? (
+                  <div style={{ fontSize: 13, color: C.muted }}>
+                    Your Club Coach application is waiting for the club owner
+                    to review it.
+                  </div>
+                ) : myClubCoachRequestStatus === "rejected" ? (
+                  <>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: C.muted,
+                        marginBottom: 10,
+                      }}
+                    >
+                      Your previous application was declined. You may apply
+                      again if needed.
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      disabled={clubCoachBusy}
+                      onClick={applyForClubCoach}
+                    >
+                      {clubCoachBusy
+                        ? "Applying..."
+                        : "Apply for Club Coach"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: C.muted,
+                        marginBottom: 10,
+                      }}
+                    >
+                      Only members with a ShuttleTrack Coach role can apply.
+                      Approval is given by the club owner.
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      disabled={clubCoachBusy}
+                      onClick={applyForClubCoach}
+                    >
+                      {clubCoachBusy
+                        ? "Applying..."
+                        : "Apply for Club Coach"}
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+          </>
         ) : (
           <CreateClubForm submitting={creating} onCreate={createClub} />
         ))}

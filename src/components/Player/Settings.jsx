@@ -34,12 +34,9 @@ const sanitizePhone = value => {
 
 const getSavedTheme = () => {
   if (typeof window === 'undefined') return null
-
   const savedTheme = localStorage.getItem('shuttleTheme')
-
   if (savedTheme === 'dark') return true
   if (savedTheme === 'light') return false
-
   return null
 }
 
@@ -61,12 +58,10 @@ const getCurrentMonthDateRange = () => {
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth(), 1)
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-
   const toISODate = d =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
       d.getDate()
     ).padStart(2, '0')}`
-
   return {
     start: toISODate(start),
     end: toISODate(end),
@@ -75,24 +70,20 @@ const getCurrentMonthDateRange = () => {
 
 const getScheduleStart = row => {
   if (!row?.event_date) return null
-
   const time = row.event_time ? String(row.event_time).slice(0, 5) : '00:00'
   const parsed = new Date(`${row.event_date}T${time}`)
-
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
 const getScheduleEnd = row => {
   const start = getScheduleStart(row)
   if (!start) return null
-
   return new Date(start.getTime() + 2 * 60 * 60 * 1000)
 }
 
 const formatReminderDateTime = value => {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
-
   return d.toLocaleString([], {
     day: '2-digit',
     month: 'short',
@@ -122,40 +113,31 @@ const isValidEmail = value => {
 export default function Settings() {
   const navigate = useNavigate()
   const { refreshProfile, logout } = useAuth()
-
   const [form, setForm] = useState({
     name: '',
     email: '',
     phone: '',
   })
-
   const [settings, setSettings] = useState({
     darkMode: getInitialDarkMode(),
-
     matchReminder: true,
     fitnessReminder: true,
     expenseReminder: true,
     coachNoteReminder: true,
-
     matchBeforeReminder: true,
     matchLogResultReminder: true,
-
     fitnessBeforeReminder: true,
     fitnessLogAfterReminder: true,
-
     expenseLogAfterReminder: true,
     expenseBudgetAlert: true,
-
     soundEnabled: true,
     profilePublic: true,
   })
-
   const [openCustomize, setOpenCustomize] = useState({
     match: false,
     fitness: false,
     expense: false,
   })
-
   const [currentBudget, setCurrentBudget] = useState(0)
   const [lastUpdated, setLastUpdated] = useState('—')
   const [loading, setLoading] = useState(true)
@@ -164,25 +146,24 @@ export default function Settings() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [requestingDelete, setRequestingDelete] = useState(false)
   const [deletionReason, setDeletionReason] = useState('')
+  const [approvedDeletionRequest, setApprovedDeletionRequest] = useState(null)
+  const [deletionDecisionBusy, setDeletionDecisionBusy] = useState(false)
   const [loggingOutOtherDevices, setLoggingOutOtherDevices] =
     useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [accountSaveStatus, setAccountSaveStatus] = useState('')
   const [accountSaveError, setAccountSaveError] = useState('')
-
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [changingEmail, setChangingEmail] = useState(false)
   const [emailChangeMessage, setEmailChangeMessage] = useState('')
   const [emailChangeError, setEmailChangeError] = useState('')
-
   const accountSaveTimerRef = useRef(null)
   const accountLoadedRef = useRef(false)
   const lastSavedAccountRef = useRef({
     name: '',
     phone: '',
   })
-
   const fetchSettingsRef = useRef(null)
 
   useEffect(() => {
@@ -195,7 +176,6 @@ export default function Settings() {
 
   useEffect(() => {
     const theme = settings.darkMode ? 'dark' : 'light'
-
     document.documentElement.setAttribute('data-theme', theme)
     document.body.setAttribute('data-theme', theme)
     localStorage.setItem('shuttleTheme', theme)
@@ -203,13 +183,129 @@ export default function Settings() {
 
   const getAuthUser = useCallback(async () => {
     const { data, error } = await supabase.auth.getUser()
-
     if (error || !data?.user) {
       throw new Error('Please login first.')
     }
-
     return data.user
   }, [])
+
+  const loadApprovedDeletionRequest = useCallback(async () => {
+    try {
+      const authUser = await getAuthUser()
+      const { data, error } = await supabase
+        .from('account_deletion_requests')
+        .select(
+          'id, status, reviewed_at, user_confirmed_at, scheduled_delete_at'
+        )
+        .eq('user_id', authUser.id)
+        .eq('status', 'approved')
+        .order('requested_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      setApprovedDeletionRequest(data || null)
+    } catch (error) {
+      console.error(
+        'Player deletion approval load error:',
+        error
+      )
+    }
+  }, [getAuthUser])
+
+  useEffect(() => {
+    let active = true
+    let channel = null
+    const setupDeletionApprovalListener = async () => {
+      try {
+        const authUser = await getAuthUser()
+        if (!active) return
+        await loadApprovedDeletionRequest()
+        channel = supabase
+          .channel(`account-deletion-approval-${authUser.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'account_deletion_requests',
+              filter: `user_id=eq.${authUser.id}`,
+            },
+            loadApprovedDeletionRequest
+          )
+          .subscribe()
+      } catch (error) {
+        console.error(
+          'Player deletion approval listener error:',
+          error
+        )
+      }
+    }
+    setupDeletionApprovalListener()
+    return () => {
+      active = false
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [getAuthUser, loadApprovedDeletionRequest])
+
+  const handleConfirmApprovedDeletion = async () => {
+    if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
+    setDeletionDecisionBusy(true)
+    try {
+      const { error } = await supabase.rpc(
+        'confirm_account_deletion',
+        {
+          p_request_id: approvedDeletionRequest.id,
+        }
+      )
+      if (error) throw error
+      await loadApprovedDeletionRequest()
+      alert(
+        'Deletion confirmed. Your account is scheduled for permanent deletion 24 hours from now.'
+      )
+    } catch (error) {
+      console.error(
+        'Player confirm account deletion error:',
+        error
+      )
+      alert(
+        error?.message ||
+          'Unable to confirm account deletion.'
+      )
+    } finally {
+      setDeletionDecisionBusy(false)
+    }
+  }
+
+  const handleCancelApprovedDeletion = async () => {
+    if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
+    setDeletionDecisionBusy(true)
+    try {
+      const { error } = await supabase.rpc(
+        'cancel_account_deletion',
+        {
+          p_request_id: approvedDeletionRequest.id,
+        }
+      )
+      if (error) throw error
+      setApprovedDeletionRequest(null)
+      alert(
+        'Account deletion has been cancelled. Your account will remain active.'
+      )
+    } catch (error) {
+      console.error(
+        'Player cancel account deletion error:',
+        error
+      )
+      alert(
+        error?.message ||
+          'Unable to cancel account deletion.'
+      )
+    } finally {
+      setDeletionDecisionBusy(false)
+    }
+  }
 
   const getPlayerProfileId = async userId => {
     const { data, error } = await supabase
@@ -217,31 +313,26 @@ export default function Settings() {
       .select('id')
       .eq('user_id', userId)
       .maybeSingle()
-
     if (error) {
       console.log(error)
       return null
     }
-
     return data?.id || null
   }
 
   const fetchCurrentBudget = async userId => {
     const currentMonthKey = getCurrentMonthKey()
-
     const { data, error } = await supabase
       .from('expense_budgets')
       .select('budget')
       .eq('user_id', userId)
       .eq('month', currentMonthKey)
       .maybeSingle()
-
     if (error) {
       console.log(error)
       setCurrentBudget(0)
       return 0
     }
-
     const budget = Number(data?.budget || 0)
     setCurrentBudget(budget)
     return budget
@@ -249,15 +340,12 @@ export default function Settings() {
 
   const fetchSettings = async () => {
     setLoading(true)
-
     const { data: userData } = await supabase.auth.getUser()
     const authUser = userData?.user
-
     if (!authUser) {
       setLoading(false)
       return
     }
-
     const [
       appUserResult,
       playerProfileResult,
@@ -268,38 +356,30 @@ export default function Settings() {
         .select('full_name, email, updated_at')
         .eq('user_id', authUser.id)
         .maybeSingle(),
-
       supabase
         .from('player_profiles')
         .select('display_name, updated_at')
         .eq('user_id', authUser.id)
         .maybeSingle(),
-
       supabase
         .from('user_settings')
         .select('*')
         .eq('user_id', authUser.id)
         .maybeSingle(),
     ])
-
     if (appUserResult.error) {
       console.log(appUserResult.error)
     }
-
     if (playerProfileResult.error) {
       console.log(playerProfileResult.error)
     }
-
     if (settingsResult.error) {
       console.log(settingsResult.error)
     }
-
     const appUser = appUserResult.data
     const playerProfile = playerProfileResult.data
     const userSettings = settingsResult.data
-
     await fetchCurrentBudget(authUser.id)
-
     const loadedForm = {
       name:
         playerProfile?.display_name ||
@@ -309,32 +389,25 @@ export default function Settings() {
       email: authUser.email || appUser?.email || '',
       phone: sanitizePhone(userSettings?.phone),
     }
-
     setForm(loadedForm)
-
     lastSavedAccountRef.current = {
       name: loadedForm.name.trim(),
       phone: loadedForm.phone.trim(),
     }
-
     accountLoadedRef.current = true
-
     const loadedSettings = {
       darkMode:
         getSavedTheme() ??
         readBool(userSettings?.dark_mode, false),
-
       matchReminder: readBool(userSettings?.match_reminders, true),
       fitnessReminder: readBool(userSettings?.fitness_reminders, true),
       expenseReminder: readBool(userSettings?.expense_reminders, true),
       coachNoteReminder: readBool(userSettings?.coach_note_reminder, true),
-
       matchBeforeReminder: readBool(userSettings?.match_before_reminder, true),
       matchLogResultReminder: readBool(
         userSettings?.match_log_result_reminder,
         true
       ),
-
       fitnessBeforeReminder: readBool(
         userSettings?.fitness_before_reminder,
         true
@@ -343,21 +416,17 @@ export default function Settings() {
         userSettings?.fitness_log_after_reminder,
         true
       ),
-
       expenseLogAfterReminder: readBool(
         userSettings?.expense_log_after_reminder,
         true
       ),
       expenseBudgetAlert: readBool(userSettings?.expense_budget_alert, true),
-
       soundEnabled: readBool(
         userSettings?.notification_sound_enabled,
         true
       ),
-
       profilePublic: readBool(userSettings?.profile_public, true),
     }
-
     setSettings(current => ({
       ...loadedSettings,
       darkMode:
@@ -365,20 +434,16 @@ export default function Settings() {
         current.darkMode ??
         loadedSettings.darkMode,
     }))
-
     const latestUpdate =
       userSettings?.updated_at ||
       playerProfile?.updated_at ||
       appUser?.updated_at
-
     setLastUpdated(
       latestUpdate
         ? new Date(latestUpdate).toLocaleString()
         : '—'
     )
-
     setLoading(false)
-
     await runReminderChecks(loadedSettings)
   }
 
@@ -389,20 +454,16 @@ export default function Settings() {
     dedupeKey = null,
   }) => {
     const user = await getAuthUser()
-
     const payload = {
       user_id: user.id,
       title,
       message,
       type,
     }
-
     if (dedupeKey) {
       payload.dedupe_key = dedupeKey
     }
-
     const { error } = await supabase.from('notifications').insert(payload)
-
     if (error) {
       if (error.code === '23505') return
       console.log(error)
@@ -411,49 +472,37 @@ export default function Settings() {
 
   const checkMatchReminders = async currentSettings => {
     if (!currentSettings.matchReminder) return
-
     const user = await getAuthUser()
     const profileId = await getPlayerProfileId(user.id)
-
     const { data: schedules, error: scheduleError } = await supabase
       .from('player_schedule')
       .select('*')
       .eq('user_id', user.id)
-
     if (scheduleError) {
       console.log(scheduleError)
       return
     }
-
     let matchLogs = []
-
     if (profileId) {
       const { data, error } = await supabase
         .from('player_matches')
         .select('id, match_date, result, score1')
         .eq('player_id', profileId)
-
       if (error) console.log(error)
       matchLogs = data || []
     }
-
     const now = new Date()
-
     for (const schedule of schedules || []) {
       if (!isMatchSchedule(schedule)) continue
-
       const start = getScheduleStart(schedule)
       const end = getScheduleEnd(schedule)
       if (!start || !end) continue
-
       const diffHours = (start.getTime() - now.getTime()) / (1000 * 60 * 60)
       const endedHoursAgo = (now.getTime() - end.getTime()) / (1000 * 60 * 60)
-
       const eventDate = getDateKey(schedule.event_date)
       const hasLoggedResult = matchLogs.some(match => {
         return getDateKey(match.match_date) === eventDate
       })
-
       if (
         currentSettings.matchBeforeReminder &&
         diffHours > 0 &&
@@ -468,7 +517,6 @@ export default function Settings() {
           dedupeKey: `match-before-${schedule.id}-${eventDate}`,
         })
       }
-
       if (
         currentSettings.matchLogResultReminder &&
         endedHoursAgo >= 0 &&
@@ -489,43 +537,33 @@ export default function Settings() {
 
   const checkFitnessReminders = async currentSettings => {
     if (!currentSettings.fitnessReminder) return
-
     const user = await getAuthUser()
-
     const [scheduleRes, logRes] = await Promise.all([
       supabase.from('player_schedule').select('*').eq('user_id', user.id),
       supabase.from('fitness_training_logs').select('*').eq('user_id', user.id),
     ])
-
     if (scheduleRes.error) {
       console.log(scheduleRes.error)
       return
     }
-
     if (logRes.error) {
       console.log(logRes.error)
       return
     }
-
     const schedules = scheduleRes.data || []
     const logs = logRes.data || []
     const now = new Date()
-
     for (const schedule of schedules) {
       if (!isTrainingSchedule(schedule)) continue
-
       const start = getScheduleStart(schedule)
       const end = getScheduleEnd(schedule)
       if (!start || !end) continue
-
       const diffHours = (start.getTime() - now.getTime()) / (1000 * 60 * 60)
       const endedHoursAgo = (now.getTime() - end.getTime()) / (1000 * 60 * 60)
-
       const eventDate = getDateKey(schedule.event_date)
       const hasTrainingLog = logs.some(log => {
         return getDateKey(log.training_date) === eventDate
       })
-
       if (
         currentSettings.fitnessBeforeReminder &&
         diffHours > 0 &&
@@ -540,7 +578,6 @@ export default function Settings() {
           dedupeKey: `fitness-before-${schedule.id}-${eventDate}`,
         })
       }
-
       if (
         currentSettings.fitnessLogAfterReminder &&
         endedHoursAgo >= 0 &&
@@ -561,13 +598,10 @@ export default function Settings() {
 
   const checkExpenseReminders = async currentSettings => {
     if (!currentSettings.expenseReminder) return
-
     const user = await getAuthUser()
     const now = new Date()
-
     const { start, end } = getCurrentMonthDateRange()
     const currentMonthKey = getCurrentMonthKey()
-
     const [expenseRes, budgetRes, scheduleRes] = await Promise.all([
       supabase
         .from('expenses')
@@ -575,63 +609,48 @@ export default function Settings() {
         .eq('user_id', user.id)
         .gte('date', start)
         .lt('date', end),
-
       supabase
         .from('expense_budgets')
         .select('budget')
         .eq('user_id', user.id)
         .eq('month', currentMonthKey)
         .maybeSingle(),
-
       supabase
         .from('player_schedule')
         .select('*')
         .eq('user_id', user.id),
     ])
-
     if (expenseRes.error) {
       console.log(expenseRes.error)
       return
     }
-
     if (budgetRes.error) {
       console.log(budgetRes.error)
     }
-
     if (scheduleRes.error) {
       console.log(scheduleRes.error)
     }
-
     const expenses = expenseRes.data || []
     const schedules = scheduleRes.data || []
     const budget = Number(budgetRes.data?.budget || 0)
-
     setCurrentBudget(budget)
-
     if (currentSettings.expenseLogAfterReminder) {
       const recentEvents = schedules.filter(schedule => {
         const type = schedule.schedule_type || schedule.title || ''
-
         if (!['Training', 'Competition', 'Friendly Match'].includes(type)) {
           return false
         }
-
         const endTime = getScheduleEnd(schedule)
         if (!endTime) return false
-
         const endedHoursAgo =
           (now.getTime() - endTime.getTime()) / (1000 * 60 * 60)
-
         return endedHoursAgo >= 0 && endedHoursAgo <= 24
       })
-
       for (const event of recentEvents) {
         const eventDate = getDateKey(event.event_date)
-
         const hasExpenseForDate = expenses.some(expense => {
           return getDateKey(expense.date) === eventDate
         })
-
         if (!hasExpenseForDate) {
           await createNotification({
             title: 'Log Expense',
@@ -643,14 +662,11 @@ export default function Settings() {
         }
       }
     }
-
     if (currentSettings.expenseBudgetAlert && budget > 0) {
       const monthlyTotal = expenses.reduce((sum, expense) => {
         return sum + Number(expense.amount || 0)
       }, 0)
-
       const percentage = (monthlyTotal / budget) * 100
-
       if (percentage >= 100) {
         await createNotification({
           title: 'Budget Limit Reached',
@@ -675,9 +691,7 @@ export default function Settings() {
 
   const checkCoachNoteReminders = async currentSettings => {
     if (!currentSettings.coachNoteReminder) return
-
     const user = await getAuthUser()
-
     const { data, error } = await supabase
       .from('coach_player_notes')
       .select('*')
@@ -685,12 +699,10 @@ export default function Settings() {
       .eq('is_read', false)
       .order('created_at', { ascending: false })
       .limit(5)
-
     if (error) {
       console.log(error)
       return
     }
-
     for (const note of data || []) {
       await createNotification({
         title: 'New Coach Note',
@@ -703,7 +715,6 @@ export default function Settings() {
 
   const runReminderChecks = async currentSettings => {
     setCheckingReminders(true)
-
     try {
       await checkMatchReminders(currentSettings)
       await checkFitnessReminders(currentSettings)
@@ -719,7 +730,6 @@ export default function Settings() {
   const set = key => e => {
     setForm(f => ({ ...f, [key]: e.target.value }))
   }
-
   const SETTINGS_COLUMN_MAP = {
     darkMode: 'dark_mode',
     matchReminder: 'match_reminders',
@@ -738,30 +748,22 @@ export default function Settings() {
 
   const toggle = async key => {
     const nextValue = !settings[key]
-
     setSettings(current => ({
       ...current,
       [key]: nextValue,
     }))
-
     if (key === 'darkMode') {
       const theme = nextValue ? 'dark' : 'light'
-
       document.documentElement.setAttribute('data-theme', theme)
       document.body.setAttribute('data-theme', theme)
       localStorage.setItem('shuttleTheme', theme)
     }
-
     const column = SETTINGS_COLUMN_MAP[key]
-
     if (!column) return
-
     setAutoSaveStatus('Saving...')
-
     try {
       const user = await getAuthUser()
       const now = new Date().toISOString()
-
       const { error } = await supabase
         .from('user_settings')
         .upsert(
@@ -772,9 +774,7 @@ export default function Settings() {
           },
           { onConflict: 'user_id' }
         )
-
       if (error) throw error
-
       if (key === 'soundEnabled') {
         window.dispatchEvent(
           new CustomEvent('notification-sound-updated', {
@@ -784,10 +784,8 @@ export default function Settings() {
           })
         )
       }
-
       setLastUpdated(new Date(now).toLocaleString())
       setAutoSaveStatus('Saved automatically')
-
       if (key === 'profilePublic') {
         const { error: profilePrivacyError } = await supabase
           .from('player_profiles')
@@ -796,11 +794,9 @@ export default function Settings() {
             updated_at: now,
           })
           .eq('user_id', user.id)
-
         if (profilePrivacyError) {
           throw profilePrivacyError
         }
-
         window.dispatchEvent(
           new CustomEvent('profile-visibility-updated', {
             detail: {
@@ -810,22 +806,18 @@ export default function Settings() {
           })
         )
       }
-
       window.setTimeout(() => {
         setAutoSaveStatus('')
       }, 1800)
     } catch (error) {
       console.error('Auto-save setting error:', error)
       setAutoSaveStatus('Could not save')
-
       setSettings(current => ({
         ...current,
         [key]: !nextValue,
       }))
-
       if (key === 'darkMode') {
         const revertedTheme = !nextValue ? 'dark' : 'light'
-
         document.documentElement.setAttribute('data-theme', revertedTheme)
         document.body.setAttribute('data-theme', revertedTheme)
         localStorage.setItem('shuttleTheme', revertedTheme)
@@ -837,14 +829,11 @@ export default function Settings() {
     async currentForm => {
       const authUser = await getAuthUser()
       const now = new Date().toISOString()
-
       const cleanName = currentForm.name.trim()
       const cleanPhone = sanitizePhone(currentForm.phone)
-
       if (!cleanName) {
         throw new Error('Full name is required.')
       }
-
       /*
        * The login email remains read-only.
        * Save the player's displayed name to player_profiles so the
@@ -860,11 +849,9 @@ export default function Settings() {
           },
           { onConflict: 'user_id' }
         )
-
       if (playerProfileError) {
         throw playerProfileError
       }
-
       const { error: settingsError } = await supabase
         .from('user_settings')
         .upsert(
@@ -875,13 +862,10 @@ export default function Settings() {
           },
           { onConflict: 'user_id' }
         )
-
       if (settingsError) {
         throw settingsError
       }
-
       setLastUpdated(new Date(now).toLocaleString())
-
       window.dispatchEvent(
         new CustomEvent('profile-updated', {
           detail: {
@@ -889,7 +873,6 @@ export default function Settings() {
           },
         })
       )
-
       if (refreshProfile) {
         await refreshProfile()
       }
@@ -901,18 +884,14 @@ export default function Settings() {
     if (!accountLoadedRef.current || loading) {
       return undefined
     }
-
     const normalizedForm = {
       name: form.name.trim(),
       phone: form.phone.trim(),
     }
-
     const lastSaved = lastSavedAccountRef.current
-
     const hasAccountChanges =
       normalizedForm.name !== lastSaved.name ||
       normalizedForm.phone !== lastSaved.phone
-
     /*
      * Do not save when the page first loads.
      * Only save after the user changes the name or phone number.
@@ -922,24 +901,18 @@ export default function Settings() {
       setAccountSaveError('')
       return undefined
     }
-
     if (accountSaveTimerRef.current) {
       window.clearTimeout(accountSaveTimerRef.current)
     }
-
     setAccountSaveStatus('Saving...')
     setAccountSaveError('')
-
     accountSaveTimerRef.current = window.setTimeout(
       async () => {
         try {
           await saveAccountSettings(form)
-
           lastSavedAccountRef.current = normalizedForm
-
           setAccountSaveStatus('Saved automatically')
           setAccountSaveError('')
-
           window.setTimeout(() => {
             setAccountSaveStatus('')
           }, 1800)
@@ -948,7 +921,6 @@ export default function Settings() {
             'Auto-save account error:',
             error
           )
-
           setAccountSaveStatus('Could not save')
           setAccountSaveError(
             error?.message ||
@@ -959,7 +931,6 @@ export default function Settings() {
       },
       700
     )
-
     return () => {
       if (accountSaveTimerRef.current) {
         window.clearTimeout(accountSaveTimerRef.current)
@@ -975,7 +946,6 @@ export default function Settings() {
 
   const closeEmailChangeModal = () => {
     if (changingEmail) return
-
     setShowEmailModal(false)
     setNewEmail('')
     setEmailChangeError('')
@@ -983,40 +953,31 @@ export default function Settings() {
 
   const handleRequestEmailChange = async () => {
     if (changingEmail) return
-
     const cleanEmail = newEmail.trim().toLowerCase()
     const currentEmail = form.email.trim().toLowerCase()
-
     setEmailChangeError('')
-
     if (!cleanEmail) {
       setEmailChangeError('Please enter your new email address.')
       return
     }
-
     if (!isValidEmail(cleanEmail)) {
       setEmailChangeError('Please enter a valid email address.')
       return
     }
-
     if (cleanEmail === currentEmail) {
       setEmailChangeError(
         'The new email address must be different from your current email.'
       )
       return
     }
-
     setChangingEmail(true)
     setEmailChangeMessage('')
-
     try {
       await getAuthUser()
-
       const redirectUrl =
         typeof window !== 'undefined'
           ? `${window.location.origin}${window.location.pathname}`
           : undefined
-
       const { error } = await supabase.auth.updateUser(
         {
           email: cleanEmail,
@@ -1027,9 +988,7 @@ export default function Settings() {
             }
           : undefined
       )
-
       if (error) throw error
-
       setShowEmailModal(false)
       setNewEmail('')
       setEmailChangeError('')
@@ -1038,7 +997,6 @@ export default function Settings() {
       )
     } catch (error) {
       console.error('Change email error:', error)
-
       setEmailChangeError(
         error?.message ||
           'Unable to send the email change verification.'
@@ -1056,28 +1014,21 @@ export default function Settings() {
         scope: 'local',
       })
     }
-
     navigate('/')
   }
 
   const handleLogoutOtherDevices = async () => {
     if (loggingOutOtherDevices) return
-
     const confirmed = window.confirm(
       'Log out your account from all other browsers and devices? This browser will stay logged in.'
     )
-
     if (!confirmed) return
-
     setLoggingOutOtherDevices(true)
-
     try {
       const { error } = await supabase.auth.signOut({
         scope: 'others',
       })
-
       if (error) throw error
-
       alert(
         'Your account has been logged out from all other browsers and devices. This browser is still logged in.'
       )
@@ -1086,7 +1037,6 @@ export default function Settings() {
         'Logout other devices error:',
         error
       )
-
       alert(
         error?.message ||
           'Unable to log out the other devices.'
@@ -1098,19 +1048,14 @@ export default function Settings() {
 
   const handleRequestDeleteAccount = async () => {
     if (requestingDelete) return
-
     const cleanReason = deletionReason.trim()
-
     if (!cleanReason) {
       alert('Please enter a reason for requesting account deletion.')
       return
     }
-
     setRequestingDelete(true)
-
     try {
       const authUser = await getAuthUser()
-
       const { error } = await supabase
         .from('account_deletion_requests')
         .insert({
@@ -1121,19 +1066,15 @@ export default function Settings() {
           reason: cleanReason,
           status: 'pending',
         })
-
       if (error) {
         if (error.code === '23505') {
           alert('You already have a pending account deletion request.')
           return
         }
-
         throw error
       }
-
       setShowDeleteModal(false)
       setDeletionReason('')
-
       alert(
         'Your account deletion request has been submitted. You can continue using your account while the admin reviews it.'
       )
@@ -1147,7 +1088,6 @@ export default function Settings() {
       setRequestingDelete(false)
     }
   }
-
   const ToggleSwitch = ({ checked, onChange }) => (
     <button
       type="button"
@@ -1178,7 +1118,6 @@ export default function Settings() {
       />
     </button>
   )
-
   const SmallButton = ({ children, onClick, danger, solid, disabled }) => (
     <button
       type="button"
@@ -1200,7 +1139,6 @@ export default function Settings() {
       {children}
     </button>
   )
-
   const MiniButton = ({ children, onClick }) => (
     <button
       type="button"
@@ -1220,11 +1158,9 @@ export default function Settings() {
       {children}
     </button>
   )
-
   const SettingLine = ({ label, checked, onChange, value, action }) => (
     <div className={styles.statRow}>
       <span className={styles.statLabel}>{label}</span>
-
       <span
         className={styles.statVal}
         style={{
@@ -1239,14 +1175,11 @@ export default function Settings() {
             {value}
           </span>
         )}
-
         {action}
-
         <ToggleSwitch checked={checked} onChange={onChange} />
       </span>
     </div>
   )
-
   const CheckLine = ({ label, checked, onChange }) => (
     <label
       style={{
@@ -1263,7 +1196,6 @@ export default function Settings() {
       {label}
     </label>
   )
-
   const CustomizeBox = ({ children }) => (
     <div
       style={{
@@ -1277,11 +1209,9 @@ export default function Settings() {
       {children}
     </div>
   )
-
   if (loading && !showLoader) {
     return null
   }
-
   if (showLoader) {
     return (
       <div className={styles.card}>
@@ -1307,17 +1237,13 @@ export default function Settings() {
               Manage account, reminders and privacy settings
             </div>
           </div>
-
-
         </div>
       </div>
-
       {checkingReminders && (
         <div className={styles.card} style={{ marginBottom: 16 }}>
           Checking reminders...
         </div>
       )}
-
       <div className={styles.g2}>
         <div>
           <div className={styles.card} style={{ marginBottom: 16 }}>
@@ -1331,7 +1257,6 @@ export default function Settings() {
               }}
             >
               <div className={styles.cardTitle}>Account Settings</div>
-
               <span
                 style={{
                   fontSize: 11,
@@ -1347,7 +1272,6 @@ export default function Settings() {
                 {accountSaveStatus || 'Changes save automatically'}
               </span>
             </div>
-
             {accountSaveError && (
               <div
                 style={{
@@ -1364,7 +1288,6 @@ export default function Settings() {
                 {accountSaveError}
               </div>
             )}
-
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Full Name</label>
               <input
@@ -1373,10 +1296,8 @@ export default function Settings() {
                 onChange={set('name')}
               />
             </div>
-
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Email Address</label>
-
               <div
                 style={{
                   display: 'flex',
@@ -1396,12 +1317,10 @@ export default function Settings() {
                     cursor: 'not-allowed',
                   }}
                 />
-
                 <SmallButton onClick={openEmailChangeModal}>
                   Change Email
                 </SmallButton>
               </div>
-
               <div
                 style={{
                   marginTop: 5,
@@ -1413,7 +1332,6 @@ export default function Settings() {
                 Your current login email stays active until the new email is
                 verified.
               </div>
-
               {emailChangeMessage && (
                 <div
                   style={{
@@ -1431,7 +1349,6 @@ export default function Settings() {
                 </div>
               )}
             </div>
-
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Phone Number</label>
               <input
@@ -1457,13 +1374,11 @@ export default function Settings() {
                 Numbers only, maximum 11 digits.
               </div>
             </div>
-
             <div className={styles.statRow}>
               <span className={styles.statLabel}>Last updated</span>
               <span className={styles.statVal}>{lastUpdated}</span>
             </div>
           </div>
-
           <div className={styles.card}>
             <div
               style={{
@@ -1485,14 +1400,12 @@ export default function Settings() {
                 Auto-saved
               </span>
             </div>
-
             <SettingLine
               label="Dark mode"
               value={settings.darkMode ? 'On' : 'Off'}
               checked={settings.darkMode}
               onChange={() => toggle('darkMode')}
             />
-
             <div style={{ marginTop: 12 }}>
               <span className={styles.badgeBlue}>
                 Current mode: {settings.darkMode ? 'Dark' : 'Light'}
@@ -1500,7 +1413,6 @@ export default function Settings() {
             </div>
           </div>
         </div>
-
         <div>
           <div className={styles.card} style={{ marginBottom: 16 }}>
             <div
@@ -1513,7 +1425,6 @@ export default function Settings() {
               }}
             >
               <div className={styles.cardTitle}>Notifications & Privacy</div>
-
               <span
                 style={{
                   fontSize: 11,
@@ -1527,7 +1438,6 @@ export default function Settings() {
                 {autoSaveStatus || 'Changes save automatically'}
               </span>
             </div>
-
             <SettingLine
               label="Match reminders"
               checked={settings.matchReminder}
@@ -1544,7 +1454,6 @@ export default function Settings() {
                 )
               }
             />
-
             {settings.matchReminder && openCustomize.match && (
               <CustomizeBox>
                 <CheckLine
@@ -1552,7 +1461,6 @@ export default function Settings() {
                   checked={settings.matchBeforeReminder}
                   onChange={() => toggle('matchBeforeReminder')}
                 />
-
                 <CheckLine
                   label="Remind me to log match result after match"
                   checked={settings.matchLogResultReminder}
@@ -1560,7 +1468,6 @@ export default function Settings() {
                 />
               </CustomizeBox>
             )}
-
             <SettingLine
               label="Fitness reminders"
               checked={settings.fitnessReminder}
@@ -1577,7 +1484,6 @@ export default function Settings() {
                 )
               }
             />
-
             {settings.fitnessReminder && openCustomize.fitness && (
               <CustomizeBox>
                 <CheckLine
@@ -1585,7 +1491,6 @@ export default function Settings() {
                   checked={settings.fitnessBeforeReminder}
                   onChange={() => toggle('fitnessBeforeReminder')}
                 />
-
                 <CheckLine
                   label="Remind me to log training after training"
                   checked={settings.fitnessLogAfterReminder}
@@ -1593,7 +1498,6 @@ export default function Settings() {
                 />
               </CustomizeBox>
             )}
-
             <SettingLine
               label="Expense reminders"
               checked={settings.expenseReminder}
@@ -1610,7 +1514,6 @@ export default function Settings() {
                 )
               }
             />
-
             {settings.expenseReminder && openCustomize.expense && (
               <CustomizeBox>
                 <CheckLine
@@ -1618,13 +1521,11 @@ export default function Settings() {
                   checked={settings.expenseLogAfterReminder}
                   onChange={() => toggle('expenseLogAfterReminder')}
                 />
-
                 <CheckLine
                   label="Budget limit alert"
                   checked={settings.expenseBudgetAlert}
                   onChange={() => toggle('expenseBudgetAlert')}
                 />
-
                 {settings.expenseBudgetAlert && (
                   <div
                     style={{
@@ -1647,29 +1548,24 @@ export default function Settings() {
                 )}
               </CustomizeBox>
             )}
-
             <SettingLine
               label="Coach note reminders"
               checked={settings.coachNoteReminder}
               onChange={() => toggle('coachNoteReminder')}
             />
-
             <SettingLine
               label="Notification sound"
               checked={settings.soundEnabled}
               onChange={() => toggle('soundEnabled')}
             />
-
             <SettingLine
               label="Profile visibility public"
               checked={settings.profilePublic}
               onChange={() => toggle('profilePublic')}
             />
           </div>
-
           <div className={styles.card}>
             <div className={styles.cardTitle}>Data & Security</div>
-
             <div
               style={{
                 marginTop: 12,
@@ -1688,7 +1584,6 @@ export default function Settings() {
               >
                 Active login sessions
               </div>
-
               <div
                 style={{
                   marginTop: 4,
@@ -1700,7 +1595,6 @@ export default function Settings() {
                 Log out your account from other browsers and devices while
                 keeping this browser logged in.
               </div>
-
               <div style={{ marginTop: 10 }}>
                 <SmallButton
                   onClick={handleLogoutOtherDevices}
@@ -1712,7 +1606,6 @@ export default function Settings() {
                 </SmallButton>
               </div>
             </div>
-
             <div
               style={{
                 display: 'flex',
@@ -1725,21 +1618,25 @@ export default function Settings() {
               <SmallButton onClick={handleLogout}>
                 Log Out This Device
               </SmallButton>
-
               <SmallButton
                 danger
+                disabled={Boolean(approvedDeletionRequest)}
                 onClick={() => {
+                  if (approvedDeletionRequest) return
                   setDeletionReason('')
                   setShowDeleteModal(true)
                 }}
               >
-                Request Account Deletion
+                {approvedDeletionRequest?.user_confirmed_at
+                  ? 'Deletion Scheduled'
+                  : approvedDeletionRequest
+                    ? 'Deletion Approval Pending Confirmation'
+                    : 'Request Account Deletion'}
               </SmallButton>
             </div>
           </div>
         </div>
       </div>
-
       {showEmailModal && (
         <div
           className={styles.modalOverlay}
@@ -1755,7 +1652,6 @@ export default function Settings() {
           <div className={styles.modal} style={{ maxWidth: 480 }}>
             <div className={styles.modalHead}>
               <div className={styles.modalTitle}>Change Login Email</div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -1765,7 +1661,6 @@ export default function Settings() {
                 ✕
               </button>
             </div>
-
             <p
               style={{
                 color: 'var(--text-muted)',
@@ -1775,7 +1670,6 @@ export default function Settings() {
               Enter your new email address. Supabase will send the required
               confirmation email before changing your login email.
             </p>
-
             <div style={{ marginTop: 14 }}>
               <label
                 className={styles.formLabel}
@@ -1783,7 +1677,6 @@ export default function Settings() {
               >
                 New Email Address
               </label>
-
               <input
                 id="player-new-login-email"
                 type="email"
@@ -1805,7 +1698,6 @@ export default function Settings() {
                 autoFocus
               />
             </div>
-
             {emailChangeError && (
               <div
                 style={{
@@ -1822,7 +1714,6 @@ export default function Settings() {
                 {emailChangeError}
               </div>
             )}
-
             <div
               style={{
                 marginTop: 12,
@@ -1840,7 +1731,6 @@ export default function Settings() {
               Your account will continue using this email until verification is
               completed.
             </div>
-
             <div
               style={{
                 display: 'flex',
@@ -1856,7 +1746,6 @@ export default function Settings() {
               >
                 Cancel
               </SmallButton>
-
               <button
                 type="button"
                 onClick={handleRequestEmailChange}
@@ -1882,7 +1771,76 @@ export default function Settings() {
           </div>
         </div>
       )}
-
+      {approvedDeletionRequest &&
+        !approvedDeletionRequest.user_confirmed_at && (
+        <div className={styles.modalOverlay}>
+          <div
+            className={styles.modal}
+            style={{ maxWidth: 500 }}
+          >
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>
+                Account Deletion Approved
+              </div>
+            </div>
+            <p
+              style={{
+                color: 'var(--text-muted, #8892A4)',
+                lineHeight: 1.6,
+              }}
+            >
+              Your account deletion request has been approved.
+              Please confirm whether you still want to permanently
+              delete your account.
+            </p>
+            <div
+              style={{
+                marginTop: 12,
+                padding: '11px 13px',
+                borderRadius: 10,
+                border: '1px solid #FDE68A',
+                background: '#FFFBEB',
+                color: '#92400E',
+                fontSize: 12,
+                lineHeight: 1.55,
+              }}
+            >
+              If you confirm, your account will be scheduled for
+              permanent deletion 24 hours later. If you choose to
+              keep your account, the deletion request will be
+              cancelled.
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 8,
+                marginTop: 18,
+                flexWrap: 'wrap',
+              }}
+            >
+              <SmallButton
+                onClick={handleCancelApprovedDeletion}
+                disabled={deletionDecisionBusy}
+              >
+                {deletionDecisionBusy
+                  ? 'Processing...'
+                  : 'No, Keep My Account'}
+              </SmallButton>
+              <SmallButton
+                solid
+                danger
+                onClick={handleConfirmApprovedDeletion}
+                disabled={deletionDecisionBusy}
+              >
+                {deletionDecisionBusy
+                  ? 'Processing...'
+                  : 'Yes, Confirm Deletion'}
+              </SmallButton>
+            </div>
+          </div>
+        </div>
+      )}
       {showDeleteModal && (
         <div
           className={styles.modalOverlay}
@@ -1899,7 +1857,6 @@ export default function Settings() {
           <div className={styles.modal} style={{ maxWidth: 480 }}>
             <div className={styles.modalHead}>
               <div className={styles.modalTitle}>Request Account Deletion</div>
-
               <button
                 className={styles.modalClose}
                 onClick={() => {
@@ -1910,17 +1867,14 @@ export default function Settings() {
                 ✕
               </button>
             </div>
-
             <p style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
               This will send an account deletion request to the admin. Your
               account will not be deleted immediately.
             </p>
-
             <p style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
               You will remain logged in and can continue using your account
               while the admin reviews your request.
             </p>
-
             <div style={{ marginTop: 14 }}>
               <label
                 className={styles.formLabel}
@@ -1928,7 +1882,6 @@ export default function Settings() {
               >
                 Reason for deletion
               </label>
-
               <textarea
                 id="player-deletion-reason"
                 className={styles.formInput}
@@ -1946,7 +1899,6 @@ export default function Settings() {
                   lineHeight: 1.5,
                 }}
               />
-
               <div
                 style={{
                   marginTop: 5,
@@ -1958,7 +1910,6 @@ export default function Settings() {
                 {deletionReason.length}/500
               </div>
             </div>
-
             <div
               style={{
                 display: 'flex',
@@ -1976,7 +1927,6 @@ export default function Settings() {
               >
                 Cancel
               </SmallButton>
-
               <SmallButton
                 solid
                 danger

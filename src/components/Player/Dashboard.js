@@ -29,16 +29,19 @@ const EXPENSE_COLORS = ['#1A5FFF', '#00C48C', '#7C3AED', '#F59E0B', '#EF4444', '
 
 const getGreeting = () => {
   const h = new Date().getHours()
+
   if (h < 12) return 'Good morning'
+
   if (h < 17) return 'Good afternoon'
   return 'Good evening'
 }
 
 const fmtDate = value => {
   if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
 
+  const date = new Date(value)
+  
+  if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('en-MY', {
     day: 'numeric',
     month: 'short',
@@ -48,9 +51,10 @@ const fmtDate = value => {
 
 const fmtDateLong = value => {
   if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
 
+  const date = new Date(value)
+  
+  if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('en-MY', {
     weekday: 'long',
     day: 'numeric',
@@ -84,9 +88,10 @@ const getScore = match => [match.score1, match.score2, match.score3].filter(Bool
 
 const getCurrentMonthRange = () => {
   const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
 
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
   return {
     start: start.toISOString().slice(0, 10),
     end: end.toISOString().slice(0, 10),
@@ -95,9 +100,10 @@ const getCurrentMonthRange = () => {
 
 const getLastMonthRange = () => {
   const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const end = new Date(now.getFullYear(), now.getMonth(), 1)
 
+  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  
+  const end = new Date(now.getFullYear(), now.getMonth(), 1)
   return {
     start: start.toISOString().slice(0, 10),
     end: end.toISOString().slice(0, 10),
@@ -116,31 +122,40 @@ const getScheduleBadgeClass = type => {
   const lower = String(type || '').toLowerCase()
 
   if (lower.includes('competition')) return styles.badgeAmber
-  if (lower.includes('friendly')) return styles.badgeGreen
-  if (lower.includes('rest')) return styles.badgeGray
-  if (lower.includes('recovery')) return styles.badgePurple
-  if (lower.includes('training')) return styles.badgeBlue
 
+  if (lower.includes('friendly')) return styles.badgeGreen
+
+  if (lower.includes('rest')) return styles.badgeGray
+
+  if (lower.includes('recovery')) return styles.badgePurple
+  
+  if (lower.includes('training')) return styles.badgeBlue
   return styles.badgeBlue
 }
 
 const getNotificationIcon = type => {
   if (type === 'success') return '✅'
+
   if (type === 'warning') return '⚠️'
+
   if (type === 'danger') return '🔥'
   return '🔔'
 }
 
 const getNotificationBg = type => {
   if (type === 'success') return '#ECFDF5'
+
   if (type === 'warning') return '#FFFBEB'
+
   if (type === 'danger') return '#FEF2F2'
   return '#EFF6FF'
 }
 
 const getNotificationBorder = type => {
   if (type === 'success') return '#A7F3D0'
+
   if (type === 'warning') return '#FDE68A'
+
   if (type === 'danger') return '#FECACA'
   return '#BFDBFE'
 }
@@ -149,8 +164,8 @@ const formatNotificationTime = value => {
   if (!value) return ''
 
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
 
+  if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('en-MY', {
     day: 'numeric',
     month: 'short',
@@ -163,12 +178,14 @@ const formatNotificationTime = value => {
 
 const getNotificationRoute = notification => {
   const rawUrl = String(notification?.action_url || '').trim()
+  
   const type = String(notification?.type || '').trim().toLowerCase()
-
   // This app uses routes such as /players, /performance and /fitness.
   // Older notification triggers stored /player/... routes, so normalise them.
+
   if (rawUrl) {
     const withoutOrigin = rawUrl.replace(/^https?:\/\/[^/]+/i, '')
+
     const normalised = withoutOrigin.replace(/^\/player(?=\/|$)/i, '')
 
     if (normalised) {
@@ -204,22 +221,38 @@ const getNotificationRoute = notification => {
 
 export default function Dashboard() {
   const { user } = useAuth()
+
   const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
+
   const showLoader = useLoadingDelay(loading, 350)
+
   const [profile, setProfile] = useState(null)
+
   const [setup, setSetup] = useState(null)
+
   const [matches, setMatches] = useState([])
+
   const [skills, setSkills] = useState(DEFAULT_SKILLS)
+  const [hasSkillData, setHasSkillData] = useState(false)
+
   const [coachSkills, setCoachSkills] = useState([])
+
   const [coachFeedback, setCoachFeedback] = useState('')
+
   const [expenses, setExpenses] = useState([])
+
   const [lastMonthExpenses, setLastMonthExpenses] = useState([])
+
   const [fitnessScore, setFitnessScore] = useState(0)
+
   const [hasFitnessData, setHasFitnessData] = useState(false)
+
   const [schedule, setSchedule] = useState([])
+
   const [notifications, setNotifications] = useState([])
+
   const [showNotifications, setShowNotifications] = useState(false)
 
   const getCurrentAuthUser = useCallback(async () => {
@@ -231,6 +264,7 @@ export default function Dashboard() {
 
   const fetchNotifications = useCallback(async () => {
     const authUser = await getCurrentAuthUser()
+
     if (!authUser) return
 
     const { data, error } = await supabase
@@ -250,8 +284,8 @@ export default function Dashboard() {
 
   const markNotificationRead = async id => {
     const authUser = await getCurrentAuthUser()
+    
     if (!authUser) return
-
     setNotifications(prev =>
       prev.map(item =>
         item.id === id ? { ...item, is_read: true } : item
@@ -274,8 +308,8 @@ export default function Dashboard() {
     e.stopPropagation()
 
     const authUser = await getCurrentAuthUser()
+    
     if (!authUser) return
-
     setNotifications(prev => prev.filter(item => item.id !== id))
 
     const { error } = await supabase
@@ -294,8 +328,8 @@ export default function Dashboard() {
     e.stopPropagation()
 
     const authUser = await getCurrentAuthUser()
+    
     if (!authUser) return
-
     setNotifications([])
 
     const { error } = await supabase
@@ -313,8 +347,8 @@ export default function Dashboard() {
     e.stopPropagation()
 
     const authUser = await getCurrentAuthUser()
+    
     if (!authUser) return
-
     setNotifications(prev =>
       prev.map(item => ({
         ...item,
@@ -417,8 +451,11 @@ export default function Dashboard() {
         }
 
         const authUser = authData.user
+
         const { start: monthStart, end: monthEnd } = getCurrentMonthRange()
+
         const { start: lastStart, end: lastEnd } = getLastMonthRange()
+
         const today = new Date().toISOString().slice(0, 10)
 
         const [
@@ -551,7 +588,7 @@ export default function Dashboard() {
             .single()
 
           if (createProfileError) throw createProfileError
-
+          
           currentProfile = createdProfile
         }
 
@@ -566,7 +603,7 @@ export default function Dashboard() {
               .eq('player_id', currentProfile.id)
               .order('match_date', { ascending: false })
               .order('created_at', { ascending: false }),
-
+              
             supabase
               .from('player_skill_ratings')
               .select('*')
@@ -575,8 +612,8 @@ export default function Dashboard() {
           ])
 
           if (matchesRes.error) throw matchesRes.error
+          
           if (ratingRes.error) throw ratingRes.error
-
           matchRows = matchesRes.data || []
           rating = ratingRes.data
         }
@@ -615,6 +652,7 @@ export default function Dashboard() {
         // Keep Dashboard fitness score consistent with the Fitness page.
         // Coach-added fitness tests are shown separately on Fitness and
         // must not replace/influence the player's own fitness indicators.
+
         const playerFitnessTests =
           (fitnessTestsRes.data || []).filter(
             test => !Boolean(test.added_by_coach)
@@ -629,7 +667,11 @@ export default function Dashboard() {
         })
 
         setHasFitnessData(fitnessSummary.hasFitnessData)
-        setFitnessScore(fitnessSummary.fitnessScore)
+        setFitnessScore(
+          fitnessSummary.hasFitnessData
+            ? fitnessSummary.fitnessScore
+            : 0
+        )
 
         const scheduleRows = (scheduleRes.data || [])
           .filter(item => item.event_date && item.event_date >= today)
@@ -664,8 +706,8 @@ export default function Dashboard() {
           .filter(item => item.date)
           .sort((a, b) => {
             const dateCompare = String(a.date).localeCompare(String(b.date))
+          
             if (dateCompare !== 0) return dateCompare
-
             return String(a.time || '').localeCompare(String(b.time || ''))
           })
           .slice(0, 5)
@@ -673,6 +715,7 @@ export default function Dashboard() {
         setSchedule(mergedSchedule)
 
         if (rating) {
+          setHasSkillData(true)
           setSkills(
             SKILL_COLUMNS.map(skill => {
               const value = Number(rating[skill.column] ?? 50)
@@ -685,6 +728,7 @@ export default function Dashboard() {
             })
           )
         } else {
+          setHasSkillData(false)
           setSkills(DEFAULT_SKILLS)
         }
 
@@ -728,8 +772,11 @@ export default function Dashboard() {
   }, [user?.id])
 
   const name = (profile?.display_name || user?.name || user?.email?.split('@')[0] || 'Player').split(' ')[0]
+
   const weakness = setup?.biggest_weakness || setup?.weakness || profile?.weakness || 'Not set'
+
   const clubText = profile?.club || profile?.state || 'No club set'
+
   const unreadCount = notifications.filter(n => !n.is_read).length
 
   const stats = useMemo(
@@ -758,7 +805,7 @@ export default function Dashboard() {
     }, {})
 
     const total = Object.values(grouped).reduce((sum, val) => sum + val, 0)
-
+    
     return Object.entries(grouped).map(([label, val], index) => ({
       label,
       val,
@@ -768,9 +815,11 @@ export default function Dashboard() {
   }, [expenses])
 
   const weakestSkill = useMemo(() => {
+    if (!hasSkillData) return null
+
     const sorted = [...skills].sort((a, b) => a.val - b.val)
-    return sorted[0]
-  }, [skills])
+    return sorted[0] || null
+  }, [skills, hasSkillData])
 
   if (loading && !showLoader) {
     return null
@@ -850,7 +899,6 @@ export default function Dashboard() {
               title="Notifications"
             >
               🔔
-
               {unreadCount > 0 && (
                 <span
                   style={{
@@ -874,7 +922,6 @@ export default function Dashboard() {
                 </span>
               )}
             </button>
-
             {showNotifications && (
               <div
                 onClick={e => e.stopPropagation()}
@@ -1300,6 +1347,7 @@ export default function Dashboard() {
                     ? styles.metricLbl
                     : styles.deltaDown
             }
+
             style={{
               color: !hasFitnessData
                 ? 'var(--text-muted, #8892A4)'
@@ -1395,6 +1443,7 @@ export default function Dashboard() {
             className={
               spendDifference <= 0 ? styles.deltaUp : styles.deltaDown
             }
+
             style={{
               color: spendDifference <= 0 ? '#00C48C' : '#EF4444',
               WebkitTextFillColor:
@@ -1423,8 +1472,8 @@ export default function Dashboard() {
           }}
           style={{ cursor: 'pointer' }}
         >
-          <div className={styles.cardTitle}>Recent Matches</div>
 
+          <div className={styles.cardTitle}>Recent Matches</div>
           {matches.length === 0 ? (
             <div
               style={{
@@ -1439,6 +1488,7 @@ export default function Dashboard() {
           ) : (
             matches.slice(0, 3).map(match => {
               const opponent = getOpponentName(match)
+
               const win = String(match.result || '').trim().toLowerCase() === 'win'
 
               return (
@@ -1567,12 +1617,29 @@ export default function Dashboard() {
           </div>
 
           <div className={styles.chartWrap}>
-            <SkillRadarChart
-              skills={skills}
-              coachSkills={coachSkills}
-            />
+            {hasSkillData ? (
+              <SkillRadarChart
+                skills={skills}
+                coachSkills={coachSkills}
+              />
+            ) : (
+              <div
+                style={{
+                  minHeight: 230,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textAlign: 'center',
+                  color: '#8892A4',
+                  fontSize: 13,
+                  padding: 24,
+                  boxSizing: 'border-box',
+                }}
+              >
+                No skill assessment yet. Update your skills to view the radar chart.
+              </div>
+            )}
           </div>
-
           {coachFeedback && (
             <div
               style={{
@@ -1786,7 +1853,6 @@ export default function Dashboard() {
           style={{ cursor: 'pointer' }}
         >
           <div className={styles.cardTitle}>Upcoming Schedule</div>
-
           {schedule.length === 0 ? (
             <div
               style={{
@@ -1801,6 +1867,7 @@ export default function Dashboard() {
           ) : (
             schedule.map(item => {
               const date = new Date(`${item.date}T00:00:00`)
+
               const day = Number.isNaN(date.getTime()) ? '-' : date.getDate()
 
               const month = Number.isNaN(date.getTime())
@@ -1837,8 +1904,8 @@ export default function Dashboard() {
                       }}
                     >
                       {day}
-                    </div>
 
+                    </div>
                     <div
                       style={{
                         fontSize: 10,
