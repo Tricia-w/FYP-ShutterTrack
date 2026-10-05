@@ -481,14 +481,20 @@ export default function AdminCoaches() {
               verified_by: adminUser.id,
               rejection_reason: null,
             }
-          : {
-              verification_status: "rejected",
-              verified_at: null,
-              verified_by: adminUser.id,
-              rejection_reason:
-                rejectionReason.trim(),
-            };
-
+          : decision === "Pending"
+            ? {
+                verification_status: "pending",
+                verified_at: null,
+                verified_by: null,
+                rejection_reason: null,
+              }
+            : {
+                verification_status: "rejected",
+                verified_at: null,
+                verified_by: adminUser.id,
+                rejection_reason:
+                  rejectionReason.trim(),
+              };
       const { error } = await supabase
         .from("coach_profiles")
         .update(payload)
@@ -506,7 +512,9 @@ export default function AdminCoaches() {
       await loadCoaches();
 
       setSuccessMessage(
-        `${coachName} was marked as ${savedDecision}. The action was added to Activity Logs automatically.`
+        savedDecision === "Pending"
+          ? `${coachName}'s verification was revoked. The coach is now unverified. The action was added to Activity Logs automatically.`
+          : `${coachName} was marked as ${savedDecision}. The action was added to Activity Logs automatically.`
       );
     } catch (error) {
       console.error(
@@ -1103,7 +1111,7 @@ export default function AdminCoaches() {
                       href={
                         certificate.fileUrl
                       }
-                      target="_blank"
+                      target="\_blank"
                       rel="noreferrer"
                       style={{
                         display: "flex",
@@ -1134,7 +1142,7 @@ export default function AdminCoaches() {
               </div>
             )}
           </div>
-
+          
           {selected.status ===
             "Rejected" &&
             selected.rejectionReason && (
@@ -1163,42 +1171,64 @@ export default function AdminCoaches() {
               marginTop: 20,
             }}
           >
-            <button
-              type="button"
-              onClick={() =>
-                beginDecision("Rejected")
-              }
-              style={{
-                ...buttonBase,
-                padding: "10px 15px",
-                background: "#FEE2E2",
-                color: "#B91C1C",
-              }}
-            >
-              Reject
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                beginDecision("Verified")
-              }
-              style={{
-                ...buttonBase,
-                padding: "10px 15px",
-                background: "#00976C",
-                color: "#FFFFFF",
-              }}
-            >
-              Verify coach
-            </button>
+            {selected.status === "Verified" ? (
+              <button
+                type="button"
+                onClick={() =>
+                  beginDecision("Pending")
+                }
+                style={{
+                  ...buttonBase,
+                  padding: "10px 15px",
+                  background: "#FEE2E2",
+                  color: "#B91C1C",
+                }}
+              >
+                Revoke verification
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    beginDecision("Rejected")
+                  }
+                  style={{
+                    ...buttonBase,
+                    padding: "10px 15px",
+                    background: "#FEE2E2",
+                    color: "#B91C1C",
+                  }}
+                >
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    beginDecision("Verified")
+                  }
+                  style={{
+                    ...buttonBase,
+                    padding: "10px 15px",
+                    background: "#00976C",
+                    color: "#FFFFFF",
+                  }}
+                >
+                  Verify coach
+                </button>
+              </>
+            )}
           </div>
         </Modal>
       )}
 
       {selected && decision && (
         <Modal
-          title={`Confirm ${decision.toLowerCase()}`}
+          title={
+            decision === "Pending"
+              ? "Confirm revoke verification"
+              : `Confirm ${decision.toLowerCase()}`
+          }
           onClose={() => {
             if (!saving) {
               setDecision("");
@@ -1217,7 +1247,9 @@ export default function AdminCoaches() {
           >
             {decision === "Verified"
               ? `${selected.name} will be shown as a verified coach.`
-              : `${selected.name} will be marked as rejected.`}
+              : decision === "Pending"
+                ? `${selected.name}'s verified status will be removed and the coach will return to Pending verification.`
+                : `${selected.name} will be marked as rejected.`}
           </p>
 
           {decision === "Rejected" && (
@@ -1298,7 +1330,9 @@ export default function AdminCoaches() {
             >
               {saving
                 ? "Saving..."
-                : `Confirm ${decision.toLowerCase()}`}
+                : decision === "Pending"
+                  ? "Confirm revoke"
+                  : `Confirm ${decision.toLowerCase()}`}
             </button>
           </div>
         </Modal>

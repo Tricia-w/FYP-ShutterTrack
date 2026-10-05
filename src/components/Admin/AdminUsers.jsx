@@ -378,9 +378,9 @@ export default function AdminUsers({
         }}
       >
         Activity becomes <strong>Inactive</strong> when
-        last_seen_at is older than 30 days. The account itself
+        last seen at is older than 30 days. The account itself
         remains <strong>Active</strong>. For player accounts,
-        ShuttleTrack will show <strong>Reverify required</strong>
+        ShuttleTrack will show <strong>Reverify required </strong>
         and require email verification the next time the player
         logs in.
       </div>
@@ -466,7 +466,7 @@ export default function AdminUsers({
                 "Role",
                 "Account",
                 "Activity",
-                "Security",
+                "Security Status",
                 "Last seen",
                 "Joined",
                 "Setup",

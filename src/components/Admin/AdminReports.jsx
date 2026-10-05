@@ -41,23 +41,18 @@ const normaliseReportStatus = (value) => {
   const status = String(value || "pending")
     .trim()
     .toLowerCase();
-
   if (status === "submitted" || status === "pending") {
     return "Pending";
   }
-
   if (status === "reviewing") {
     return "Reviewing";
   }
-
   if (status === "resolved") {
     return "Resolved";
   }
-
   if (status === "dismissed" || status === "rejected") {
     return "Dismissed";
   }
-
   return capitalise(status);
 };
 
@@ -65,7 +60,6 @@ const normaliseDeletionStatus = (value) => {
   const status = String(value || "pending")
     .trim()
     .toLowerCase();
-
   const allowed = [
     "pending",
     "reviewing",
@@ -73,7 +67,6 @@ const normaliseDeletionStatus = (value) => {
     "rejected",
     "cancelled",
   ];
-
   return allowed.includes(status)
     ? capitalise(status)
     : "Pending";
@@ -81,13 +74,10 @@ const normaliseDeletionStatus = (value) => {
 
 const formatDate = (value) => {
   if (!value) return "—";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return "—";
   }
-
   return date.toLocaleString("en-MY", {
     day: "2-digit",
     month: "short",
@@ -128,7 +118,6 @@ function StatusBadge({ value }) {
       color: "#6B7280",
     },
   };
-
   const current = options[value] || options.Pending;
 
   return (
@@ -171,20 +160,16 @@ function RoleBadge({ role }) {
 
 export default function AdminReports() {
   const [tab, setTab] = useState("deletions");
-
   const [reports, setReports] = useState([]);
   const [deletionRequests, setDeletionRequests] =
     useState([]);
-
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
-
   const [pendingStatus, setPendingStatus] =
     useState("");
   const [adminNote, setAdminNote] =
     useState("");
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] =
@@ -195,7 +180,6 @@ export default function AdminReports() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
-
     try {
       const [
         reportResult,
@@ -220,41 +204,33 @@ export default function AdminReports() {
             "user_id, full_name, email, role, account_status",
           ),
       ]);
-
       if (reportResult.error) {
         throw reportResult.error;
       }
-
       if (deletionResult.error) {
         throw deletionResult.error;
       }
-
       if (appUserResult.error) {
         throw appUserResult.error;
       }
-
       const users = appUserResult.data || [];
-
       const userMap = new Map(
         users.map((user) => [
           String(user.user_id),
           user,
         ]),
       );
-
       const formattedReports = (
         reportResult.data || []
       ).map((report) => {
         const reporter = userMap.get(
           String(report.reporter_user_id),
         );
-
         const reportedUser = report.reported_user_id
           ? userMap.get(
               String(report.reported_user_id),
             )
           : null;
-
         return {
           kind: "report",
           id: report.id,
@@ -295,14 +271,12 @@ export default function AdminReports() {
             report.requested_at,
         };
       });
-
       const formattedDeletions = (
         deletionResult.data || []
       ).map((request) => {
         const user = userMap.get(
           String(request.user_id),
         );
-
         return {
           kind: "deletion",
           id: request.id,
@@ -342,20 +316,16 @@ export default function AdminReports() {
             request.reviewed_at || null,
         };
       });
-
       setReports(formattedReports);
       setDeletionRequests(
         formattedDeletions,
       );
-
       setSelected((current) => {
         if (!current) return null;
-
         const source =
           current.kind === "report"
             ? formattedReports
             : formattedDeletions;
-
         return (
           source.find(
             (item) => item.id === current.id,
@@ -367,7 +337,6 @@ export default function AdminReports() {
         "Unable to load reports and requests:",
         error,
       );
-
       setErrorMessage(
         error.message ||
           "Unable to load reports and requests.",
@@ -406,17 +375,14 @@ export default function AdminReports() {
         loadData,
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, [loadData]);
-
   const items =
     tab === "reports"
       ? reports
       : deletionRequests;
-
   const filters =
     tab === "reports"
       ? REPORT_FILTERS
@@ -424,7 +390,6 @@ export default function AdminReports() {
 
   const counts = useMemo(() => {
     const result = {};
-
     filters.forEach((status) => {
       result[status] =
         status === "All"
@@ -434,7 +399,6 @@ export default function AdminReports() {
                 item.status === status,
             ).length;
     });
-
     return result;
   }, [filters, items]);
 
@@ -442,12 +406,10 @@ export default function AdminReports() {
     const query = search
       .trim()
       .toLowerCase();
-
     return items.filter((item) => {
       const matchesStatus =
         filter === "All" ||
         item.status === filter;
-
       const values =
         item.kind === "report"
           ? [
@@ -467,7 +429,6 @@ export default function AdminReports() {
               item.reason,
               item.details,
             ];
-
       const matchesSearch =
         !query ||
         values.some((value) =>
@@ -475,7 +436,6 @@ export default function AdminReports() {
             .toLowerCase()
             .includes(query),
         );
-
       return (
         matchesStatus && matchesSearch
       );
@@ -501,7 +461,6 @@ export default function AdminReports() {
 
   const beginStatusUpdate = (status) => {
     if (!selected) return;
-
     setPendingStatus(status);
     setAdminNote(selected.adminNote || "");
     setErrorMessage("");
@@ -511,26 +470,20 @@ export default function AdminReports() {
     if (!selected || !pendingStatus) {
       return;
     }
-
     setSaving(true);
     setErrorMessage("");
-
     try {
       const {
         data: { user: adminUser },
         error: authError,
       } = await supabase.auth.getUser();
-
       if (authError) throw authError;
-
       if (!adminUser?.id) {
         throw new Error(
           "Please log in as an administrator again.",
         );
       }
-
       const now = new Date().toISOString();
-
       if (selected.kind === "report") {
         const { error } = await supabase
           .from("user_reports")
@@ -542,7 +495,6 @@ export default function AdminReports() {
             updated_at: now,
           })
           .eq("id", selected.id);
-
         if (error) throw error;
       } else {
         const { error } = await supabase
@@ -558,37 +510,31 @@ export default function AdminReports() {
             reviewed_by: adminUser.id,
           })
           .eq("id", selected.id);
-
         if (error) throw error;
       }
-
       const targetName =
         selected.kind === "report"
           ? selected.reportedName
           : selected.name;
-
       const noun =
         selected.kind === "report"
           ? "Report"
           : "Deletion request";
-
       const savedStatus = pendingStatus;
-
       setSelected(null);
       setPendingStatus("");
       setAdminNote("");
-
       await loadData();
-
       setSuccessMessage(
-        `${noun} for ${targetName} was marked as ${savedStatus}. The action was added to Activity Logs automatically.`,
+        selected.kind === "deletion" && savedStatus === "Approved"
+          ? `Deletion request for ${targetName} was approved. The user will be asked to confirm the deletion before the 24-hour countdown begins.`
+          : `${noun} for ${targetName} was marked as ${savedStatus}. The action was added to Activity Logs automatically.`,
       );
     } catch (error) {
       console.error(
         "Unable to update status:",
         error,
       );
-
       setErrorMessage(
         error.message ||
           "Unable to update the selected item.",
@@ -597,7 +543,6 @@ export default function AdminReports() {
       setSaving(false);
     }
   };
-
   const reportActions = [
     {
       label: "Dismiss",
@@ -618,7 +563,6 @@ export default function AdminReports() {
       color: "#FFFFFF",
     },
   ];
-
   const deletionActions = [
     {
       label: "Reject",
@@ -639,12 +583,10 @@ export default function AdminReports() {
       color: "#FFFFFF",
     },
   ];
-
   const rowStyle = {
     cursor: "pointer",
     transition: "background 0.15s ease",
   };
-
   const handleRowKeyDown = (
     event,
     item,
@@ -666,25 +608,20 @@ export default function AdminReports() {
   font-size: 14px;
   font-weight: 400;
 }
-
         .adminReadablePage [style*='font-size: 10px'] {
           font-size: 12px !important;
         }
-
         .adminReadablePage [style*='font-size: 11px'] {
           font-size: 13px !important;
         }
-
         .adminReadablePage [style*='font-size: 12px'],
         .adminReadablePage [style*='font-size: 13px'] {
           font-size: 14px !important;
         }
-
         .adminReadablePage [style*='font-weight: 800'],
         .adminReadablePage [style*='font-weight: 900'] {
           font-weight: 700 !important;
         }
-
 .adminReadablePage button,
 .adminReadablePage input,
 .adminReadablePage select,
@@ -692,16 +629,13 @@ export default function AdminReports() {
   font-family: "DM Sans", sans-serif !important;
   font-size: 14px !important;
 }
-
 .adminReadablePage table {
   font-family: "DM Sans", sans-serif;
 }
-
         .adminReadablePage th {
           font-size: 13px !important;
           font-weight: 700 !important;
         }
-
         .adminReadablePage td {
           font-size: 14px !important;
         }
@@ -728,7 +662,6 @@ export default function AdminReports() {
           </button>
         }
       />
-
       {errorMessage &&
         !pendingStatus && (
           <div
@@ -745,7 +678,6 @@ export default function AdminReports() {
             {errorMessage}
           </div>
         )}
-
       <div
         style={{
           display: "flex",
@@ -779,7 +711,6 @@ export default function AdminReports() {
         >
           User Reports · {reports.length}
         </button>
-
         <button
           type="button"
           onClick={() =>
@@ -807,7 +738,6 @@ export default function AdminReports() {
           {deletionRequests.length}
         </button>
       </div>
-
       <div
         style={{
           display: "flex",
@@ -854,7 +784,6 @@ export default function AdminReports() {
             </button>
           ))}
         </div>
-
         <input
           value={search}
           onChange={(event) =>
@@ -872,7 +801,6 @@ export default function AdminReports() {
           }}
         />
       </div>
-
       <TableCard>
         <div style={{ overflowX: "auto" }}>
           {tab === "reports" ? (
@@ -914,7 +842,6 @@ export default function AdminReports() {
                   ))}
                 </tr>
               </thead>
-
               <tbody>
                 {loading ? (
                   <tr>
@@ -999,7 +926,6 @@ export default function AdminReports() {
                             {report.reporterEmail}
                           </div>
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1026,7 +952,6 @@ export default function AdminReports() {
                             {report.reportedEmail}
                           </div>
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1037,7 +962,6 @@ export default function AdminReports() {
                             role={report.role}
                           />
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1047,7 +971,6 @@ export default function AdminReports() {
                         >
                           {report.subject}
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1061,7 +984,6 @@ export default function AdminReports() {
                             report.requestedAt,
                           )}
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1117,7 +1039,6 @@ export default function AdminReports() {
                   ))}
                 </tr>
               </thead>
-
               <tbody>
                 {loading ? (
                   <tr>
@@ -1202,7 +1123,6 @@ export default function AdminReports() {
                             {request.email}
                           </div>
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1213,7 +1133,6 @@ export default function AdminReports() {
                             role={request.role}
                           />
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1225,7 +1144,6 @@ export default function AdminReports() {
                             request.accountStatus,
                           )}
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1236,7 +1154,6 @@ export default function AdminReports() {
                         >
                           {request.reason}
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1250,7 +1167,6 @@ export default function AdminReports() {
                             request.requestedAt,
                           )}
                         </td>
-
                         <td
                           style={{
                             padding:
@@ -1270,7 +1186,6 @@ export default function AdminReports() {
           )}
         </div>
       </TableCard>
-
       {selected && !pendingStatus && (
         <Modal
           title={
@@ -1348,7 +1263,6 @@ export default function AdminReports() {
                   ),
                 )}
               </div>
-
               <div
                 style={{
                   marginTop: 13,
@@ -1362,7 +1276,6 @@ export default function AdminReports() {
               >
                 {selected.subject}
               </div>
-
               <div
                 style={{
                   marginTop: 10,
@@ -1447,7 +1360,6 @@ export default function AdminReports() {
                   ),
                 )}
               </div>
-
               <div
                 style={{
                   marginTop: 13,
@@ -1462,7 +1374,6 @@ export default function AdminReports() {
                 <strong>Reason:</strong>{" "}
                 {selected.reason}
               </div>
-
               {selected.details && (
                 <div
                   style={{
@@ -1480,7 +1391,6 @@ export default function AdminReports() {
                   {selected.details}
                 </div>
               )}
-
               <div
                 style={{
                   marginTop: 12,
@@ -1492,14 +1402,12 @@ export default function AdminReports() {
                   lineHeight: 1.55,
                 }}
               >
-                Approving this request only
-                changes its review status. It
-                does not directly delete the
-                Supabase Auth account.
+                Approving this request sends the user an approval notification.
+                The user must confirm the deletion from Settings. Once confirmed,
+                permanent account deletion is scheduled for 24 hours later.
               </div>
             </>
           )}
-
           <div
             style={{
               display: "flex",
@@ -1536,7 +1444,6 @@ export default function AdminReports() {
           </div>
         </Modal>
       )}
-
       {selected && pendingStatus && (
         <Modal
           title={`Confirm ${pendingStatus.toLowerCase()}`}
@@ -1560,7 +1467,6 @@ export default function AdminReports() {
               ? `The report will be marked as ${pendingStatus}.`
               : `The account deletion request will be marked as ${pendingStatus}.`}
           </p>
-
           <textarea
             rows={4}
             maxLength={1000}
@@ -1578,7 +1484,6 @@ export default function AdminReports() {
               fontFamily: "inherit",
             }}
           />
-
           {errorMessage && (
             <div
               style={{
@@ -1593,7 +1498,6 @@ export default function AdminReports() {
               {errorMessage}
             </div>
           )}
-
           <div
             style={{
               display: "flex",
@@ -1619,7 +1523,6 @@ export default function AdminReports() {
             >
               Go back
             </button>
-
             <button
               type="button"
               disabled={saving}
@@ -1650,7 +1553,6 @@ export default function AdminReports() {
           </div>
         </Modal>
       )}
-
       {successMessage && (
         <Modal
           title="Request updated"
