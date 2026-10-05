@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import { calculateFitnessSummary } from '../../utils/fitnessScore'
 import { useAuth } from '../../context/AuthContext'
 import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
@@ -354,18 +355,6 @@ function calculateFitnessIndicators({
     return row ? clamp(row.score) : null
   }
 
-  const sortedRecovery = [...recoveryLogs].sort((a, b) => {
-    const dateCompare = String(a.log_date || '').localeCompare(
-      String(b.log_date || '')
-    )
-    if (dateCompare !== 0) return dateCompare
-
-    return String(a.created_at || '').localeCompare(
-      String(b.created_at || '')
-    )
-  })
-
-  const latestRecovery = sortedRecovery.at(-1) || null
   const weeklyDates = getThisWeekDates()
 
   const weeklyMinutes = trainingLogs
@@ -379,19 +368,72 @@ function calculateFitnessIndicators({
       0
     )
 
-  const activeInjuries = injuries.filter(
-    injury => injury.status !== 'Recovered'
-  ).length
+  /*
+   * IMPORTANT:
+   * Recovery is NOT recalculated separately on the Coach Progress page.
+   *
+   * The Player Fitness page imports calculateFitnessSummary() from:
+   * ../../utils/fitnessScore
+   *
+   * So the coach page now sends the same type of mapped data into that
+   * exact shared calculator and reads recoveryScore from it.
+   */
+  const sharedFitnessSummary = calculateFitnessSummary({
+    tests: (tests || []).map(row => ({
+      id: row.id,
+      date: row.test_date,
+      test: row.test_name || '',
+      result: row.result || '',
+      indicator: row.indicator || 'Endurance',
+      score: clamp(row.score),
+      addedByCoach: Boolean(
+        row.added_by_coach &&
+        row.coach_user_id
+      ),
+      coachUserId: row.coach_user_id || null,
+      createdAt: row.created_at || '',
+      updatedAt: row.updated_at || '',
+    })),
 
-  const recoveryBase = latestRecovery
-    ? clamp(
-        100 -
-          Number(latestRecovery.fatigue_level || 0) * 8 -
-          Number(latestRecovery.soreness_level || 0) * 5 +
-          Math.min(8, Number(latestRecovery.sleep_hours || 0)) -
-          activeInjuries * 5
-      )
-    : DEFAULT_SCORE
+    sessions: (trainingLogs || []).map(row => ({
+      id: row.id,
+      date: row.training_date,
+      startTime: row.start_time || '',
+      endTime: row.end_time || '',
+      activity: row.activity || '',
+      duration: row.duration || '',
+      focus: row.focus || 'Endurance',
+      notes: row.notes || '',
+      coachSessionId: row.coach_session_id || null,
+      createdAt: row.created_at || '',
+    })),
+
+    recoveryLogs: (recoveryLogs || []).map(row => ({
+      id: row.id,
+      date: row.log_date,
+      sleep: Number(row.sleep_hours || 0),
+      tiredness: Number(row.fatigue_level || 0),
+      muscleAche: Number(row.soreness_level || 0),
+      hr: Number(row.resting_hr || 0),
+      notes: row.notes || '',
+    })),
+
+    injuries: (injuries || []).map(row => ({
+      id: row.id,
+      name: row.injury_description || '',
+      date: row.injury_date,
+      status: row.status || 'Monitoring',
+      notes: row.notes || '',
+    })),
+
+    // Recovery calculation does not need the coach page to invent a
+    // separate schedule representation. Keep this empty rather than
+    // creating different logic from Player Fitness.
+    scheduleList: [],
+  })
+
+  const sharedRecoveryScore =
+    Number(sharedFitnessSummary?.recoveryScore)
 
   return {
     endurance: Math.round(
@@ -405,7 +447,11 @@ function calculateFitnessIndicators({
     agility: Math.round(
       latestScore('Agility') ?? DEFAULT_SCORE
     ),
-    recovery: Math.round(recoveryBase),
+
+    // Exact same Recovery result source as Player Fitness.
+    recovery: Number.isFinite(sharedRecoveryScore)
+      ? Math.round(clamp(sharedRecoveryScore))
+      : DEFAULT_SCORE,
   }
 }
 

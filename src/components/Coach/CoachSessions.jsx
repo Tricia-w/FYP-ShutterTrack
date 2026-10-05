@@ -10,10 +10,7 @@ import CoachNotificationBell from "../Notifications/CoachNotificationBell";
 import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
-  createGoogleCalendarEvent,
-  updateGoogleCalendarEvent,
-  deleteGoogleCalendarEvent,
-  ensureGoogleCalendarAccess,
+  syncShuttleTrackGoogleCalendar,
 } from '../../lib/googleCalendar'
 
 const SESSION_TYPES = [
@@ -131,6 +128,25 @@ const emptyForm = () => ({
 const formatTime = value => {
   if (!value) return ''
   return String(value).slice(0, 5)
+}
+
+const fmtDate = value => {
+  if (!value) return ''
+
+  try {
+    return new Date(
+      `${value}T00:00:00`
+    ).toLocaleDateString(
+      'en-MY',
+      {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }
+    )
+  } catch {
+    return value
+  }
 }
 
 const parseDurationMinutes = value => {
@@ -370,6 +386,8 @@ export default function CoachSessions() {
   const [deleting, setDeleting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [error, setError] = useState('')
+  const [availabilityError, setAvailabilityError] = useState('')
+  const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -685,6 +703,8 @@ export default function CoachSessions() {
     setEditingSession(session)
     setStudentSearch('')
     setError('')
+    setAvailabilityError('')
+    setCheckingAvailability(false)
 
     setSessionForm({
       date:
@@ -742,6 +762,8 @@ export default function CoachSessions() {
     setStudentSearch('')
     setSessionForm(emptyForm())
     setError('')
+    setAvailabilityError('')
+    setCheckingAvailability(false)
   }
 
   const toggleSessionPlayer = playerId => {
@@ -862,64 +884,262 @@ export default function CoachSessions() {
       }
     }
 
-  const findScheduleConflict = async () => {
+  const findScheduleConflict = useCallback(async () => {
     const selectedPlayerIds =
       sessionForm.players.filter(Boolean)
 
     if (
       selectedPlayerIds.length === 0 ||
-      !sessionForm.date ||
+      !sessionForm.date
+    ) {
+      return null
+    }
+
+    const {
+      data: playerDaySchedules,
+      error: playerDayScheduleError,
+    } = await supabase
+      .from('player_schedule')
+      .select(
+        'id, user_id, event_date, event_time, title, schedule_type, notes, coach_session_id'
+      )
+      .in('user_id', selectedPlayerIds)
+      .eq('event_date', sessionForm.date)
+
+    if (playerDayScheduleError) {
+      throw playerDayScheduleError
+    }
+
+    /*
+     * Ignore the player_schedule copy created by the SAME coach session
+     * currently being edited. Without this filter, changing the session
+     * time makes the session conflict with its own synced player schedule.
+     */
+    const relevantSchedules =
+      (playerDaySchedules || []).filter(row => {
+        if (!editingSession?.id) {
+          return true
+        }
+
+        return (
+          String(row.coach_session_id || '') !==
+          String(editingSession.id)
+        )
+      })
+
+    const restDayRow =
+      relevantSchedules.find(row => {
+        const title =
+          String(row.title || '')
+            .trim()
+            .toLowerCase()
+
+        const scheduleType =
+          String(row.schedule_type || '')
+            .trim()
+            .toLowerCase()
+
+        return (
+          title === 'rest day' ||
+          scheduleType === 'rest day'
+        )
+      }) || null
+
+    if (restDayRow?.user_id) {
+      const player =
+        studentMap.get(
+          String(restDayRow.user_id)
+        )
+
+      return {
+        type: 'rest_day',
+        playerName:
+          player?.name ||
+          'This player',
+      }
+    }
+
+    if (
       !sessionForm.startTime ||
       !sessionForm.endTime
     ) {
       return null
     }
 
-    const {
-      data: busyPlayers,
-      error: conflictError,
-    } = await supabase.rpc(
-      'check_coach_session_player_conflicts',
-      {
-        p_player_ids:
-          selectedPlayerIds,
-        p_session_date:
-          sessionForm.date,
-        p_start_time:
-          sessionForm.startTime,
-        p_end_time:
-          sessionForm.endTime,
-        p_ignore_session_id:
-          editingSession?.id || null,
-      }
-    )
+    const toMinutes = value => {
+      const text =
+        String(value || '')
+          .slice(0, 5)
 
-    if (conflictError) {
-      throw conflictError
+      const [
+        hour,
+        minute,
+      ] = text
+        .split(':')
+        .map(Number)
+
+      if (
+        !Number.isFinite(hour) ||
+        !Number.isFinite(minute)
+      ) {
+        return null
+      }
+
+      return hour * 60 + minute
     }
 
-    const conflictRow =
-      Array.isArray(busyPlayers)
-        ? busyPlayers[0]
-        : null
+    const newStart =
+      toMinutes(sessionForm.startTime)
 
-    if (!conflictRow?.player_user_id) {
+    const newEnd =
+      toMinutes(sessionForm.endTime)
+
+    if (
+      newStart === null ||
+      newEnd === null
+    ) {
+      return null
+    }
+
+    const overlapRow =
+      relevantSchedules.find(row => {
+        const rowStart =
+          toMinutes(row.event_time)
+
+        const meta =
+          decodePlayerScheduleNotes(
+            row.notes
+          )
+
+        const rowEnd =
+          toMinutes(meta.endTime)
+
+        if (
+          rowStart === null ||
+          rowEnd === null
+        ) {
+          return false
+        }
+
+        return (
+          newStart < rowEnd &&
+          newEnd > rowStart
+        )
+      }) || null
+
+    if (!overlapRow?.user_id) {
       return null
     }
 
     const player =
       studentMap.get(
-        String(
-          conflictRow.player_user_id
-        )
+        String(overlapRow.user_id)
       )
 
     return {
+      type: 'time_conflict',
       playerName:
         player?.name ||
         'This player',
     }
-  }
+  }, [
+    sessionForm.players,
+    sessionForm.date,
+    sessionForm.startTime,
+    sessionForm.endTime,
+    editingSession?.id,
+    studentMap,
+  ])
+
+  /*
+   * Early availability check.
+   *
+   * Runs automatically when the selected player, date, start time,
+   * end time, or edited session changes. A short debounce avoids
+   * sending a query for every tiny form update.
+   */
+  useEffect(() => {
+    if (!showAddSession) {
+      setAvailabilityError('')
+      setCheckingAvailability(false)
+      return undefined
+    }
+
+    if (
+      sessionForm.players.length === 0 ||
+      !sessionForm.date
+    ) {
+      setAvailabilityError('')
+      setCheckingAvailability(false)
+      return undefined
+    }
+
+    let cancelled = false
+
+    const timer = window.setTimeout(
+      async () => {
+        setCheckingAvailability(true)
+
+        try {
+          const conflict =
+            await findScheduleConflict()
+
+          if (cancelled) return
+
+          if (!conflict) {
+            setAvailabilityError('')
+            return
+          }
+
+          if (
+            conflict.type === 'rest_day'
+          ) {
+            setAvailabilityError(
+              `${conflict.playerName} has marked ${fmtDate(
+                sessionForm.date
+              )} as a Rest Day. Please select another date.`
+            )
+            return
+          }
+
+          setAvailabilityError(
+            `${conflict.playerName} is not available during this time slot because the player already has another activity scheduled.`
+          )
+        } catch (availabilityCheckError) {
+          if (cancelled) return
+
+          console.error(
+            'Early session availability check error:',
+            availabilityCheckError
+          )
+
+          setAvailabilityError(
+            availabilityCheckError?.message ||
+              'Unable to check player availability.'
+          )
+        } finally {
+          if (!cancelled) {
+            setCheckingAvailability(false)
+          }
+        }
+      },
+      300
+    )
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    showAddSession,
+    sessionForm.players,
+    sessionForm.date,
+    sessionForm.startTime,
+    sessionForm.endTime,
+    editingSession?.id,
+    studentMap,
+    findScheduleConflict,
+  ])
 
   const handleSave = async () => {
     if (saving) return
@@ -945,9 +1165,17 @@ export default function CoachSessions() {
         await findScheduleConflict()
 
       if (conflict) {
-        setError(
-          `${conflict.playerName} is not available during this time slot because the player already has another activity scheduled.`
+        const conflictMessage =
+          conflict.type === 'rest_day'
+            ? `${conflict.playerName} has marked ${fmtDate(
+                sessionForm.date
+              )} as a Rest Day. Please select another date.`
+            : `${conflict.playerName} is not available during this time slot because the player already has another activity scheduled.`
+
+        setAvailabilityError(
+          conflictMessage
         )
+        setError('')
         return
       }
 
@@ -997,8 +1225,7 @@ export default function CoachSessions() {
         savedSession =
           updatedSession
 
-        const existingAssignments =
-          editingSession
+        const existingAssignments =editingSession
             .coach_training_session_players ||
           []
 
@@ -1173,94 +1400,37 @@ export default function CoachSessions() {
         }
       }
 
-      if (googleSyncEnabled) {
+      /*
+       * Direct server-side Google Calendar sync.
+       *
+       * Always call this after the ShuttleTrack session and assignments
+       * are saved. It must not depend on the Coach's own Google Calendar
+       * setting because connected assigned Players should still receive
+       * the event even when the Coach is not connected.
+       */
+      if (savedSession?.id) {
         try {
-          await ensureGoogleCalendarAccess()
-
-          const selectedPlayerNames =
-            sessionForm.players
-              .map(
-                playerId =>
-                  studentMap.get(
-                    String(playerId)
-                  )?.name
-              )
-              .filter(Boolean)
-
-          const googlePayload = {
-            title:
-              `ShuttleTrack · ${sessionForm.type}`,
-            date:
-              sessionForm.date,
-            startTime:
-              sessionForm.startTime,
-            endTime:
-              sessionForm.endTime,
-            venue:
-              sessionForm.venue.trim(),
-            scheduleType:
-              'Coach Training',
-            description: [
-              'ShuttleTrack coach training session',
-              selectedPlayerNames.length
-                ? `Players: ${selectedPlayerNames.join(', ')}`
-                : '',
-              sessionForm.notes.trim(),
-            ]
-              .filter(Boolean)
-              .join('\n'),
-          }
+          const calendarSync =
+            await syncShuttleTrackGoogleCalendar({
+              action: 'upsert',
+              sourceType: 'coach_session',
+              sourceId: savedSession.id,
+            })
 
           if (
-            editingSession?.google_event_id
+            Array.isArray(calendarSync?.errors) &&
+            calendarSync.errors.length > 0
           ) {
-            await updateGoogleCalendarEvent({
-              eventId:
-                editingSession.google_event_id,
-              ...googlePayload,
-            })
-          } else {
-            const googleEvent =
-              await createGoogleCalendarEvent(
-                googlePayload
-              )
-
-            if (
-              googleEvent?.id &&
-              savedSession?.id
-            ) {
-              const {
-                error: googleIdError,
-              } = await supabase
-                .from(
-                  'coach_training_sessions'
-                )
-                .update({
-                  google_event_id:
-                    googleEvent.id,
-                })
-                .eq(
-                  'id',
-                  savedSession.id
-                )
-                .eq(
-                  'coach_user_id',
-                  user.id
-                )
-
-              if (googleIdError) {
-                console.error(
-                  'Unable to save Google Calendar event ID:',
-                  googleIdError
-                )
-              }
-            }
+            console.error(
+              'Some Google Calendar targets could not be synced:',
+              calendarSync.errors
+            )
           }
         } catch (calendarError) {
           console.error(
             editingSession
-              ? 'Coach Google Calendar update error:'
-              : 'Coach Google Calendar event creation error:',
+              ? 'Direct Google Calendar session update error:'
+              : 'Direct Google Calendar session creation error:',
             calendarError
           )
 
@@ -1271,7 +1441,7 @@ export default function CoachSessions() {
                 : 'Session saved'
             } in ShuttleTrack, but Google Calendar sync failed: ${
               calendarError?.message ||
-              'Unable to sync the Google Calendar event.'
+              'Unable to sync connected Google Calendars.'
             }`
           )
         }
@@ -1480,30 +1650,40 @@ export default function CoachSessions() {
     setError('')
 
     try {
-      if (
-        googleSyncEnabled &&
-        deleteTarget.google_event_id
-      ) {
-        try {
-          await ensureGoogleCalendarAccess()
-
-          await deleteGoogleCalendarEvent({
-            eventId:
-              deleteTarget.google_event_id,
+      /*
+       * Remove linked Google Calendar events before deleting the
+       * ShuttleTrack session because the Edge Function verifies that
+       * this Coach owns the source session.
+       */
+      try {
+        const calendarSync =
+          await syncShuttleTrackGoogleCalendar({
+            action: 'delete',
+            sourceType: 'coach_session',
+            sourceId: deleteTarget.id,
           })
-        } catch (calendarError) {
-          console.error(
-            'Google Calendar delete error:',
-            calendarError
-          )
 
-          setError(
-            `The ShuttleTrack session will still be deleted, but its Google Calendar event could not be removed: ${
-              calendarError?.message ||
-              'Unable to remove the Google Calendar event.'
-            }`
+        if (
+          Array.isArray(calendarSync?.errors) &&
+          calendarSync.errors.length > 0
+        ) {
+          console.error(
+            'Some Google Calendar events could not be removed:',
+            calendarSync.errors
           )
         }
+      } catch (calendarError) {
+        console.error(
+          'Direct Google Calendar delete error:',
+          calendarError
+        )
+
+        setError(
+          `The ShuttleTrack session will still be deleted, but connected Google Calendar events could not all be removed: ${
+            calendarError?.message ||
+            'Unable to remove connected Google Calendar events.'
+          }`
+        )
       }
 
       const [
@@ -1997,8 +2177,7 @@ export default function CoachSessions() {
                   color:
                     status === 'Completed'
                       ? 'var(--text-muted, #6B7280)'
-                      : '#00976C',
-                  fontSize: 12,
+                      : '#00976C',fontSize: 12,
                   fontWeight: 700,
                   padding: '3px 10px',
                   borderRadius: 20,
@@ -2997,8 +3176,7 @@ export default function CoachSessions() {
           }}
         >
           <div
-            className={styles.modal}
-            style={{
+            className={styles.modal}style={{
               maxWidth: 620,
               maxHeight: '90vh',
               overflowY: 'auto',
@@ -3020,6 +3198,33 @@ export default function CoachSessions() {
                 ✕
               </button>
             </div>
+
+            {(checkingAvailability || availabilityError) && (
+              <div
+                role={availabilityError ? 'alert' : 'status'}
+                style={{
+                  marginBottom: 14,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: availabilityError
+                    ? '1px solid color-mix(in srgb, #EF4444 30%, var(--line, #EEF1F8))'
+                    : '1px solid color-mix(in srgb, #2563EB 24%, var(--line, #EEF1F8))',
+                  background: availabilityError
+                    ? 'color-mix(in srgb, #EF4444 8%, var(--card, #FFFFFF))'
+                    : 'color-mix(in srgb, #2563EB 7%, var(--card, #FFFFFF))',
+                  color: availabilityError
+                    ? '#B91C1C'
+                    : 'var(--text, #0D1B3E)',
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  fontWeight: 700,
+                }}
+              >
+                {checkingAvailability
+                  ? 'Checking player availability...'
+                  : availabilityError}
+              </div>
+            )}
 
             {error && (
               <div
@@ -3470,7 +3675,11 @@ export default function CoachSessions() {
               <button
                 className={styles.btnPrimary}
                 onClick={handleSave}
-                disabled={saving}
+                disabled={
+                  saving ||
+                  checkingAvailability ||
+                  Boolean(availabilityError)
+                }
               >
                 {saving
                   ? editingSession

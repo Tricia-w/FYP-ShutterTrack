@@ -20,12 +20,9 @@ const sanitizePhone = value => {
 
 const getSavedTheme = () => {
   if (typeof window === 'undefined') return null
-
   const savedTheme = localStorage.getItem('shuttleTheme')
-
   if (savedTheme === 'dark') return true
   if (savedTheme === 'light') return false
-
   return null
 }
 
@@ -38,13 +35,11 @@ const isValidEmail = value => {
 export default function CoachSettings() {
   const navigate = useNavigate()
   const { user, refreshProfile, logout } = useAuth()
-
   const [form, setForm] = useState({
     name: '',
     email: '',
     phone: '',
   })
-
   const [settings, setSettings] = useState({
     darkMode: getInitialDarkMode(),
     playerRequestReminder: true,
@@ -54,27 +49,24 @@ export default function CoachSettings() {
     profilePublic: true,
     acceptingPlayers: true,
   })
-
   const [lastUpdated, setLastUpdated] = useState('—')
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
-
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [requestingDelete, setRequestingDelete] = useState(false)
   const [deletionReason, setDeletionReason] = useState('')
+  const [approvedDeletionRequest, setApprovedDeletionRequest] = useState(null)
+  const [deletionDecisionBusy, setDeletionDecisionBusy] = useState(false)
   const [loggingOutOtherDevices, setLoggingOutOtherDevices] =
     useState(false)
-
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [accountSaveStatus, setAccountSaveStatus] = useState('')
   const [accountSaveError, setAccountSaveError] = useState('')
-
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [changingEmail, setChangingEmail] = useState(false)
   const [emailChangeMessage, setEmailChangeMessage] = useState('')
   const [emailChangeError, setEmailChangeError] = useState('')
-
   const accountSaveTimerRef = useRef(null)
   const accountLoadedRef = useRef(false)
   const lastSavedAccountRef = useRef({
@@ -84,7 +76,6 @@ export default function CoachSettings() {
 
   useEffect(() => {
     const theme = settings.darkMode ? 'dark' : 'light'
-
     document.documentElement.setAttribute('data-theme', theme)
     document.body.setAttribute('data-theme', theme)
     localStorage.setItem('shuttleTheme', theme)
@@ -96,9 +87,7 @@ export default function CoachSettings() {
         setLoading(false)
         return
       }
-
       setLoading(true)
-
       try {
         const [
           appUserResult,
@@ -110,7 +99,6 @@ export default function CoachSettings() {
             .select('full_name, email, updated_at')
             .eq('user_id', user.id)
             .maybeSingle(),
-
           supabase
             .from('coach_profiles')
             .select(
@@ -118,36 +106,30 @@ export default function CoachSettings() {
             )
             .eq('user_id', user.id)
             .maybeSingle(),
-
           supabase
             .from('user_settings')
             .select('*')
             .eq('user_id', user.id)
             .maybeSingle(),
         ])
-
         if (appUserResult.error) {
           console.error('Load app user error:', appUserResult.error)
         }
-
         if (coachProfileResult.error) {
           console.error(
             'Load coach profile error:',
             coachProfileResult.error
           )
         }
-
         if (settingsResult.error) {
           console.error(
             'Load coach settings error:',
             settingsResult.error
           )
         }
-
         const appUser = appUserResult.data
         const coachProfile = coachProfileResult.data
         const savedSettings = settingsResult.data
-
         const loadedForm = {
           name:
             coachProfile?.display_name ||
@@ -157,39 +139,31 @@ export default function CoachSettings() {
           email: user.email || appUser?.email || '',
           phone: sanitizePhone(coachProfile?.phone),
         }
-
         setForm(loadedForm)
-
         lastSavedAccountRef.current = {
           name: loadedForm.name.trim(),
           phone: loadedForm.phone.trim(),
         }
-
         setSettings({
           darkMode:
             getSavedTheme() ??
             readBool(savedSettings?.dark_mode, false),
-
           playerRequestReminder: readBool(
             savedSettings?.coach_player_request_reminder,
             true
           ),
-
           sessionReminder: readBool(
             savedSettings?.coach_session_reminder,
             true
           ),
-
           progressReminder: readBool(
             savedSettings?.coach_progress_reminder,
             true
           ),
-
           soundEnabled: readBool(
             savedSettings?.notification_sound_enabled,
             true
           ),
-
           profilePublic: readBool(
             coachProfile?.profile_public,
             readBool(
@@ -197,24 +171,20 @@ export default function CoachSettings() {
               true
             )
           ),
-
           acceptingPlayers: readBool(
             coachProfile?.accepting_players,
             true
           ),
         })
-
         const latestUpdate =
           savedSettings?.updated_at ||
           coachProfile?.updated_at ||
           appUser?.updated_at
-
         setLastUpdated(
           latestUpdate
             ? new Date(latestUpdate).toLocaleString('en-MY')
             : '—'
         )
-
         accountLoadedRef.current = true
       } catch (error) {
         console.error('Coach settings load error:', error)
@@ -225,7 +195,6 @@ export default function CoachSettings() {
         setLoading(false)
       }
     }
-
     fetchSettings()
   }, [user])
 
@@ -238,26 +207,139 @@ export default function CoachSettings() {
 
   const getAuthUser = useCallback(async () => {
     const { data, error } = await supabase.auth.getUser()
-
     if (error || !data?.user) {
       throw new Error('Please log in again.')
     }
-
     return data.user
   }, [])
+
+  const loadApprovedDeletionRequest = useCallback(async () => {
+    try {
+      const authUser = await getAuthUser()
+      const { data, error } = await supabase
+        .from('account_deletion_requests')
+        .select(
+          'id, status, reviewed_at, user_confirmed_at, scheduled_delete_at'
+        )
+        .eq('user_id', authUser.id)
+        .eq('status', 'approved')
+        .order('requested_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      setApprovedDeletionRequest(data || null)
+    } catch (error) {
+      console.error(
+        'Coach deletion approval load error:',
+        error
+      )
+    }
+  }, [getAuthUser])
+
+  useEffect(() => {
+    let active = true
+    let channel = null
+    const setupDeletionApprovalListener = async () => {
+      try {
+        const authUser = await getAuthUser()
+        if (!active) return
+        await loadApprovedDeletionRequest()
+        channel = supabase
+          .channel(`account-deletion-approval-${authUser.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'account_deletion_requests',
+              filter: `user_id=eq.${authUser.id}`,
+            },
+            loadApprovedDeletionRequest
+          )
+          .subscribe()
+      } catch (error) {
+        console.error(
+          'Coach deletion approval listener error:',
+          error
+        )
+      }
+    }
+    setupDeletionApprovalListener()
+    return () => {
+      active = false
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [getAuthUser, loadApprovedDeletionRequest])
+
+  const handleConfirmApprovedDeletion = async () => {
+    if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
+    setDeletionDecisionBusy(true)
+    try {
+      const { error } = await supabase.rpc(
+        'confirm_account_deletion',
+        {
+          p_request_id: approvedDeletionRequest.id,
+        }
+      )
+      if (error) throw error
+      await loadApprovedDeletionRequest()
+      alert(
+        'Deletion confirmed. Your account is scheduled for permanent deletion 24 hours from now.'
+      )
+    } catch (error) {
+      console.error(
+        'Coach confirm account deletion error:',
+        error
+      )
+      alert(
+        error?.message ||
+          'Unable to confirm account deletion.'
+      )
+    } finally {
+      setDeletionDecisionBusy(false)
+    }
+  }
+
+  const handleCancelApprovedDeletion = async () => {
+    if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
+    setDeletionDecisionBusy(true)
+    try {
+      const { error } = await supabase.rpc(
+        'cancel_account_deletion',
+        {
+          p_request_id: approvedDeletionRequest.id,
+        }
+      )
+      if (error) throw error
+      setApprovedDeletionRequest(null)
+      alert(
+        'Account deletion has been cancelled. Your account will remain active.'
+      )
+    } catch (error) {
+      console.error(
+        'Coach cancel account deletion error:',
+        error
+      )
+      alert(
+        error?.message ||
+          'Unable to cancel account deletion.'
+      )
+    } finally {
+      setDeletionDecisionBusy(false)
+    }
+  }
 
   const saveAccountSettings = useCallback(
     async currentForm => {
       const authUser = await getAuthUser()
       const now = new Date().toISOString()
-
       const cleanName = currentForm.name.trim()
       const cleanPhone = sanitizePhone(currentForm.phone)
-
       if (!cleanName) {
         throw new Error('Full name is required.')
       }
-
       /*
        * Do not update app_users here.
        *
@@ -276,15 +358,12 @@ export default function CoachSettings() {
           },
           { onConflict: 'user_id' }
         )
-
       if (coachProfileError) {
         throw coachProfileError
       }
-
       setLastUpdated(
         new Date(now).toLocaleString('en-MY')
       )
-
       window.dispatchEvent(
         new CustomEvent('profile-updated', {
           detail: {
@@ -292,7 +371,6 @@ export default function CoachSettings() {
           },
         })
       )
-
       if (refreshProfile) {
         await refreshProfile()
       }
@@ -304,18 +382,14 @@ export default function CoachSettings() {
     if (!accountLoadedRef.current || loading) {
       return undefined
     }
-
     const normalizedForm = {
       name: form.name.trim(),
       phone: form.phone.trim(),
     }
-
     const lastSaved = lastSavedAccountRef.current
-
     const hasAccountChanges =
       normalizedForm.name !== lastSaved.name ||
       normalizedForm.phone !== lastSaved.phone
-
     /*
      * Do nothing when the page first loads or when the form
      * still matches the last successfully saved values.
@@ -325,23 +399,17 @@ export default function CoachSettings() {
       setAccountSaveError('')
       return undefined
     }
-
     if (accountSaveTimerRef.current) {
       window.clearTimeout(accountSaveTimerRef.current)
     }
-
     setAccountSaveStatus('Saving...')
     setAccountSaveError('')
-
     accountSaveTimerRef.current = window.setTimeout(
       async () => {
         try {
           await saveAccountSettings(form)
-
           lastSavedAccountRef.current = normalizedForm
-
           setAccountSaveStatus('Saved automatically')
-
           window.setTimeout(() => {
             setAccountSaveStatus('')
           }, 1800)
@@ -350,7 +418,6 @@ export default function CoachSettings() {
             'Coach account autosave error:',
             error
           )
-
           setAccountSaveStatus('Could not save')
           setAccountSaveError(
             error.message ||
@@ -360,14 +427,12 @@ export default function CoachSettings() {
       },
       700
     )
-
     return () => {
       if (accountSaveTimerRef.current) {
         window.clearTimeout(accountSaveTimerRef.current)
       }
     }
   }, [form, loading, saveAccountSettings])
-
   const SETTINGS_COLUMN_MAP = {
     darkMode: 'dark_mode',
     playerRequestReminder: 'coach_player_request_reminder',
@@ -379,26 +444,20 @@ export default function CoachSettings() {
 
   const toggle = async key => {
     const nextValue = !settings[key]
-
     setSettings(current => ({
       ...current,
       [key]: nextValue,
     }))
-
     if (key === 'darkMode') {
       const theme = nextValue ? 'dark' : 'light'
-
       document.documentElement.setAttribute('data-theme', theme)
       document.body.setAttribute('data-theme', theme)
       localStorage.setItem('shuttleTheme', theme)
     }
-
     setAutoSaveStatus('Saving...')
-
     try {
       const authUser = await getAuthUser()
       const now = new Date().toISOString()
-
       if (key === 'acceptingPlayers') {
         const { error } = await supabase
           .from('coach_profiles')
@@ -411,7 +470,6 @@ export default function CoachSettings() {
             },
             { onConflict: 'user_id' }
           )
-
         if (error) throw error
       } else if (key === 'profilePublic') {
         const [
@@ -429,7 +487,6 @@ export default function CoachSettings() {
               },
               { onConflict: 'user_id' }
             ),
-
           supabase
             .from('user_settings')
             .upsert(
@@ -441,15 +498,12 @@ export default function CoachSettings() {
               { onConflict: 'user_id' }
             ),
         ])
-
         if (coachProfileSave.error) {
           throw coachProfileSave.error
         }
-
         if (userSettingsSave.error) {
           throw userSettingsSave.error
         }
-
         window.dispatchEvent(
           new CustomEvent(
             'coach-profile-visibility-updated',
@@ -462,9 +516,7 @@ export default function CoachSettings() {
         )
       } else {
         const column = SETTINGS_COLUMN_MAP[key]
-
         if (!column) return
-
         const { error } = await supabase
           .from('user_settings')
           .upsert(
@@ -475,10 +527,8 @@ export default function CoachSettings() {
             },
             { onConflict: 'user_id' }
           )
-
         if (error) throw error
       }
-
       if (key === 'soundEnabled') {
         window.dispatchEvent(
           new CustomEvent('notification-sound-updated', {
@@ -488,24 +538,19 @@ export default function CoachSettings() {
           })
         )
       }
-
       setLastUpdated(new Date(now).toLocaleString('en-MY'))
       setAutoSaveStatus('Saved automatically')
-
       window.setTimeout(() => {
         setAutoSaveStatus('')
       }, 1800)
     } catch (error) {
       console.error('Coach setting autosave error:', error)
-
       setSettings(current => ({
         ...current,
         [key]: !nextValue,
       }))
-
       if (key === 'darkMode') {
         const revertedTheme = !nextValue ? 'dark' : 'light'
-
         document.documentElement.setAttribute(
           'data-theme',
           revertedTheme
@@ -519,7 +564,6 @@ export default function CoachSettings() {
           revertedTheme
         )
       }
-
       setAutoSaveStatus('Could not save')
     }
   }
@@ -532,7 +576,6 @@ export default function CoachSettings() {
 
   const closeEmailChangeModal = () => {
     if (changingEmail) return
-
     setShowEmailModal(false)
     setNewEmail('')
     setEmailChangeError('')
@@ -540,40 +583,31 @@ export default function CoachSettings() {
 
   const handleRequestEmailChange = async () => {
     if (changingEmail) return
-
     const cleanEmail = newEmail.trim().toLowerCase()
     const currentEmail = form.email.trim().toLowerCase()
-
     setEmailChangeError('')
-
     if (!cleanEmail) {
       setEmailChangeError('Please enter your new email address.')
       return
     }
-
     if (!isValidEmail(cleanEmail)) {
       setEmailChangeError('Please enter a valid email address.')
       return
     }
-
     if (cleanEmail === currentEmail) {
       setEmailChangeError(
         'The new email address must be different from your current email.'
       )
       return
     }
-
     setChangingEmail(true)
     setEmailChangeMessage('')
-
     try {
       await getAuthUser()
-
       const redirectUrl =
         typeof window !== 'undefined'
           ? `${window.location.origin}${window.location.pathname}`
           : undefined
-
       const { error } = await supabase.auth.updateUser(
         {
           email: cleanEmail,
@@ -584,9 +618,7 @@ export default function CoachSettings() {
             }
           : undefined
       )
-
       if (error) throw error
-
       setShowEmailModal(false)
       setNewEmail('')
       setEmailChangeError('')
@@ -595,7 +627,6 @@ export default function CoachSettings() {
       )
     } catch (error) {
       console.error('Change email error:', error)
-
       setEmailChangeError(
         error?.message ||
           'Unable to send the email change verification.'
@@ -613,28 +644,21 @@ export default function CoachSettings() {
         scope: 'local',
       })
     }
-
     navigate('/')
   }
 
   const handleLogoutOtherDevices = async () => {
     if (loggingOutOtherDevices) return
-
     const confirmed = window.confirm(
       'Log out your account from all other browsers and devices? This browser will stay logged in.'
     )
-
     if (!confirmed) return
-
     setLoggingOutOtherDevices(true)
-
     try {
       const { error } = await supabase.auth.signOut({
         scope: 'others',
       })
-
       if (error) throw error
-
       alert(
         'Your account has been logged out from all other browsers and devices. This browser is still logged in.'
       )
@@ -643,7 +667,6 @@ export default function CoachSettings() {
         'Logout other devices error:',
         error
       )
-
       alert(
         error?.message ||
           'Unable to log out the other devices.'
@@ -655,19 +678,14 @@ export default function CoachSettings() {
 
   const handleRequestDeleteAccount = async () => {
     if (requestingDelete) return
-
     const cleanReason = deletionReason.trim()
-
     if (!cleanReason) {
       alert('Please enter a reason for requesting account deletion.')
       return
     }
-
     setRequestingDelete(true)
-
     try {
       const authUser = await getAuthUser()
-
       const { error } = await supabase
         .from('account_deletion_requests')
         .insert({
@@ -678,19 +696,15 @@ export default function CoachSettings() {
           reason: cleanReason,
           status: 'pending',
         })
-
       if (error) {
         if (error.code === '23505') {
           alert('You already have a pending account deletion request.')
           return
         }
-
         throw error
       }
-
       setShowDeleteModal(false)
       setDeletionReason('')
-
       alert(
         'Your account deletion request has been submitted. You can continue using your account while the admin reviews it.'
       )
@@ -704,7 +718,6 @@ export default function CoachSettings() {
       setRequestingDelete(false)
     }
   }
-
   const ToggleSwitch = ({ checked, onChange }) => (
     <button
       type="button"
@@ -739,7 +752,6 @@ export default function CoachSettings() {
       />
     </button>
   )
-
   const SmallButton = ({
     children,
     onClick,
@@ -779,7 +791,6 @@ export default function CoachSettings() {
       {children}
     </button>
   )
-
   const SettingLine = ({
     label,
     checked,
@@ -788,7 +799,6 @@ export default function CoachSettings() {
   }) => (
     <div className={styles.statRow}>
       <span className={styles.statLabel}>{label}</span>
-
       <span
         className={styles.statVal}
         style={{
@@ -808,7 +818,6 @@ export default function CoachSettings() {
             {value}
           </span>
         )}
-
         <ToggleSwitch
           checked={checked}
           onChange={onChange}
@@ -816,11 +825,9 @@ export default function CoachSettings() {
       </span>
     </div>
   )
-
   if (loading && !showLoader) {
     return null
   }
-
   if (showLoader) {
     return (
       <div className={styles.card}>
@@ -836,7 +843,6 @@ export default function CoachSettings() {
         subtitle="Manage account, notifications and privacy settings"
         showActions={false}
       />
-
       <div className={styles.g2}>
         <div>
           <div
@@ -855,7 +861,6 @@ export default function CoachSettings() {
               <div className={styles.cardTitle}>
                 Account Settings
               </div>
-
               <span
                 style={{
                   fontSize: 11,
@@ -872,7 +877,6 @@ export default function CoachSettings() {
                   'Changes save automatically'}
               </span>
             </div>
-
             {accountSaveError && (
               <div
                 style={{
@@ -889,24 +893,20 @@ export default function CoachSettings() {
                 {accountSaveError}
               </div>
             )}
-
             <div className={styles.formRow}>
               <label className={styles.formLabel}>
                 Full Name
               </label>
-
               <input
                 className={styles.formInput}
                 value={form.name}
                 onChange={set('name')}
               />
             </div>
-
             <div className={styles.formRow}>
               <label className={styles.formLabel}>
                 Email Address
               </label>
-
               <div
                 style={{
                   display: 'flex',
@@ -926,12 +926,10 @@ export default function CoachSettings() {
                     cursor: 'not-allowed',
                   }}
                 />
-
                 <SmallButton onClick={openEmailChangeModal}>
                   Change Email
                 </SmallButton>
               </div>
-
               <div
                 style={{
                   marginTop: 5,
@@ -943,7 +941,6 @@ export default function CoachSettings() {
                 Your current login email stays active until the new email is
                 verified.
               </div>
-
               {emailChangeMessage && (
                 <div
                   style={{
@@ -961,12 +958,10 @@ export default function CoachSettings() {
                 </div>
               )}
             </div>
-
             <div className={styles.formRow}>
               <label className={styles.formLabel}>
                 Phone Number
               </label>
-
               <input
                 className={styles.formInput}
                 value={form.phone}
@@ -980,7 +975,6 @@ export default function CoachSettings() {
                 autoComplete="tel"
                 placeholder="01xxxxxxxx"
               />
-
               <div
                 style={{
                   marginTop: 5,
@@ -991,7 +985,6 @@ export default function CoachSettings() {
                 Numbers only, maximum 11 digits.
               </div>
             </div>
-
             <div className={styles.statRow}>
               <span className={styles.statLabel}>
                 Last updated
@@ -1001,7 +994,6 @@ export default function CoachSettings() {
               </span>
             </div>
           </div>
-
           <div className={styles.card}>
             <div
               style={{
@@ -1015,7 +1007,6 @@ export default function CoachSettings() {
               <div className={styles.cardTitle}>
                 Appearance
               </div>
-
               <span
                 style={{
                   fontSize: 11,
@@ -1026,14 +1017,12 @@ export default function CoachSettings() {
                 Auto-saved
               </span>
             </div>
-
             <SettingLine
               label="Dark mode"
               value={settings.darkMode ? 'On' : 'Off'}
               checked={settings.darkMode}
               onChange={() => toggle('darkMode')}
             />
-
             <div style={{ marginTop: 12 }}>
               <span className={styles.badgeBlue}>
                 Current mode:{' '}
@@ -1042,7 +1031,6 @@ export default function CoachSettings() {
             </div>
           </div>
         </div>
-
         <div>
           <div
             className={styles.card}
@@ -1060,7 +1048,6 @@ export default function CoachSettings() {
               <div className={styles.cardTitle}>
                 Notifications & Privacy
               </div>
-
               <span
                 style={{
                   fontSize: 11,
@@ -1075,7 +1062,6 @@ export default function CoachSettings() {
                   'Changes save automatically'}
               </span>
             </div>
-
             <SettingLine
               label="New player request notifications"
               checked={settings.playerRequestReminder}
@@ -1083,7 +1069,6 @@ export default function CoachSettings() {
                 toggle('playerRequestReminder')
               }
             />
-
             <SettingLine
               label="Training session reminders"
               checked={settings.sessionReminder}
@@ -1091,7 +1076,6 @@ export default function CoachSettings() {
                 toggle('sessionReminder')
               }
             />
-
             <SettingLine
               label="Player progress reminders"
               checked={settings.progressReminder}
@@ -1099,7 +1083,6 @@ export default function CoachSettings() {
                 toggle('progressReminder')
               }
             />
-
             <SettingLine
               label="Notification sound"
               checked={settings.soundEnabled}
@@ -1107,13 +1090,11 @@ export default function CoachSettings() {
                 toggle('soundEnabled')
               }
             />
-
             <SettingLine
               label="Coach profile visible to players"
               checked={settings.profilePublic}
               onChange={() => toggle('profilePublic')}
             />
-
             <SettingLine
               label="Accepting new players"
               checked={settings.acceptingPlayers}
@@ -1122,12 +1103,10 @@ export default function CoachSettings() {
               }
             />
           </div>
-
           <div className={styles.card}>
             <div className={styles.cardTitle}>
               Data & Security
             </div>
-
             <div
               style={{
                 marginTop: 12,
@@ -1146,7 +1125,6 @@ export default function CoachSettings() {
               >
                 Active login sessions
               </div>
-
               <div
                 style={{
                   marginTop: 4,
@@ -1158,7 +1136,6 @@ export default function CoachSettings() {
                 Log out your account from other browsers and devices while
                 keeping this browser logged in.
               </div>
-
               <div style={{ marginTop: 10 }}>
                 <SmallButton
                   onClick={handleLogoutOtherDevices}
@@ -1170,7 +1147,6 @@ export default function CoachSettings() {
                 </SmallButton>
               </div>
             </div>
-
             <div
               style={{
                 display: 'flex',
@@ -1183,21 +1159,25 @@ export default function CoachSettings() {
               <SmallButton onClick={handleLogout}>
                 Log Out This Device
               </SmallButton>
-
               <SmallButton
                 danger
+                disabled={Boolean(approvedDeletionRequest)}
                 onClick={() => {
+                  if (approvedDeletionRequest) return
                   setDeletionReason('')
                   setShowDeleteModal(true)
                 }}
               >
-                Request Account Deletion
+                {approvedDeletionRequest?.user_confirmed_at
+                  ? 'Deletion Scheduled'
+                  : approvedDeletionRequest
+                    ? 'Deletion Approval Pending Confirmation'
+                    : 'Request Account Deletion'}
               </SmallButton>
             </div>
           </div>
         </div>
       </div>
-
       {showEmailModal && (
         <div
           className={styles.modalOverlay}
@@ -1218,7 +1198,6 @@ export default function CoachSettings() {
               <div className={styles.modalTitle}>
                 Change Login Email
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -1228,7 +1207,6 @@ export default function CoachSettings() {
                 ✕
               </button>
             </div>
-
             <p
               style={{
                 color: 'var(--text-muted, #8892A4)',
@@ -1238,7 +1216,6 @@ export default function CoachSettings() {
               Enter your new email address. Supabase will send the required
               confirmation email before changing your login email.
             </p>
-
             <div style={{ marginTop: 14 }}>
               <label
                 className={styles.formLabel}
@@ -1246,7 +1223,6 @@ export default function CoachSettings() {
               >
                 New Email Address
               </label>
-
               <input
                 id="coach-new-login-email"
                 type="email"
@@ -1268,7 +1244,6 @@ export default function CoachSettings() {
                 autoFocus
               />
             </div>
-
             {emailChangeError && (
               <div
                 style={{
@@ -1285,7 +1260,6 @@ export default function CoachSettings() {
                 {emailChangeError}
               </div>
             )}
-
             <div
               style={{
                 marginTop: 12,
@@ -1303,7 +1277,6 @@ export default function CoachSettings() {
               Your account will continue using this email until verification is
               completed.
             </div>
-
             <div
               style={{
                 display: 'flex',
@@ -1319,7 +1292,6 @@ export default function CoachSettings() {
               >
                 Cancel
               </SmallButton>
-
               <button
                 type="button"
                 onClick={handleRequestEmailChange}
@@ -1345,7 +1317,76 @@ export default function CoachSettings() {
           </div>
         </div>
       )}
-
+      {approvedDeletionRequest &&
+        !approvedDeletionRequest.user_confirmed_at && (
+        <div className={styles.modalOverlay}>
+          <div
+            className={styles.modal}
+            style={{ maxWidth: 500 }}
+          >
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>
+                Account Deletion Approved
+              </div>
+            </div>
+            <p
+              style={{
+                color: 'var(--text-muted, #8892A4)',
+                lineHeight: 1.6,
+              }}
+            >
+              Your account deletion request has been approved.
+              Please confirm whether you still want to permanently
+              delete your account.
+            </p>
+            <div
+              style={{
+                marginTop: 12,
+                padding: '11px 13px',
+                borderRadius: 10,
+                border: '1px solid #FDE68A',
+                background: '#FFFBEB',
+                color: '#92400E',
+                fontSize: 12,
+                lineHeight: 1.55,
+              }}
+            >
+              If you confirm, your account will be scheduled for
+              permanent deletion 24 hours later. If you choose to
+              keep your account, the deletion request will be
+              cancelled.
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 8,
+                marginTop: 18,
+                flexWrap: 'wrap',
+              }}
+            >
+              <SmallButton
+                onClick={handleCancelApprovedDeletion}
+                disabled={deletionDecisionBusy}
+              >
+                {deletionDecisionBusy
+                  ? 'Processing...'
+                  : 'No, Keep My Account'}
+              </SmallButton>
+              <SmallButton
+                solid
+                danger
+                onClick={handleConfirmApprovedDeletion}
+                disabled={deletionDecisionBusy}
+              >
+                {deletionDecisionBusy
+                  ? 'Processing...'
+                  : 'Yes, Confirm Deletion'}
+              </SmallButton>
+            </div>
+          </div>
+        </div>
+      )}
       {showDeleteModal && (
         <div
           className={styles.modalOverlay}
@@ -1367,7 +1408,6 @@ export default function CoachSettings() {
               <div className={styles.modalTitle}>
                 Request Account Deletion
               </div>
-
               <button
                 className={styles.modalClose}
                 onClick={() => {
@@ -1379,7 +1419,6 @@ export default function CoachSettings() {
                 ✕
               </button>
             </div>
-
             <p
               style={{
                 color: 'var(--text-muted, #8892A4)',
@@ -1389,7 +1428,6 @@ export default function CoachSettings() {
               This sends an account deletion request to the admin.
               Your account will not be deleted immediately.
             </p>
-
             <p
               style={{
                 color: 'var(--text-muted, #8892A4)',
@@ -1399,7 +1437,6 @@ export default function CoachSettings() {
               You will remain logged in and can continue using your
               account while the admin reviews your request.
             </p>
-
             <div style={{ marginTop: 14 }}>
               <label
                 className={styles.formLabel}
@@ -1407,7 +1444,6 @@ export default function CoachSettings() {
               >
                 Reason for deletion
               </label>
-
               <textarea
                 id="coach-deletion-reason"
                 className={styles.formInput}
@@ -1427,7 +1463,6 @@ export default function CoachSettings() {
                   lineHeight: 1.5,
                 }}
               />
-
               <div
                 style={{
                   marginTop: 5,
@@ -1439,7 +1474,6 @@ export default function CoachSettings() {
                 {deletionReason.length}/500
               </div>
             </div>
-
             <div
               style={{
                 display: 'flex',
@@ -1457,7 +1491,6 @@ export default function CoachSettings() {
               >
                 Cancel
               </SmallButton>
-
               <SmallButton
                 solid
                 danger
