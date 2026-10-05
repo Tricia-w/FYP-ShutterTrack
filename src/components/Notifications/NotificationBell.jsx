@@ -179,7 +179,12 @@ function getRoute(item) {
     /^\/?coach\/clubs(?:[/?#]|$)/i.test(rawUrl) ||
     /^\/?clubs(?:[/?#]|$)/i.test(rawUrl)
   ) {
-    return "/clubs";
+    const withoutOrigin = rawUrl.replace(/^https?:\/\/[^/]+/i, "");
+    const suffixMatch = withoutOrigin.match(
+      /^\/?(?:coach\/)?clubs(?<suffix>[?#].*)?$/i,
+    );
+    const suffix = suffixMatch?.groups?.suffix || "";
+    return `/clubs${suffix}`;
   }
   if (rawUrl) {
     const withoutOrigin = rawUrl.replace(/^https?:\/\/[^/]+/i, "");

@@ -47,6 +47,13 @@ const MODE_KEYWORDS = {
     "join request",
     "member removed",
     "member left",
+    "club_coach_request_accepted",
+    "club_coach_request_declined",
+    "club_coach_role_added",
+    "club_coach_role_removed",
+    "club_manager_added",
+    "club_manager_removed",
+    "club_owner_transferred",
   ],
 };
 
@@ -62,6 +69,13 @@ const COACH_ONLY_KEYWORDS = [
   "club_join_request",
   "club_request_cancelled",
   "club_member_left",
+  "club_coach_request_accepted",
+  "club_coach_request_declined",
+  "club_coach_role_added",
+  "club_coach_role_removed",
+  "club_manager_added",
+  "club_manager_removed",
+  "club_owner_transferred",
   "verification",
   "coach_verification",
   "admin",
@@ -570,7 +584,12 @@ export default function CoachNotificationBell({
     /^\/?coach\/clubs(?:[/?#]|$)/i.test(actionUrl);
     // Coach notification bell: keep club notifications in Coach mode.
     if (isClubNotification) {
-    navigate("/coach/clubs");
+    const withoutOrigin = actionUrl.replace(/^https?:\/\/[^/]+/i, "");
+    const suffixMatch = withoutOrigin.match(
+      /^\/?(?:coach\/)?clubs(?<suffix>[?#].*)?$/i,
+    );
+    const suffix = suffixMatch?.groups?.suffix || "";
+    navigate(`/coach/clubs${suffix}`);
     } else if (actionUrl) {
     navigate(actionUrl);
     }
