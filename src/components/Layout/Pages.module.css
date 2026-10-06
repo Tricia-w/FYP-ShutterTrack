@@ -11,7 +11,7 @@
 }
 
 .pageSub {
-  font-size: 13px;
+  font-size: 14px;
   color: #8892A4;
   margin-top: 4px;
 }
@@ -24,7 +24,7 @@
   border-left: 3px solid #1A5FFF;
   border-radius: 0 10px 10px 0;
   padding: 12px 16px;
-  font-size: 13px;
+  font-size: 14px;
   color: #0D1B3E;
   margin-bottom: 16px;
 }
@@ -42,7 +42,7 @@
   border: 1.5px solid #F59E0B;
   border-radius: 10px;
   padding: 12px 16px;
-  font-size: 13px;
+  font-size: 14px;
   color: #92400E;
 }
 
@@ -50,7 +50,7 @@
   background: #E0FAF3;
   border-radius: 10px;
   padding: 10px 14px;
-  font-size: 12px;
+  font-size: 13px;
   color: #00976C;
   font-weight: 600;
 }
@@ -60,20 +60,40 @@
 ========================= */
 .g2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.g2 > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .g3 {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.g3 > * {
+  min-width: 0;
 }
 
 .g4 {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+  width: 100%;
+  min-width: 0;
+}
+
+.g4 > * {
+  min-width: 0;
 }
 
 /* =========================
@@ -84,11 +104,15 @@
   border-radius: 16px;
   padding: 20px;
   box-shadow: 0 1px 3px rgba(13, 27, 62, 0.08), 0 4px 16px rgba(13, 27, 62, 0.05);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .cardTitle {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: #8892A4;
   letter-spacing: 0.8px;
   text-transform: uppercase;
@@ -145,20 +169,20 @@
 }
 
 .metricLbl {
-  font-size: 12px;
+  font-size: 14px;
   color: #8892A4;
   margin-top: 4px;
 }
 
 .deltaUp {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #00C48C;
   margin-top: 6px;
 }
 
 .deltaDown {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #EF4444;
   margin-top: 6px;
@@ -244,6 +268,11 @@
 ========================= */
 .playerReadablePage {
   font-size: 15px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .coachReadablePage .pageSub,
@@ -534,7 +563,7 @@
 .badgeGray,
 .badgeNavy {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 20px;
@@ -552,7 +581,7 @@
 }
 
 .skillLbl {
-  font-size: 12px;
+  font-size: 14px;
   color: #8892A4;
   width: 76px;
   text-align: right;
@@ -574,7 +603,7 @@
 }
 
 .skillVal {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   width: 28px;
   color: #0D1B3E;
@@ -591,7 +620,7 @@
 }
 
 .expBarLbl {
-  font-size: 12px;
+  font-size: 14px;
   width: 100px;
   color: #8892A4;
   flex-shrink: 0;
@@ -612,7 +641,7 @@
 }
 
 .expBarVal {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   width: 64px;
   text-align: right;
@@ -741,12 +770,12 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .table th {
   text-align: left;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: #8892A4;
   text-transform: uppercase;
@@ -836,7 +865,7 @@
 
 .formLabel {
   display: block;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: #8892A4;
   margin-bottom: 6px;
@@ -850,7 +879,7 @@
   padding: 10px 14px;
   border: 1.5px solid #C8D0E0;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 14px;
   color: #0D1B3E;
   background: #fff;
   outline: none;
@@ -916,14 +945,14 @@
 }
 
 .statLabel {
-  font-size: 13px;
+  font-size: 14px;
   color: #8892A4;
   flex-shrink: 0;
   min-width: 130px;
 }
 
 .statVal {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: #0D1B3E;
   text-align: right;
@@ -972,7 +1001,7 @@
   border-radius: 10px;
   background: #F6F8FF;
   margin-bottom: 7px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .psrLabel {
@@ -1006,7 +1035,7 @@
 }
 
 .h2hLbl {
-  font-size: 10px;
+  font-size: 12px;
   color: #8892A4;
   text-align: center;
   margin-top: 2px;
@@ -1066,7 +1095,7 @@
 }
 
 .scoreSetLabel {
-  font-size: 11px;
+  font-size: 13px;
   color: #8892A4;
   font-weight: 500;
   margin-bottom: 5px;
@@ -1159,7 +1188,7 @@
 }
 
 .scheduleDateMon {
-  font-size: 9px;
+  font-size: 11px;
   color: #8892A4;
   font-weight: 600;
   text-transform: uppercase;
@@ -1321,143 +1350,124 @@
   .pageHead {
     margin-bottom: 18px;
   }
-
   .pageHead > div {
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 12px !important;
   }
-
   .pageTitle {
     font-size: 24px;
     line-height: 1.2;
   }
-
   .pageSub {
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.35;
   }
-
   .tip {
     font-size: 12px;
     padding: 12px 14px;
     margin-bottom: 14px;
   }
-
   .g2,
   .g3 {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: minmax(0, 1fr) !important;
     gap: 14px;
+    width: 100%;
+    min-width: 0;
   }
-
+  .g2 > *,
+  .g3 > * {
+    min-width: 0;
+    max-width: 100%;
+  }
   .g4 {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 12px;
   }
-
   .card,
   .metric,
   .metricHighlight {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     box-sizing: border-box;
   }
-
   .metric,
   .metricHighlight {
     padding: 16px;
     min-width: 0;
   }
-
   .metricIcon {
     width: 34px;
     height: 34px;
     margin-bottom: 10px;
   }
-
   .metricVal {
     font-size: 24px;
   }
-
   .metricLbl {
     font-size: 11px;
   }
-
   .listRow {
     gap: 10px;
   }
-
   .statRow {
     align-items: flex-start;
     gap: 8px;
   }
-
   .statLabel {
     min-width: 90px;
     font-size: 12px;
   }
-
   .statVal {
     font-size: 12px;
   }
-
   .skillRow {
     gap: 8px;
   }
-
   .skillLbl {
     width: 62px;
     font-size: 11px;
   }
-
   .skillVal {
     width: 24px;
     font-size: 11px;
   }
-
   .expBarRow {
     gap: 8px;
   }
-
   .expBarLbl {
     width: 78px;
     font-size: 11px;
   }
-
   .expBarVal {
     width: 50px;
     font-size: 11px;
   }
-
   .tableWrap {
     width: 100%;
     overflow-x: auto;
   }
-
   .modalOverlay {
     padding: 12px;
     align-items: flex-start;
     overflow-y: auto;
   }
-
   .modal {
     padding: 20px;
     max-width: 100%;
   }
-
   .scoreGrid {
     grid-template-columns: 1fr;
   }
-
   .tabs {
     width: 100%;
     overflow-x: auto;
   }
-
   .tab {
     flex: 0 0 auto;
     padding: 8px 14px;
   }
-
   .btnPrimary,
   .btnOutline,
   .btnDanger {
@@ -1469,46 +1479,38 @@
   .pageTitle {
     font-size: 22px;
   }
-
   .g4 {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 10px;
   }
-
   .card {
     padding: 16px;
     border-radius: 14px;
   }
-
   .metric,
   .metricHighlight {
     padding: 16px;
     border-radius: 14px;
   }
-
   .metricIcon {
     width: 34px;
     height: 34px;
   }
-
   .metricVal {
     font-size: 22px;
   }
-
   .btnPrimary,
   .btnOutline,
   .btnDanger {
     padding: 8px 14px;
     font-size: 12px;
   }
-
   .formInput,
   .formSelect,
   .formTextarea {
     font-size: 12px;
     padding: 9px 12px;
   }
-
   .badgeGreen,
   .badgeRed,
   .badgeBlue,
@@ -1520,6 +1522,7 @@
     padding: 3px 8px;
   }
 }
+
 /* =========================
    FINAL DARK MODE FIXES
    Supports: html[data-theme='dark'], body.dark, .dark
@@ -1878,7 +1881,6 @@
 }
 
 /* ===== FINAL FITNESS DARK MODE FIX ===== */
-
 :global(html[data-theme='dark']) .metric,
 :global(body.dark) .metric,
 :global(.dark) .metric {
@@ -1948,4 +1950,45 @@
 :global(body.dark) .metric .metricIcon svg text,
 :global(.dark) .metric .metricIcon svg text {
   fill: #e5edff !important;
+}
+
+/* =========================
+   SHARED READABLE TEXT
+   Keeps all pages consistent with the current
+   Performance and Fitness readability.
+========================= */
+.card [style*='font-size: 8px'],
+.modal [style*='font-size: 8px'],
+.listRow [style*='font-size: 8px'] {
+  font-size: 10px !important;
+}
+
+.card [style*='font-size: 9px'],
+.modal [style*='font-size: 9px'],
+.listRow [style*='font-size: 9px'] {
+  font-size: 11px !important;
+}
+
+.card [style*='font-size: 10px'],
+.modal [style*='font-size: 10px'],
+.listRow [style*='font-size: 10px'] {
+  font-size: 12px !important;
+}
+
+.card [style*='font-size: 11px'],
+.modal [style*='font-size: 11px'],
+.listRow [style*='font-size: 11px'] {
+  font-size: 13px !important;
+}
+
+.card [style*='font-size: 12px'],
+.modal [style*='font-size: 12px'],
+.listRow [style*='font-size: 12px'] {
+  font-size: 14px !important;
+}
+
+.card [style*='font-size: 13px'],
+.modal [style*='font-size: 13px'],
+.listRow [style*='font-size: 13px'] {
+  font-size: 14px !important;
 }
