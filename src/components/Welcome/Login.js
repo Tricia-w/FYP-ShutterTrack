@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/supabase'
+
 function getFriendlyLoginError(error) {
   const code = String(error?.code || '').toLowerCase()
   const message = String(error?.message || '').toLowerCase()
@@ -31,9 +32,13 @@ function getFriendlyLoginError(error) {
   }
   return 'Unable to log in. Please try again.'
 }
+
 const RETURNING_REVERIFY_DAYS = 30
+
 const SESSION_HEARTBEAT_KEY = 'shuttleSessionHeartbeat'
+
 const SESSION_HEARTBEAT_MAX_AGE_MS = 10000
+
 const AUTH_REDIRECT_ORIGIN =
   String(window.location.origin || '')
     .trim()
@@ -41,6 +46,7 @@ const AUTH_REDIRECT_ORIGIN =
 // The QR code should always open the public ShuttleTrack site so it works
 // on mobile data, another Wi-Fi network, or a friend's phone.
 // You can override this later with REACT_APP_PUBLIC_APP_URL if the domain changes.
+
 const MOBILE_QR_URL =
   String(
     process.env.REACT_APP_PUBLIC_APP_URL ||
@@ -48,18 +54,17 @@ const MOBILE_QR_URL =
   )
     .trim()
     .replace(/\/$/, '')
+
 function getSafePostLoginRedirect(location) {
   const from = location.state?.from
   const redirectFromQuery =
     new URLSearchParams(location.search).get('redirect') || ''
   let redirectPath = redirectFromQuery
-
   if (!redirectPath && typeof from === 'string') {
     redirectPath = from
   } else if (!redirectPath && from?.pathname) {
     redirectPath = `${from.pathname}${from.search || ''}${from.hash || ''}`
   }
-
   if (!redirectPath) {
     redirectPath =
       sessionStorage.getItem('shuttlePostLoginRedirect') || ''
@@ -73,6 +78,7 @@ function getSafePostLoginRedirect(location) {
   }
   return redirectPath
 }
+
 function needsReturningReverification(lastSeenAt) {
   if (!lastSeenAt) return false
   const lastSeenMs = new Date(lastSeenAt).getTime()
@@ -82,6 +88,7 @@ function needsReturningReverification(lastSeenAt) {
     RETURNING_REVERIFY_DAYS * 24 * 60 * 60 * 1000
   return inactiveMs >= thresholdMs
 }
+
 async function sendReturningVerificationEmail(email) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
@@ -93,6 +100,51 @@ async function sendReturningVerificationEmail(email) {
   })
   if (error) throw error
 }
+
+function formatSuspensionCountdown(targetDate) {
+  if (!targetDate) return ''
+
+  const targetMs = new Date(targetDate).getTime()
+  if (!Number.isFinite(targetMs)) return ''
+
+  const remainingMs = Math.max(0, targetMs - Date.now())
+  const totalMinutes = Math.floor(remainingMs / 60000)
+  const days = Math.floor(totalMinutes / (24 * 60))
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
+  const minutes = totalMinutes % 60
+
+  if (remainingMs <= 0) {
+    return 'Suspension period has ended. Please try logging in again.'
+  }
+
+  const parts = []
+
+  if (days > 0) {
+    parts.push(`${days} day${days === 1 ? '' : 's'}`)
+  }
+
+  if (hours > 0 || days > 0) {
+    parts.push(`${hours} hour${hours === 1 ? '' : 's'}`)
+  }
+
+  parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`)
+
+  return `${parts.join(' ')} remaining`
+}
+
+function formatSuspensionEndDate(targetDate) {
+  if (!targetDate) return ''
+
+  const date = new Date(targetDate)
+
+  if (!Number.isFinite(date.getTime())) return ''
+
+  return date.toLocaleString('en-MY', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}
+
 function EyeIcon({ visible }) {
   if (visible) {
     return (
@@ -124,6 +176,7 @@ function EyeIcon({ visible }) {
     </svg>
   )
 }
+
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -137,12 +190,37 @@ export default function Login() {
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
   const [forgotLoading, setForgotLoading] = useState(false)
+  const [resendVerificationLoading, setResendVerificationLoading] =
+    useState(false)
+  const [showResendVerification, setShowResendVerification] =
+    useState(false)
+  const [suspendedUntil, setSuspendedUntil] = useState('')
+  const [suspensionCountdown, setSuspensionCountdown] = useState('')
   const [googleLoading, setGoogleLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [isDark, setIsDark] = useState(
     localStorage.getItem('shuttleLoginTheme') === 'dark',
   )
+  useEffect(() => {
+    if (!suspendedUntil) {
+      setSuspensionCountdown('')
+      return undefined
+    }
+
+    const updateCountdown = () => {
+      setSuspensionCountdown(
+        formatSuspensionCountdown(suspendedUntil),
+      )
+    }
+
+    updateCountdown()
+
+    const intervalId = window.setInterval(updateCountdown, 30000)
+
+    return () => window.clearInterval(intervalId)
+  }, [suspendedUntil])
+
   useEffect(() => {
     localStorage.setItem(
       'shuttleLoginTheme',
@@ -161,10 +239,23 @@ export default function Login() {
     }
     const blockedMessage =
       sessionStorage.getItem('shuttleLoginBlockedMessage')
+
+    const blockedSuspendedUntil =
+      sessionStorage.getItem('shuttleLoginSuspendedUntil')
+
     if (blockedMessage) {
       setError(blockedMessage)
       sessionStorage.removeItem('shuttleLoginBlockedMessage')
     }
+
+    if (blockedSuspendedUntil) {
+      setSuspendedUntil(blockedSuspendedUntil)
+      setSuspensionCountdown(
+        formatSuspensionCountdown(blockedSuspendedUntil),
+      )
+      sessionStorage.removeItem('shuttleLoginSuspendedUntil')
+    }
+
     async function checkBrowserSession() {
       const sessionOnly =
         localStorage.getItem('shuttleSessionOnly') === 'true'
@@ -190,19 +281,84 @@ export default function Login() {
     }
     checkBrowserSession()
   }, [locationEmail])
-  async function blockLoginWithMessage(message) {
+
+  async function blockLoginWithMessage(
+    message,
+    suspensionEnd = '',
+  ) {
     sessionStorage.setItem('shuttleLoginBlockedMessage', message)
+
+    if (suspensionEnd) {
+      sessionStorage.setItem(
+        'shuttleLoginSuspendedUntil',
+        suspensionEnd,
+      )
+    } else {
+      sessionStorage.removeItem('shuttleLoginSuspendedUntil')
+    }
+
     localStorage.removeItem('activeRole')
+
     try {
       await supabase.auth.signOut()
     } finally {
       setError(message)
+
+      if (suspensionEnd) {
+        setSuspendedUntil(suspensionEnd)
+        setSuspensionCountdown(
+          formatSuspensionCountdown(suspensionEnd),
+        )
+      }
     }
   }
+
+  async function handleResendVerification() {
+    const cleanEmail = email.trim().toLowerCase()
+    if (!cleanEmail) {
+      setError('Enter your email first.')
+      return
+    }
+    setResendVerificationLoading(true)
+    setError('')
+    setSuccess('')
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+        options: {
+          emailRedirectTo: `${AUTH_REDIRECT_ORIGIN}/login`,
+        },
+      })
+      if (resendError) throw resendError
+      setSuccess(
+        'A new verification email has been sent. Check Inbox, Spam, Junk, and Promotions.',
+      )
+    } catch (err) {
+      console.error('Resend verification error:', err)
+      const message = String(err?.message || '').toLowerCase()
+      if (
+        message.includes('rate limit') ||
+        message.includes('too many requests')
+      ) {
+        setError(
+          'Too many verification emails were requested. Please wait before trying again.',
+        )
+      } else {
+        setError('Unable to resend the verification email. Please try again.')
+      }
+    } finally {
+      setResendVerificationLoading(false)
+    }
+  }
+
   async function handleLogin(event) {
     event.preventDefault()
     setError('')
     setSuccess('')
+    setShowResendVerification(false)
+    setSuspendedUntil('')
+    setSuspensionCountdown('')
     setLoading(true)
     try {
       const cleanEmail = email.trim().toLowerCase()
@@ -219,6 +375,7 @@ export default function Login() {
       if (!user.email_confirmed_at) {
         await supabase.auth.signOut()
         setError('Verify your email before logging in.')
+        setShowResendVerification(true)
         return
       }
       if (rememberMe) {
@@ -241,7 +398,7 @@ export default function Login() {
         await supabase
           .from('app_users')
           .select(
-            'role, setup_completed, account_status, has_player_access, has_coach_access, removed_at, last_seen_at',
+            'role, setup_completed, account_status, has_player_access, has_coach_access, removed_at, last_seen_at, suspended_until',
           )
           .eq('user_id', user.id)
           .maybeSingle()
@@ -262,17 +419,50 @@ export default function Login() {
         )
         return
       }
-      if (accountStatus === 'disabled') {
+      if (
+        accountStatus === 'terminated' ||
+        accountStatus === 'disabled'
+      ) {
         await blockLoginWithMessage(
-          'Your ShuttleTrack account has been disabled by an administrator. You cannot access your account at this time.',
+          'Your ShuttleTrack account has been terminated by an administrator. Access can only be restored by an administrator. For assistance, contact admin@gmail.com.',
         )
         return
       }
+
       if (accountStatus === 'suspended') {
-        await blockLoginWithMessage(
-          'Your ShuttleTrack account is currently suspended.',
-        )
-        return
+        const suspensionEnd = appUser.suspended_until || ''
+
+        if (suspensionEnd) {
+          const suspensionEndMs = new Date(suspensionEnd).getTime()
+
+          if (
+            Number.isFinite(suspensionEndMs) &&
+            suspensionEndMs <= Date.now()
+          ) {
+            const { error: reactivateError } = await supabase
+              .from('app_users')
+              .update({
+                account_status: 'active',
+                suspended_until: null,
+              })
+              .eq('user_id', user.id)
+
+            if (reactivateError) throw reactivateError
+          } else {
+            setSuspendedUntil(suspensionEnd)
+
+            await blockLoginWithMessage(
+              'Your ShuttleTrack account is currently suspended.',
+              suspensionEnd,
+            )
+            return
+          }
+        } else {
+          await blockLoginWithMessage(
+            'Your ShuttleTrack account is currently suspended. No suspension end date has been set.',
+          )
+          return
+        }
       }
       if (accountStatus !== 'active') {
         await blockLoginWithMessage(
@@ -438,11 +628,18 @@ export default function Login() {
       )
     } catch (err) {
       console.error('Login error:', err)
+      const code = String(err?.code || '').toLowerCase()
+      const message = String(err?.message || '').toLowerCase()
+      const emailNotConfirmed =
+        code === 'email_not_confirmed' ||
+        message.includes('email not confirmed')
+      setShowResendVerification(emailNotConfirmed)
       setError(getFriendlyLoginError(err))
     } finally {
       setLoading(false)
     }
   }
+
   async function handleForgotPassword() {
     setError('')
     setSuccess('')
@@ -492,6 +689,7 @@ export default function Login() {
       setForgotLoading(false)
     }
   }
+
   async function handleGoogle() {
     setError('')
     setSuccess('')
@@ -868,13 +1066,68 @@ export default function Login() {
                 : '1px solid #FECACA',
               padding: '10px 14px',
               borderRadius: 10,
-              marginBottom: 16,
+              marginBottom: showResendVerification ? 10 : 16,
               fontSize: 13,
               lineHeight: 1.5,
             }}
           >
-            {error}
+            <div>{error}</div>
+
+            {suspendedUntil && (
+              <div
+                style={{
+                  marginTop: 8,
+                  fontWeight: 700,
+                  lineHeight: 1.6,
+                }}
+              >
+                <div>
+                  Access will be restored on{' '}
+                  {formatSuspensionEndDate(suspendedUntil)}.
+                </div>
+
+                {suspensionCountdown && (
+                  <div style={{ marginTop: 2 }}>
+                    {suspensionCountdown}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+        )}
+        {showResendVerification && (
+          <button
+            type="button"
+            onClick={handleResendVerification}
+            disabled={
+              resendVerificationLoading || loading || googleLoading
+            }
+            style={{
+              width: '100%',
+              marginBottom: 16,
+              padding: '11px 14px',
+              borderRadius: 10,
+              border: isDark
+                ? '1px solid #3A455E'
+                : '1px solid #BFDBFE',
+              background: isDark ? '#1E293B' : '#EFF6FF',
+              color: '#1A5FFF',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor:
+                resendVerificationLoading || loading || googleLoading
+                  ? 'not-allowed'
+                  : 'pointer',
+              opacity:
+                resendVerificationLoading || loading || googleLoading
+                  ? 0.7
+                  : 1,
+            }}
+          >
+            {resendVerificationLoading
+              ? 'Sending...'
+              : 'Resend Verification Email'}
+          </button>
         )}
         {success && (
           <div

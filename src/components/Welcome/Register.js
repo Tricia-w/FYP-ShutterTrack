@@ -436,7 +436,7 @@ export default function Register() {
       setRegistrationComplete(true)
       setError('')
       setSuccess(
-        'Your account was created, but ShuttleTrack could not confirm that the verification email was sent. Use "Resend verification email" below if you do not receive it.',
+        'Account created successfully. Please check your email and verify your account before logging in. If the verification email is not visible, use "Resend verification email" below.',
       )
       return
     }
@@ -502,8 +502,8 @@ export default function Register() {
             setError('')
             setSuccess(
               resendError
-                ? 'Your account was created successfully and is waiting for email verification. Please check your email for the verification link.'
-                : 'Your account was created successfully. A verification email has been sent. Please check your email and verify your account before logging in.',
+                ? 'Account created successfully. Please check your email and verify your account before logging in.'
+                : 'Account created successfully. Please check your email and verify your account before logging in.',
             )
             setLoading(false)
             return
@@ -546,7 +546,7 @@ export default function Register() {
           setRegistrationComplete(true)
           setError('')
           setSuccess(
-            'Your account was created successfully. Please verify your email before logging in. If the email is not visible, use "Resend verification email" below.',
+            'Account created successfully. Please check your email and verify your account before logging in.',
           )
           return
         }
@@ -570,7 +570,7 @@ export default function Register() {
       setVerificationEmail(cleanEmail)
       setRegistrationComplete(true)
       setSuccess(
-        'Your account was created successfully. Please verify your email before logging in.',
+        'Account created successfully. Please check your email and verify your account before logging in.',
       )
       return
     }
@@ -903,12 +903,16 @@ export default function Register() {
           {success && (
             <div
               style={{
-                background: '#10251C',
-                color: '#34D399',
+                background: isDark ? '#10251C' : '#ECFDF5',
+                color: isDark ? '#34D399' : '#047857',
+                border: isDark
+                  ? '1px solid #1F4A39'
+                  : '1px solid #A7F3D0',
                 padding: '11px 14px',
                 borderRadius: 10,
                 marginBottom: 16,
                 fontSize: 13,
+                fontWeight: 600,
                 lineHeight: 1.6,
               }}
             >
