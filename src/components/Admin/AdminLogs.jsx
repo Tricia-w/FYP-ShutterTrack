@@ -94,32 +94,89 @@ export default function AdminLogs() {
     setErrorMessage("");
 
     try {
-      const { data, error } = await supabase
-        .from("admin_activity_logs")
-        .select(`
-          id,
-          admin_user_id,
-          admin_name,
-          admin_email,
-          action,
-          detail,
-          action_type,
-          target_user_id,
-          target_name,
-          metadata,
-          created_at
-        `)
-        .order("created_at", { ascending: false })
-        .limit(500);
+      const { data, error } = await supabase.rpc(
+        "get_admin_activity_logs",
+        {
+          p_limit: 500,
+        }
+      );
 
       if (error) throw error;
 
-      setLogs(data || []);
+      const rows = data || [];
+
+      const missingAdminIds = [
+        ...new Set(
+          rows
+            .filter(
+              (row) =>
+                row.admin_user_id &&
+                (!row.admin_name || !row.admin_email)
+            )
+            .map((row) => row.admin_user_id)
+        ),
+      ];
+
+      let adminsById = new Map();
+
+      if (missingAdminIds.length > 0) {
+        const {
+          data: adminRows,
+          error: adminLookupError,
+        } = await supabase
+          .from("app_users")
+          .select(
+            "user_id, full_name, email, role"
+          )
+          .in("user_id", missingAdminIds);
+
+        if (adminLookupError) {
+          console.error(
+            "Unable to resolve activity log admin names:",
+            adminLookupError
+          );
+        } else {
+          adminsById = new Map(
+            (adminRows || []).map((row) => [
+              String(row.user_id),
+              row,
+            ])
+          );
+        }
+      }
+
+      const normalizedRows = rows.map((row) => {
+        const matchedAdmin = row.admin_user_id
+          ? adminsById.get(String(row.admin_user_id))
+          : null;
+
+        const resolvedName =
+          row.admin_name ||
+          matchedAdmin?.full_name ||
+          "Admin";
+
+        const resolvedEmail =
+          row.admin_email ||
+          matchedAdmin?.email ||
+          "";
+
+        return {
+          ...row,
+          admin_name:
+            String(resolvedName).trim() ===
+            "Admin"
+              ? "Admin"
+              : resolvedName,
+          admin_email: resolvedEmail,
+        };
+      });
+
+      setLogs(normalizedRows);
     } catch (error) {
       console.error("Unable to load activity logs:", error);
       setErrorMessage(
         error.message ||
-          "Unable to load activity logs. Run the supplied SQL setup first."
+          "Unable to load activity logs."
       );
     } finally {
       setLoading(false);
@@ -470,7 +527,7 @@ export default function AdminLogs() {
                   >
                     {log.admin_name ||
                       log.admin_email ||
-                      "Administrator"}
+                      "Admin"}
                   </div>
 
                   {log.admin_email &&

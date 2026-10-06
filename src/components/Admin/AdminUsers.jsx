@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
   Avatar,
@@ -12,38 +12,58 @@ import {
   buttonBase,
   inputStyle,
 } from "./AdminShared";
+
 const ACCOUNT_COLORS = {
   Active: { color: "#00976C", background: "#E0FAF3" },
   Suspended: { color: "#DC2626", background: "#FEE2E2" },
   Terminated: { color: "#6B7280", background: "#F3F4F6" },
 };
+
 const ACTIVITY_COLORS = {
   Online: { color: "#00976C", background: "#E0FAF3" },
   Active: { color: "#1A5FFF", background: "#E8EFFE" },
   Inactive: { color: "#D97706", background: "#FEF3C7" },
   "Never active": { color: "#6B7280", background: "#F3F4F6" },
 };
+
 const SECURITY_COLORS = {
+  Verified: {
+    color: "#00976C",
+    background: "#E0FAF3",
+  },
+  "Not verified": {
+    color: "#DC2626",
+    background: "#FEE2E2",
+  },
   "Reverify required": {
     color: "#B45309",
     background: "#FEF3C7",
   },
+  Unknown: {
+    color: "#6B7280",
+    background: "#F3F4F6",
+  },
 };
+
 const toUiAccountStatus = (value) => {
   const clean = String(value || "Active").trim().toLowerCase();
 
   if (clean === "suspended") return "Suspended";
+
   if (clean === "disabled" || clean === "terminated") return "Terminated";
+
   return "Active";
 };
 
 const toDatabaseAccountStatus = (value) => {
   if (value === "Terminated") return "disabled";
+
   return String(value || "Active").toLowerCase();
 };
 
 const getSuspendedUntil = (amount, unit) => {
   const value = Math.max(1, Number(amount) || 1);
+
   const date = new Date();
 
   if (unit === "weeks") {
@@ -57,6 +77,23 @@ const getSuspendedUntil = (amount, unit) => {
   }
 
   return date.toISOString();
+};
+
+const getRemainingSuspensionDays = (suspendedUntil) => {
+  if (!suspendedUntil) return 1;
+
+  const endMs = new Date(suspendedUntil).getTime();
+
+  if (!Number.isFinite(endMs)) return 1;
+
+  const remainingMs = endMs - Date.now();
+
+  if (remainingMs <= 0) return 1;
+
+  return Math.max(
+    1,
+    Math.ceil(remainingMs / (24 * 60 * 60 * 1000))
+  );
 };
 
 const formatSuspensionDate = (value) => {
@@ -76,6 +113,7 @@ function StatusPill({ value, colours }) {
     color: "#6B7280",
     background: "#F3F4F6",
   };
+
   return (
     <span
       style={{
@@ -91,18 +129,24 @@ function StatusPill({ value, colours }) {
       }}
     >
       {value}
+
     </span>
   );
 }
+
 export default function AdminUsers({
   users,
   currentAdminId,
   refreshUsers,
 }) {
   const [roleFilter, setRoleFilter] = useState("All");
+
   const [activityFilter, setActivityFilter] = useState("All");
+
   const [search, setSearch] = useState("");
+
   const [selected, setSelected] = useState(null);
+
   const [form, setForm] = useState({
     name: "",
     role: "Player",
@@ -110,51 +154,275 @@ export default function AdminUsers({
     suspensionAmount: 1,
     suspensionUnit: "days",
   });
+
   const [saving, setSaving] = useState(false);
+
   const [formError, setFormError] = useState("");
+
   const [showConfirmation, setShowConfirmation] = useState(false);
+
   const [successMessage, setSuccessMessage] = useState("");
+
   const [showRemoveConfirmation, setShowRemoveConfirmation] = useState(false);
+
   const [removing, setRemoving] = useState(false);
+
+  const [currentAdminIsSuper, setCurrentAdminIsSuper] = useState(false);
+  const [accessByUser, setAccessByUser] = useState({});
+  const [securityByUser, setSecurityByUser] = useState({});
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadCurrentAdminSecurity = async () => {
+      if (!currentAdminId) {
+        if (!cancelled) {
+          setCurrentAdminIsSuper(false);
+        }
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("app_users")
+        .select("is_super_admin")
+        .eq("user_id", currentAdminId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Unable to load Super Admin status:", error);
+
+        if (!cancelled) {
+          setCurrentAdminIsSuper(false);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setCurrentAdminIsSuper(Boolean(data?.is_super_admin));
+      }
+    };
+    loadCurrentAdminSecurity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAdminId]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadRoleAndSecurityDetails = async () => {
+      const userIds = [
+        ...new Set(
+          (users || [])
+            .map((item) => item.userId)
+            .filter(Boolean)
+        ),
+      ];
+
+      if (userIds.length === 0) {
+        if (!cancelled) {
+          setAccessByUser({});
+          setSecurityByUser({});
+        }
+        return;
+      }
+
+      const [accessResult, securityResult] = await Promise.all([
+        supabase
+          .from("app_users")
+          .select("user_id, has_player_access, has_coach_access")
+          .in("user_id", userIds),
+        supabase.rpc("admin_get_user_security_status"),
+      ]);
+
+      if (accessResult.error) {
+        console.error(
+          "Unable to load additional account roles:",
+          accessResult.error
+        );
+      } else if (!cancelled) {
+        setAccessByUser(
+          Object.fromEntries(
+            (accessResult.data || []).map((row) => [
+              row.user_id,
+              {
+                hasPlayerAccess: Boolean(row.has_player_access),
+                hasCoachAccess: Boolean(row.has_coach_access),
+              },
+            ])
+          )
+        );
+      }
+
+      if (securityResult.error) {
+        console.error(
+          "Unable to load email verification status:",
+          securityResult.error
+        );
+      } else if (!cancelled) {
+        setSecurityByUser(
+          Object.fromEntries(
+            (securityResult.data || []).map((row) => [
+              row.user_id,
+              {
+                emailConfirmedAt: row.email_confirmed_at || null,
+              },
+            ])
+          )
+        );
+      }
+    };
+    loadRoleAndSecurityDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [users]);
+
+  const getRole2 = (account) => {
+    const access = accessByUser[account.userId];
+
+    if (!access) return null;
+
+    if (account.role === "Player" && access.hasCoachAccess) {
+      return "Coach";
+    }
+
+    if (account.role === "Coach" && access.hasPlayerAccess) {
+      return "Player";
+    }
+
+    return null;
+  };
+
+  const accountHasRole = useCallback(
+    (account, role) => {
+      if (account.role === role) return true;
+
+      const access = accessByUser[account.userId];
+
+      if (role === "Player") {
+        return account.role === "Player" || access?.hasPlayerAccess === true;
+      }
+
+      if (role === "Coach") {
+        return account.role === "Coach" || access?.hasCoachAccess === true;
+      }
+
+      return account.role === role;
+    },
+    [accessByUser]
+  );
+
+  const getSecurityStatus = (account) => {
+    const hasPlayerRole = accountHasRole(account, "Player");
+
+    if (
+      hasPlayerRole &&
+      toUiAccountStatus(account.accountStatus) === "Active" &&
+      account.activityStatus === "Inactive"
+    ) {
+      return "Reverify required";
+    }
+
+    const security = securityByUser[account.userId];
+
+    if (security) {
+      return security.emailConfirmedAt ? "Verified" : "Not verified";
+    }
+
+    if (
+      account.emailConfirmedAt ||
+      account.email_confirmed_at ||
+      account.emailVerified === true
+    ) {
+      return "Verified";
+    }
+
+    if (account.emailVerified === false) {
+      return "Not verified";
+    }
+
+    return "Unknown";
+  };
+
   const counts = useMemo(
     () => ({
       All: users.length,
-      Player: users.filter((item) => item.role === "Player").length,
-      Coach: users.filter((item) => item.role === "Coach").length,
-      Admin: users.filter((item) => item.role === "Admin").length,
+      Player: users.filter((item) => accountHasRole(item, "Player")).length,
+      Coach: users.filter((item) => accountHasRole(item, "Coach")).length,
+      Admin: users.filter((item) => accountHasRole(item, "Admin")).length,
     }),
-    [users]
+    [users, accountHasRole]
   );
+
   const visibleUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
+
     return users.filter((item) => {
       const matchesRole =
-        roleFilter === "All" || item.role === roleFilter;
+        roleFilter === "All" || accountHasRole(item, roleFilter);
+
       const matchesActivity =
         activityFilter === "All" ||
         item.activityStatus === activityFilter;
+
       const matchesSearch =
         !query ||
         item.name.toLowerCase().includes(query) ||
         item.email.toLowerCase().includes(query) ||
         item.username.toLowerCase().includes(query);
+
       return matchesRole && matchesActivity && matchesSearch;
     });
-  }, [users, roleFilter, activityFilter, search]);
-  const openEdit = (account) => {
+  }, [users, roleFilter, activityFilter, search, accountHasRole]);
+
+  const openEdit = async (account) => {
     setSelected(account);
-    setForm({
-      name: account.name,
-      role: account.role,
-      accountStatus: toUiAccountStatus(account.accountStatus),
-      suspensionAmount: 1,
-      suspensionUnit: "days",
-    });
     setFormError("");
     setShowConfirmation(false);
     setShowRemoveConfirmation(false);
     setSuccessMessage("");
+
+    let savedSuspendedUntil =
+      account.suspendedUntil ||
+      account.suspended_until ||
+      null;
+
+    if (
+      toUiAccountStatus(account.accountStatus) === "Suspended" &&
+      !savedSuspendedUntil
+    ) {
+      const { data: latestAccount, error: suspendedUntilError } =
+        await supabase
+          .from("app_users")
+          .select("suspended_until")
+          .eq("user_id", account.userId)
+          .maybeSingle();
+
+      if (suspendedUntilError) {
+        console.error(
+          "Unable to load suspension end date:",
+          suspendedUntilError
+        );
+      } else {
+        savedSuspendedUntil =
+          latestAccount?.suspended_until || null;
+      }
+    }
+    setForm({
+      name: account.name,
+      role: account.role,
+      accountStatus: toUiAccountStatus(account.accountStatus),
+      suspensionAmount:
+        toUiAccountStatus(account.accountStatus) === "Suspended"
+          ? getRemainingSuspensionDays(savedSuspendedUntil)
+          : 1,
+      suspensionUnit: "days",
+    });
   };
+
   const closeModal = () => {
     if (saving) return;
     setSelected(null);
@@ -162,13 +430,17 @@ export default function AdminUsers({
     setShowConfirmation(false);
     setShowRemoveConfirmation(false);
   };
+
   const requestSaveConfirmation = () => {
     if (!selected) return;
+
     if (!form.name.trim()) {
       setFormError("Full name is required.");
       return;
     }
+
     const isEditingSelf = selected.userId === currentAdminId;
+
     if (
       isEditingSelf &&
       (form.role !== "Admin" || form.accountStatus !== "Active")
@@ -178,10 +450,26 @@ export default function AdminUsers({
       );
       return;
     }
+
+    const targetIsAdmin = selected.role === "Admin";
+
+    if (
+      !currentAdminIsSuper &&
+      targetIsAdmin &&
+      selected.userId !== currentAdminId
+    ) {
+      setFormError(
+        "Only the Super Admin can modify another administrator."
+      );
+      return;
+    }
+
     const hasChanges =
       form.name.trim() !== selected.name ||
       form.role !== selected.role ||
-      form.accountStatus !== toUiAccountStatus(selected.accountStatus);
+      form.accountStatus !== toUiAccountStatus(selected.accountStatus) ||
+      form.accountStatus === "Suspended";
+
     if (!hasChanges) {
       setFormError("No changes were made.");
       return;
@@ -189,12 +477,22 @@ export default function AdminUsers({
     setFormError("");
     setShowConfirmation(true);
   };
+
   const requestRemoveUser = () => {
     if (!selected) return;
+
     if (selected.userId === currentAdminId) {
       setFormError("You cannot remove your own administrator account.");
       return;
     }
+
+    if (!currentAdminIsSuper && selected.role === "Admin") {
+      setFormError(
+        "Only the Super Admin can remove another administrator."
+      );
+      return;
+    }
+
     if (toUiAccountStatus(selected.accountStatus) !== "Terminated") {
       setFormError("Terminate this account first before removing the user.");
       return;
@@ -202,22 +500,35 @@ export default function AdminUsers({
     setFormError("");
     setShowRemoveConfirmation(true);
   };
+
   const removeUser = async () => {
     if (!selected) return;
+
     if (selected.userId === currentAdminId) {
       setFormError("You cannot remove your own administrator account.");
       return;
     }
+
+    if (!currentAdminIsSuper && selected.role === "Admin") {
+      setFormError(
+        "Only the Super Admin can remove another administrator."
+      );
+      return;
+    }
+
     if (toUiAccountStatus(selected.accountStatus) !== "Terminated") {
       setFormError("Terminate this account first before removing the user.");
       return;
     }
     setRemoving(true);
     setFormError("");
+
     const removedName = selected.name;
+
     const { error } = await supabase.rpc("admin_remove_app_user", {
       p_user_id: selected.userId,
     });
+
     if (error) {
       console.error("admin_remove_app_user error:", error);
       setFormError(error.message || "Unable to remove this user.");
@@ -230,13 +541,17 @@ export default function AdminUsers({
     setSelected(null);
     setSuccessMessage(`${removedName} was removed from User Management.`);
   };
+
   const saveChanges = async () => {
     if (!selected) return;
+
     if (!form.name.trim()) {
       setFormError("Full name is required.");
       return;
     }
+
     const isEditingSelf = selected.userId === currentAdminId;
+
     if (
       isEditingSelf &&
       (form.role !== "Admin" || form.accountStatus !== "Active")
@@ -246,8 +561,22 @@ export default function AdminUsers({
       );
       return;
     }
+
+    const targetIsAdmin = selected.role === "Admin";
+
+    if (
+      !currentAdminIsSuper &&
+      targetIsAdmin &&
+      selected.userId !== currentAdminId
+    ) {
+      setFormError(
+        "Only the Super Admin can modify another administrator."
+      );
+      return;
+    }
     setSaving(true);
     setFormError("");
+
     const suspendedUntil =
       form.accountStatus === "Suspended"
         ? getSuspendedUntil(form.suspensionAmount, form.suspensionUnit)
@@ -260,6 +589,7 @@ export default function AdminUsers({
       p_account_status: toDatabaseAccountStatus(form.accountStatus),
       p_suspended_until: suspendedUntil,
     });
+
     if (error) {
       console.error("admin_update_app_user error:", error);
       setFormError(
@@ -271,9 +601,14 @@ export default function AdminUsers({
     await refreshUsers();
     setSaving(false);
     setShowConfirmation(false);
-    setSuccessMessage(`${form.name.trim()} was updated successfully.`);
+    setSuccessMessage(
+      form.accountStatus === "Suspended"
+        ? `${form.name.trim()} was suspended until ${formatSuspensionDate(suspendedUntil)}.`
+        : `${form.name.trim()} was updated successfully.`
+    );
     setSelected(null);
   };
+
   return (
     <div className="adminReadablePage">
       <style>{`
@@ -416,8 +751,10 @@ export default function AdminUsers({
                 }}
               >
                 {role} · {counts[role]}
+
               </button>
             ))}
+
           </div>
           <div
             style={{
@@ -450,7 +787,7 @@ export default function AdminUsers({
         <table
           style={{
             width: "100%",
-            minWidth: 1180,
+            minWidth: 1280,
             borderCollapse: "collapse",
           }}
         >
@@ -464,12 +801,12 @@ export default function AdminUsers({
               {[
                 "User",
                 "Role",
+                "Role 2",
                 "Account",
                 "Activity",
                 "Security Status",
                 "Last seen",
                 "Joined",
-                "Setup",
               ].map((heading) => (
                 <th
                   key={heading}
@@ -484,8 +821,10 @@ export default function AdminUsers({
                   }}
                 >
                   {heading}
+
                 </th>
               ))}
+
             </tr>
           </thead>
           <tbody>
@@ -553,6 +892,7 @@ export default function AdminUsers({
                           {account.userId === currentAdminId
                             ? " (You)"
                             : ""}
+
                         </div>
                         <div
                           style={{
@@ -562,12 +902,27 @@ export default function AdminUsers({
                           }}
                         >
                           {account.email}
+
                         </div>
                       </div>
                     </div>
                   </td>
                   <td style={{ padding: "13px 16px" }}>
                     <Badge value={account.role} type="role" />
+                  </td>
+                  <td style={{ padding: "13px 16px" }}>
+                    {getRole2(account) ? (
+                      <Badge value={getRole2(account)} type="role" />
+                    ) : (
+                      <span
+                        style={{
+                          color: "#A0A8B8",
+                          fontSize: 11,
+                        }}
+                      >
+                        —
+                      </span>
+                    )}
                   </td>
                   <td style={{ padding: "13px 16px" }}>
                     <StatusPill
@@ -582,23 +937,10 @@ export default function AdminUsers({
                     />
                   </td>
                   <td style={{ padding: "13px 16px" }}>
-                    {account.role === "Player" &&
-                    account.accountStatus === "Active" &&
-                    account.activityStatus === "Inactive" ? (
-                      <StatusPill
-                        value="Reverify required"
-                        colours={SECURITY_COLORS}
-                      />
-                    ) : (
-                      <span
-                        style={{
-                          color: "#A0A8B8",
-                          fontSize: 11,
-                        }}
-                      >
-                        —
-                      </span>
-                    )}
+                    <StatusPill
+                      value={getSecurityStatus(account)}
+                      colours={SECURITY_COLORS}
+                    />
                   </td>
                   <td
                     style={{
@@ -608,6 +950,7 @@ export default function AdminUsers({
                     }}
                   >
                     {account.lastSeenLabel}
+
                   </td>
                   <td
                     style={{
@@ -617,29 +960,12 @@ export default function AdminUsers({
                     }}
                   >
                     {account.joined}
-                  </td>
-                  <td style={{ padding: "13px 16px" }}>
-                    <StatusPill
-                      value={
-                        account.setupCompleted
-                          ? "Completed"
-                          : "Not completed"
-                      }
-                      colours={{
-                        Completed: {
-                          color: "#00976C",
-                          background: "#E0FAF3",
-                        },
-                        "Not completed": {
-                          color: "#D97706",
-                          background: "#FEF3C7",
-                        },
-                      }}
-                    />
+
                   </td>
                 </tr>
               ))
             )}
+
           </tbody>
         </table>
       </TableCard>
@@ -681,7 +1007,10 @@ export default function AdminUsers({
             <Field label="Role">
               <select
                 value={form.role}
-                disabled={selected.userId === currentAdminId}
+                disabled={
+                  selected.userId === currentAdminId ||
+                  (!currentAdminIsSuper && selected.role === "Admin")
+                }
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
@@ -698,7 +1027,10 @@ export default function AdminUsers({
             <Field label="Account status">
               <select
                 value={form.accountStatus}
-                disabled={selected.userId === currentAdminId}
+                disabled={
+                  selected.userId === currentAdminId ||
+                  (!currentAdminIsSuper && selected.role === "Admin")
+                }
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
@@ -713,7 +1045,6 @@ export default function AdminUsers({
               </select>
             </Field>
           </div>
-
           {form.accountStatus === "Suspended" && (
             <div
               style={{
@@ -741,7 +1072,6 @@ export default function AdminUsers({
                   style={inputStyle}
                 />
               </Field>
-
               <Field label="Duration">
                 <select
                   value={form.suspensionUnit}
@@ -761,7 +1091,6 @@ export default function AdminUsers({
               </Field>
             </div>
           )}
-
           {form.accountStatus === "Suspended" && (
             <div
               style={{
@@ -775,6 +1104,7 @@ export default function AdminUsers({
               }}
             >
               Suspension ends on{" "}
+
               <strong>
                 {formatSuspensionDate(
                   getSuspendedUntil(
@@ -782,11 +1112,11 @@ export default function AdminUsers({
                     form.suspensionUnit,
                   ),
                 )}
+
               </strong>
               .
             </div>
           )}
-
           {selected.role === "Player" &&
             selected.accountStatus === "Active" &&
             selected.activityStatus === "Inactive" && (
@@ -807,6 +1137,7 @@ export default function AdminUsers({
                 the next time they log in.
               </div>
             )}
+
           <div
             style={{
               marginBottom: 18,
@@ -834,8 +1165,22 @@ export default function AdminUsers({
               }}
             >
               {formError}
+
             </div>
           )}
+
+          <div
+            style={{
+              marginBottom: 12,
+              color: "#7B879C",
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}
+          >
+            Review changes does not save immediately. Select
+            <strong> Confirm changes </strong>
+            on the next screen to apply the update.
+          </div>
           <div
             style={{
               display: "flex",
@@ -858,7 +1203,8 @@ export default function AdminUsers({
               Cancel
             </button>
             {selected.userId !== currentAdminId &&
-              toUiAccountStatus(selected.accountStatus) === "Terminated" && (
+              toUiAccountStatus(selected.accountStatus) === "Terminated" &&
+              (selected.role !== "Admin" || currentAdminIsSuper) && (
                 <button
                   type="button"
                   disabled={saving || removing}
@@ -875,6 +1221,7 @@ export default function AdminUsers({
                   Remove user
                 </button>
               )}
+
             <button
               type="button"
               disabled={saving || removing}
@@ -914,9 +1261,11 @@ export default function AdminUsers({
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#0D1B3E" }}>
                 {selected.name}
+
               </div>
               <div style={{ marginTop: 2, fontSize: 11, color: "#8892A4" }}>
                 {selected.email}
+
               </div>
             </div>
           </div>
@@ -951,6 +1300,7 @@ export default function AdminUsers({
               >
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#7B879C" }}>
                   {change.label}
+
                 </div>
                 <div style={{ fontSize: 12, color: "#0D1B3E" }}>
                   {change.oldValue === change.newValue ? (
@@ -959,14 +1309,17 @@ export default function AdminUsers({
                     <>
                       <span style={{ color: "#8892A4", textDecoration: "line-through" }}>
                         {change.oldValue}
+
                       </span>
                       <span style={{ margin: "0 8px", color: "#8892A4" }}>→</span>
                       <strong>{change.newValue}</strong>
                     </>
                   )}
+
                 </div>
               </div>
             ))}
+
           </div>
           {form.accountStatus === "Suspended" &&
             selected.accountStatus !== "Suspended" && (
@@ -999,8 +1352,8 @@ export default function AdminUsers({
                   lineHeight: 1.6,
                 }}
               >
-                <strong>Disable this account?</strong> The account will remain in
-                the database but will not be allowed to use ShuttleTrack.
+                <strong>Terminate this account?</strong> The account will remain in
+                the database but will no longer be allowed to use ShuttleTrack.
               </div>
             )}
           {form.accountStatus === "Active" &&
@@ -1020,6 +1373,7 @@ export default function AdminUsers({
                 access and can sign in again.
               </div>
             )}
+
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <button
               type="button"
@@ -1053,6 +1407,7 @@ export default function AdminUsers({
               }}
             >
               {saving ? "Saving..." : "Confirm changes"}
+
             </button>
           </div>
         </Modal>
@@ -1085,6 +1440,7 @@ export default function AdminUsers({
                 }}
               >
                 {selected.name}
+
               </div>
               <div
                 style={{
@@ -1094,6 +1450,7 @@ export default function AdminUsers({
                 }}
               >
                 {selected.email}
+
               </div>
             </div>
           </div>
@@ -1126,8 +1483,10 @@ export default function AdminUsers({
               }}
             >
               {formError}
+
             </div>
           )}
+
           <div
             style={{
               display: "flex",
@@ -1162,6 +1521,7 @@ export default function AdminUsers({
               }}
             >
               {removing ? "Removing..." : "Yes, remove user"}
+
             </button>
           </div>
         </Modal>
@@ -1179,6 +1539,7 @@ export default function AdminUsers({
             }}
           >
             {successMessage}
+
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
             <button
@@ -1196,6 +1557,7 @@ export default function AdminUsers({
           </div>
         </Modal>
       )}
+
     </div>
   );
 }
