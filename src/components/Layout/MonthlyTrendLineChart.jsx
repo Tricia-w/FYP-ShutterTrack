@@ -9,6 +9,7 @@ import {
   Tooltip,
   Filler,
 } from 'chart.js'
+
 Chart.register(
   LineController,
   LineElement,
