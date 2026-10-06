@@ -80,6 +80,8 @@ const normalizeTrainingFocus = (
 const PLAYER_SCHEDULE_META_PREFIX =
   '__SHUTTLETRACK_TRAINING__:'
 
+const SESSION_BUFFER_MINUTES = 30
+
 const decodePlayerScheduleNotes = value => {
   const raw = String(value || '')
 
@@ -370,6 +372,48 @@ function SessionIcon({
 }
 
 
+
+function addMinutesToTime(
+  time,
+  minutesToAdd
+) {
+  if (!time) return ''
+
+  const [
+    hourRaw,
+    minuteRaw,
+  ] = String(time)
+    .slice(0, 5)
+    .split(':')
+
+  const hour = Number(hourRaw)
+  const minute = Number(minuteRaw)
+
+  if (
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return ''
+  }
+
+  const date = new Date()
+
+  date.setHours(
+    hour,
+    minute + Number(minutesToAdd || 0),
+    0,
+    0
+  )
+
+  return date.toLocaleTimeString(
+    'en-MY',
+    {
+      hour: 'numeric',
+      minute: '2-digit',
+    }
+  )
+}
+
 export default function CoachSessions() {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -388,6 +432,7 @@ export default function CoachSessions() {
   const [error, setError] = useState('')
   const [availabilityError, setAvailabilityError] = useState('')
   const [checkingAvailability, setCheckingAvailability] = useState(false)
+  const [availabilityChecked, setAvailabilityChecked] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -890,157 +935,87 @@ export default function CoachSessions() {
 
     if (
       selectedPlayerIds.length === 0 ||
-      !sessionForm.date
-    ) {
-      return null
-    }
-
-    const {
-      data: playerDaySchedules,
-      error: playerDayScheduleError,
-    } = await supabase
-      .from('player_schedule')
-      .select(
-        'id, user_id, event_date, event_time, title, schedule_type, notes, coach_session_id'
-      )
-      .in('user_id', selectedPlayerIds)
-      .eq('event_date', sessionForm.date)
-
-    if (playerDayScheduleError) {
-      throw playerDayScheduleError
-    }
-
-    /*
-     * Ignore the player_schedule copy created by the SAME coach session
-     * currently being edited. Without this filter, changing the session
-     * time makes the session conflict with its own synced player schedule.
-     */
-    const relevantSchedules =
-      (playerDaySchedules || []).filter(row => {
-        if (!editingSession?.id) {
-          return true
-        }
-
-        return (
-          String(row.coach_session_id || '') !==
-          String(editingSession.id)
-        )
-      })
-
-    const restDayRow =
-      relevantSchedules.find(row => {
-        const title =
-          String(row.title || '')
-            .trim()
-            .toLowerCase()
-
-        const scheduleType =
-          String(row.schedule_type || '')
-            .trim()
-            .toLowerCase()
-
-        return (
-          title === 'rest day' ||
-          scheduleType === 'rest day'
-        )
-      }) || null
-
-    if (restDayRow?.user_id) {
-      const player =
-        studentMap.get(
-          String(restDayRow.user_id)
-        )
-
-      return {
-        type: 'rest_day',
-        playerName:
-          player?.name ||
-          'This player',
-      }
-    }
-
-    if (
+      !sessionForm.date ||
       !sessionForm.startTime ||
       !sessionForm.endTime
     ) {
       return null
     }
 
-    const toMinutes = value => {
-      const text =
-        String(value || '')
-          .slice(0, 5)
-
-      const [
-        hour,
-        minute,
-      ] = text
-        .split(':')
-        .map(Number)
-
-      if (
-        !Number.isFinite(hour) ||
-        !Number.isFinite(minute)
-      ) {
-        return null
+    const {
+      data,
+      error: conflictError,
+    } = await supabase.rpc(
+      'check_coach_player_schedule_conflict',
+      {
+        p_player_ids: selectedPlayerIds,
+        p_session_date: sessionForm.date,
+        p_start_time: sessionForm.startTime,
+        p_end_time: sessionForm.endTime,
+        p_ignore_session_id:
+          editingSession?.id || null,
+        p_buffer_minutes:
+          SESSION_BUFFER_MINUTES,
       }
+    )
 
-      return hour * 60 + minute
+    if (conflictError) {
+      throw conflictError
     }
 
-    const newStart =
-      toMinutes(sessionForm.startTime)
-
-    const newEnd =
-      toMinutes(sessionForm.endTime)
+    const conflict =
+      Array.isArray(data)
+        ? data[0] || null
+        : data || null
 
     if (
-      newStart === null ||
-      newEnd === null
+      !conflict ||
+      !conflict.has_conflict
     ) {
-      return null
-    }
-
-    const overlapRow =
-      relevantSchedules.find(row => {
-        const rowStart =
-          toMinutes(row.event_time)
-
-        const meta =
-          decodePlayerScheduleNotes(
-            row.notes
-          )
-
-        const rowEnd =
-          toMinutes(meta.endTime)
-
-        if (
-          rowStart === null ||
-          rowEnd === null
-        ) {
-          return false
-        }
-
-        return (
-          newStart < rowEnd &&
-          newEnd > rowStart
-        )
-      }) || null
-
-    if (!overlapRow?.user_id) {
       return null
     }
 
     const player =
       studentMap.get(
-        String(overlapRow.user_id)
+        String(
+          conflict.player_user_id || ''
+        )
       )
+
+    if (
+      conflict.conflict_type ===
+      'rest_day'
+    ) {
+      return {
+        type: 'rest_day',
+        playerName:
+          player?.name ||
+          conflict.player_name ||
+          'This player',
+      }
+    }
 
     return {
       type: 'time_conflict',
       playerName:
         player?.name ||
+        conflict.player_name ||
         'This player',
+      activity:
+        conflict.activity ||
+        'another activity',
+      startTime:
+        formatTime(
+          conflict.start_time
+        ),
+      endTime:
+        formatTime(
+          conflict.end_time
+        ),
+      rawEndTime:
+        conflict.end_time || '',
+      venue:
+        conflict.venue || '',
     }
   }, [
     sessionForm.players,
@@ -1061,15 +1036,19 @@ export default function CoachSessions() {
   useEffect(() => {
     if (!showAddSession) {
       setAvailabilityError('')
+      setAvailabilityChecked(false)
       setCheckingAvailability(false)
       return undefined
     }
 
     if (
       sessionForm.players.length === 0 ||
-      !sessionForm.date
+      !sessionForm.date ||
+      !sessionForm.startTime ||
+      !sessionForm.endTime
     ) {
       setAvailabilityError('')
+      setAvailabilityChecked(false)
       setCheckingAvailability(false)
       return undefined
     }
@@ -1079,6 +1058,7 @@ export default function CoachSessions() {
     const timer = window.setTimeout(
       async () => {
         setCheckingAvailability(true)
+        setAvailabilityChecked(false)
 
         try {
           const conflict =
@@ -1088,6 +1068,7 @@ export default function CoachSessions() {
 
           if (!conflict) {
             setAvailabilityError('')
+            setAvailabilityChecked(true)
             return
           }
 
@@ -1099,12 +1080,24 @@ export default function CoachSessions() {
                 sessionForm.date
               )} as a Rest Day. Please select another date.`
             )
+            setAvailabilityChecked(true)
             return
           }
 
+          const earliestAvailableTime =
+            addMinutesToTime(
+              conflict.rawEndTime,
+              SESSION_BUFFER_MINUTES
+            )
+
           setAvailabilityError(
-            `${conflict.playerName} is not available during this time slot because the player already has another activity scheduled.`
+            `${conflict.playerName} is unavailable at this time.${
+              earliestAvailableTime
+                ? ` Earliest available time: ${earliestAvailableTime}.`
+                : ' Please choose another time slot.'
+            }`
           )
+          setAvailabilityChecked(true)
         } catch (availabilityCheckError) {
           if (cancelled) return
 
@@ -1117,6 +1110,7 @@ export default function CoachSessions() {
             availabilityCheckError?.message ||
               'Unable to check player availability.'
           )
+          setAvailabilityChecked(false)
         } finally {
           if (!cancelled) {
             setCheckingAvailability(false)
@@ -1152,7 +1146,7 @@ export default function CoachSessions() {
       sessionForm.players.length === 0
     ) {
       setError(
-        'Choose a date, start time, end time, venue, and at least one student.'
+        'Please complete the required session details: date, start time, end time, venue, and at least one student.'
       )
       return
     }
@@ -1170,7 +1164,17 @@ export default function CoachSessions() {
             ? `${conflict.playerName} has marked ${fmtDate(
                 sessionForm.date
               )} as a Rest Day. Please select another date.`
-            : `${conflict.playerName} is not available during this time slot because the player already has another activity scheduled.`
+            : `${conflict.playerName} is unavailable at this time.${
+                addMinutesToTime(
+                  conflict.rawEndTime,
+                  SESSION_BUFFER_MINUTES
+                )
+                  ? ` Earliest available time: ${addMinutesToTime(
+                      conflict.rawEndTime,
+                      SESSION_BUFFER_MINUTES
+                    )}.`
+                  : ' Please choose another time slot.'
+              }`
 
         setAvailabilityError(
           conflictMessage
@@ -3176,7 +3180,8 @@ export default function CoachSessions() {
           }}
         >
           <div
-            className={styles.modal}style={{
+            className={styles.modal}
+            style={{
               maxWidth: 620,
               maxHeight: '90vh',
               overflowY: 'auto',
@@ -3198,33 +3203,6 @@ export default function CoachSessions() {
                 ✕
               </button>
             </div>
-
-            {(checkingAvailability || availabilityError) && (
-              <div
-                role={availabilityError ? 'alert' : 'status'}
-                style={{
-                  marginBottom: 14,
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: availabilityError
-                    ? '1px solid color-mix(in srgb, #EF4444 30%, var(--line, #EEF1F8))'
-                    : '1px solid color-mix(in srgb, #2563EB 24%, var(--line, #EEF1F8))',
-                  background: availabilityError
-                    ? 'color-mix(in srgb, #EF4444 8%, var(--card, #FFFFFF))'
-                    : 'color-mix(in srgb, #2563EB 7%, var(--card, #FFFFFF))',
-                  color: availabilityError
-                    ? '#B91C1C'
-                    : 'var(--text, #0D1B3E)',
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  fontWeight: 700,
-                }}
-              >
-                {checkingAvailability
-                  ? 'Checking player availability...'
-                  : availabilityError}
-              </div>
-            )}
 
             {error && (
               <div
@@ -3579,6 +3557,41 @@ export default function CoachSessions() {
               </div>
             </div>
 
+
+            {sessionForm.players.length > 0 &&
+              sessionForm.date &&
+              sessionForm.startTime &&
+              sessionForm.endTime && (
+                <div
+                  role={availabilityError ? 'alert' : 'status'}
+                  style={{
+                    marginBottom: 14,
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: availabilityError
+                      ? '1px solid color-mix(in srgb, #EF4444 30%, var(--line, #EEF1F8))'
+                      : '1px solid color-mix(in srgb, #10B981 30%, var(--line, #EEF1F8))',
+                    background: availabilityError
+                      ? 'color-mix(in srgb, #EF4444 8%, var(--card, #FFFFFF))'
+                      : 'color-mix(in srgb, #10B981 8%, var(--card, #FFFFFF))',
+                    color: availabilityError
+                      ? '#B91C1C'
+                      : '#047857',
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  {checkingAvailability
+                    ? 'Checking player availability...'
+                    : availabilityError
+                      ? availabilityError
+                      : availabilityChecked
+                        ? 'Time slot available.'
+                        : 'Waiting to check player availability...'}
+                </div>
+              )}
+
             <div className={styles.formRow}>
               <label className={styles.formLabel}>
                 Group training plan optional
@@ -3678,7 +3691,14 @@ export default function CoachSessions() {
                 disabled={
                   saving ||
                   checkingAvailability ||
-                  Boolean(availabilityError)
+                  Boolean(availabilityError) ||
+                  (
+                    sessionForm.players.length > 0 &&
+                    sessionForm.date &&
+                    sessionForm.startTime &&
+                    sessionForm.endTime &&
+                    !availabilityChecked
+                  )
                 }
               >
                 {saving

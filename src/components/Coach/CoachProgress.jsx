@@ -4062,20 +4062,7 @@ export default function CoachProgress() {
                     )}
 
                     {student.activeInjuryCount > 0 && (
-                      <span
-                        style={{
-                          padding: '3px 8px',
-                          borderRadius: 999,
-                          background: '#FEF2F2',
-                          color: '#DC2626',
-                          fontSize: 11,
-                          fontWeight: 600,
-                          lineHeight: '1.2',
-                          whiteSpace: 'nowrap',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                        }}
-                      >
+                      <span className={styles.badgeRed}>
                         {student.activeInjuryCount}{' '}
                         Active Injur
                         {student.activeInjuryCount === 1 ? 'y' : 'ies'}
