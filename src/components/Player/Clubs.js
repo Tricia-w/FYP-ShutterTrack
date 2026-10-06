@@ -727,7 +727,7 @@ function CreateClubForm({ submitting, onCreate }) {
               onChange={(event) =>
                 updateVenue(index, "venueName", event.target.value)
               }
-              placeholder="Venue name, example: KamFook Badminton Court"
+              placeholder="Venue name, example: Name of Badminton Court"
               style={inputStyle}
             />
 
@@ -763,7 +763,7 @@ function CreateClubForm({ submitting, onCreate }) {
                   event.target.value,
                 )
               }
-              placeholder="Training details optional, example: Sunday 2 PM–4 PM"
+              placeholder="Location Details"
               style={{
                 ...inputStyle,
                 resize: "vertical",

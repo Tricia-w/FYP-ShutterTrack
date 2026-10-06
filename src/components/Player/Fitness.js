@@ -5,7 +5,11 @@ import { calculateFitnessSummary } from '../../utils/fitnessScore'
 import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
-import { createWorker, PSM } from 'tesseract.js'
+import TrainingModal from './fitness/components/TrainingModal'
+import TestModal from './fitness/components/FitnessTestModal'
+import RecoveryModal from './fitness/components/RecoveryModal'
+import InjuryModal from './fitness/components/InjuryModal'
+import ScheduleModal from './fitness/components/ScheduleModal'
 import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
@@ -574,34 +578,6 @@ function calculateDuration(start, end) {
   return `${m}min`
 }
 
-function calculateEndTime(startTime, durationValue) {
-  const durationMinutes = parseMinutes(durationValue)
-
-  if (!startTime || durationMinutes <= 0) return ''
-
-  const [hour, minute] = String(startTime)
-    .slice(0, 5)
-    .split(':')
-    .map(Number)
-
-  if (
-    !Number.isFinite(hour) ||
-    !Number.isFinite(minute)
-  ) {
-    return ''
-  }
-
-  const totalMinutes =
-    (hour * 60 + minute + durationMinutes) % (24 * 60)
-
-  const endHour = Math.floor(totalMinutes / 60)
-  const endMinute = totalMinutes % 60
-
-  return `${String(endHour).padStart(2, '0')}:${String(
-    endMinute
-  ).padStart(2, '0')}`
-}
-
 function extractVenueFromNotes(notes = '') {
   const match = String(notes).match(
     /(?:^|\n)Venue:\s*(.+?)(?:\n|$)/i
@@ -647,6 +623,8 @@ const emptyTest = (date = todayISO()) => ({
   result: '',
   indicator: '',
   score: 0,
+  adjustmentSign: '+',
+  adjustmentAmount: 0,
 })
 
 const emptyRecovery = (date = todayISO()) => ({
@@ -767,6 +745,29 @@ function rowToTest(row) {
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || '',
   }
+}
+
+const isInitialFitnessBaseline = test => {
+  const testName =
+    String(test?.test || '')
+      .trim()
+      .toLowerCase()
+
+  const result =
+    String(test?.result || '')
+      .trim()
+      .toLowerCase()
+
+  const change =
+    String(test?.change || '')
+      .trim()
+      .toLowerCase()
+
+  return (
+    testName === 'initial self-assessment' ||
+    result === 'self-assessed baseline' ||
+    change === 'initial self-assessment'
+  )
 }
 
 function rowToRecovery(row) {
@@ -1168,5174 +1169,6 @@ function InjuryBodyMap({ injuries }) {
   )
 }
 
-function ModalShell({
-  title,
-  children,
-  onClose,
-  maxWidth = 560,
-}) {
-  return (
-    <div
-      className={styles.modalOverlay}
-      onClick={e =>
-        e.target === e.currentTarget &&
-        onClose()
-      }
-    >
-      <div
-        className={`${styles.modal} fitness-mobile-modal`}
-        style={{
-          width: 'min(92vw, 100%)',
-          maxWidth,
-        }}
-      >
-        <div className={styles.modalHead}>
-          <div className={styles.modalTitle}>{title}</div>
-          <button className={styles.modalClose} onClick={onClose}>x</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function FormActions({ onSave, onClose, onDelete, saving }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-      {onDelete ? (
-        <button
-          onClick={onDelete}
-          disabled={saving}
-          style={{
-            padding: '9px 16px',
-            borderRadius: 10,
-            border: '1.5px solid #FCA5A5',
-            background: '#FEF2F2',
-            color: '#EF4444',
-            fontWeight: 700,
-            fontSize: 12,
-            cursor: 'pointer',
-          }}
-        >
-          Delete
-        </button>
-      ) : <div />}
-
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button className={styles.btnOutline} onClick={onClose} disabled={saving}>Cancel</button>
-        <button className={styles.btnPrimary} onClick={onSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
-      </div>
-    </div>
-  )
-}
-
-function TrainingModal({ title, form, onChange, onSave, onClose, onDelete, saving }) {
-  const handleTimeChange = (field, value) => {
-    onChange(field, value)
-
-    if (field === 'startTime' && form.duration) {
-      const nextEndTime = calculateEndTime(
-        value,
-        form.duration
-      )
-
-      if (nextEndTime) {
-        onChange('endTime', nextEndTime)
-      }
-    }
-
-    if (field === 'endTime' && form.startTime) {
-      onChange(
-        'duration',
-        calculateDuration(form.startTime, value)
-      )
-    }
-  }
-
-  const handleDurationChange = value => {
-    onChange('duration', value)
-
-    const nextEndTime = calculateEndTime(
-      form.startTime,
-      value
-    )
-
-    if (nextEndTime) {
-      onChange('endTime', nextEndTime)
-    }
-  }
-
-  return (
-    <ModalShell title={title} onClose={onClose}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Date</label>
-          <input className={styles.formInput} type="date" value={form.date} onChange={e => onChange('date', e.target.value)} />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Focus area</label>
-          <select className={styles.formSelect} value={form.focus} onChange={e => onChange('focus', e.target.value)}>
-            <option>Endurance</option>
-            <option>Speed</option>
-            <option>Strength</option>
-            <option value="Agility">Agility</option>
-            <option>Recovery</option>
-            <option>Matches</option>
-          </select>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Start time</label>
-          <input
-            className={styles.formInput}
-            type="time"
-            value={form.startTime}
-            onChange={e =>
-              handleTimeChange('startTime', e.target.value)
-            }
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>End time</label>
-          <input
-            className={styles.formInput}
-            type="time"
-            value={form.endTime}
-            onChange={e =>
-              handleTimeChange('endTime', e.target.value)
-            }
-          />
-        </div>
-      </div>
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>Training activity</label>
-        <input
-          className={styles.formInput}
-          placeholder="e.g. Court training"
-          value={form.activity}
-          onChange={e => onChange('activity', e.target.value)}
-        />
-      </div>
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>Duration</label>
-        <input
-          className={styles.formInput}
-          value={
-            form.duration ||
-            calculateDuration(
-              form.startTime,
-              form.endTime
-            )
-          }
-          onChange={event =>
-            handleDurationChange(event.target.value)
-          }
-          placeholder="e.g. 2h, 1h 30min or 45min"
-        />
-        <div style={{ marginTop: 5, fontSize: 10, color: '#8892A4' }}>
-          Entering a duration automatically updates the end time.
-          Changing the end time recalculates the duration.
-        </div>
-      </div>
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>Notes optional</label>
-        <textarea
-          className={styles.formTextarea}
-          placeholder="e.g. Practiced footwork and smash defense."
-          value={form.notes}
-          onChange={e => onChange('notes', e.target.value)}
-        />
-      </div>
-
-      <FormActions onSave={onSave} onClose={onClose} onDelete={onDelete} saving={saving} />
-    </ModalShell>
-  )
-}
-
-function TestModal({ title, form, onChange, onSave, onClose, onDelete, saving }) {
-  return (
-    <ModalShell title={title} onClose={onClose}>
-      <div
-        className="fitness-test-top-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 14,
-        }}
-      >
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Date</label>
-          <input className={styles.formInput} type="date" value={form.date} onChange={e => onChange('date', e.target.value)} />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Indicator updated</label>
-          <select className={styles.formSelect} value={form.indicator} onChange={e => onChange('indicator', e.target.value)}>
-            <option value="">Select indicator</option>
-            <option>Endurance</option>
-            <option>Speed</option>
-            <option>Strength</option>
-            <option value="Agility">Agility</option>
-          </select>
-        </div>
-      </div>
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>Test name</label>
-        <input className={styles.formInput} placeholder="e.g. 20m Sprint" value={form.test} onChange={e => onChange('test', e.target.value)} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Result</label>
-          <input className={styles.formInput} placeholder="e.g. 3.35 s" value={form.result} onChange={e => onChange('result', e.target.value)} />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Score /100</label>
-          <input className={styles.formInput} type="number" min="0" max="100" value={form.score} onChange={e => onChange('score', e.target.value)} />
-        </div>
-      </div>
-
-      <FormActions onSave={onSave} onClose={onClose} onDelete={onDelete} saving={saving} />
-    </ModalShell>
-  )
-}
-
-const recognizeOcr = async (
-  worker,
-  source
-) => {
-  /*
-   * Send generated canvases to Tesseract as PNG Blob URLs.
-   * Blob URLs are more memory-friendly than very large data URLs.
-   */
-  if (
-    typeof HTMLCanvasElement !==
-      'undefined' &&
-    source instanceof
-      HTMLCanvasElement
-  ) {
-    const blob =
-      await new Promise(
-        (resolve, reject) => {
-          source.toBlob(
-            result => {
-              if (result) {
-                resolve(result)
-              } else {
-                reject(
-                  new Error(
-                    'Unable to prepare OCR image.'
-                  )
-                )
-              }
-            },
-            'image/png',
-            1
-          )
-        }
-      )
-
-    const blobUrl =
-      URL.createObjectURL(blob)
-
-    try {
-      return await worker.recognize(
-        blobUrl
-      )
-    } finally {
-      URL.revokeObjectURL(
-        blobUrl
-      )
-    }
-  }
-
-  return worker.recognize(
-    source
-  )
-}
-
-function RecoveryModal({
-  title,
-  form,
-  onChange,
-  onSave,
-  onClose,
-  onDelete,
-  saving,
-}) {
-  const [ocrLoading, setOcrLoading] = useState(false)
-  const [ocrMessage, setOcrMessage] = useState('')
-  const [detectedBpm, setDetectedBpm] = useState(null)
-  const [imagePreview, setImagePreview] = useState('')
-  const [uploadedBpmFile, setUploadedBpmFile] = useState(null)
-  const [cropMode, setCropMode] = useState(false)
-  const [cropRect, setCropRect] = useState(null)
-  const [cameraOpen, setCameraOpen] = useState(false)
-  const [cameraError, setCameraError] = useState('')
-
-  const fileInputRef = useRef(null)
-  const cameraVideoRef = useRef(null)
-  const cameraCanvasRef = useRef(null)
-  const cameraStreamRef = useRef(null)
-  const cropImageRef = useRef(null)
-  const cropDragStartRef = useRef(null)
-  const ocrCancelledRef = useRef(false)
-
-  useEffect(() => {
-    return () => {
-      if (imagePreview) {
-        URL.revokeObjectURL(imagePreview)
-      }
-    }
-  }, [imagePreview])
-
-  useEffect(() => {
-    if (
-      cameraOpen &&
-      cameraVideoRef.current &&
-      cameraStreamRef.current
-    ) {
-      cameraVideoRef.current.srcObject =
-        cameraStreamRef.current
-
-      cameraVideoRef.current
-        .play()
-        .catch(() => {})
-    }
-  }, [cameraOpen])
-
-  useEffect(() => {
-    return () => {
-      if (cameraStreamRef.current) {
-        cameraStreamRef.current
-          .getTracks()
-          .forEach(track => track.stop())
-
-        cameraStreamRef.current = null
-      }
-    }
-  }, [])
-
-  const isValidBpm = value => {
-    const bpm = Number(value)
-
-    return (
-      Number.isFinite(bpm) &&
-      bpm >= 30 &&
-      bpm <= 220
-    )
-  }
-
-  const createCrop = (
-    bitmap,
-    {
-      x,
-      y,
-      width,
-      height,
-      scale = 5,
-      mode = 'normal',
-    }
-  ) => {
-    const sx = Math.max(
-      0,
-      Math.round(bitmap.width * x)
-    )
-    const sy = Math.max(
-      0,
-      Math.round(bitmap.height * y)
-    )
-    const sw = Math.max(
-      1,
-      Math.min(
-        bitmap.width - sx,
-        Math.round(bitmap.width * width)
-      )
-    )
-    const sh = Math.max(
-      1,
-      Math.min(
-        bitmap.height - sy,
-        Math.round(bitmap.height * height)
-      )
-    )
-
-    /*
-     * Do not let OCR crops become extremely large.
-     *
-     * A 3000-4000px phone photo combined with scale 18/24/28 can
-     * otherwise create a temporary canvas over 10,000-20,000px wide,
-     * which can make Tesseract fail with:
-     * "Error attempting to read image."
-     *
-     * Keep the requested zoom, but cap the longest output side.
-     */
-    const requestedWidth =
-      Math.max(
-        1,
-        Math.round(sw * scale)
-      )
-
-    const requestedHeight =
-      Math.max(
-        1,
-        Math.round(sh * scale)
-      )
-
-    const MAX_OCR_SIDE = 2400
-
-    const outputScale =
-      Math.min(
-        1,
-        MAX_OCR_SIDE /
-          Math.max(
-            requestedWidth,
-            requestedHeight
-          )
-      )
-
-    const canvas =
-      document.createElement('canvas')
-
-    canvas.width =
-      Math.max(
-        1,
-        Math.round(
-          requestedWidth *
-            outputScale
-        )
-      )
-
-    canvas.height =
-      Math.max(
-        1,
-        Math.round(
-          requestedHeight *
-            outputScale
-        )
-      )
-
-    const ctx = canvas.getContext('2d', {
-      willReadFrequently: true,
-    })
-
-    ctx.imageSmoothingEnabled = false
-
-    ctx.drawImage(
-      bitmap,
-      sx,
-      sy,
-      sw,
-      sh,
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    )
-
-    if (mode === 'normal') {
-      return canvas
-    }
-
-    const imageData = ctx.getImageData(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    )
-
-    const pixels = imageData.data
-
-    for (let i = 0; i < pixels.length; i += 4) {
-      const r = pixels[i]
-      const g = pixels[i + 1]
-      const b = pixels[i + 2]
-
-      let value = 0
-
-      if (mode === 'gray') {
-        const gray =
-          r * 0.299 +
-          g * 0.587 +
-          b * 0.114
-
-        value = Math.max(
-          0,
-          Math.min(
-            255,
-            Math.round(
-              (gray - 128) * 1.8 + 128
-            )
-          )
-        )
-      }
-
-      if (mode === 'bright') {
-        const gray =
-          r * 0.299 +
-          g * 0.587 +
-          b * 0.114
-
-        value =
-          gray >= 145
-            ? 255
-            : 0
-      }
-
-      if (mode === 'red') {
-        const redDifference =
-          r - (g + b) / 2
-
-        value = Math.max(
-          0,
-          Math.min(
-            255,
-            Math.round(
-              redDifference * 3.2 + 128
-            )
-          )
-        )
-      }
-
-      if (mode === 'softBright') {
-        const gray =
-          r * 0.299 +
-          g * 0.587 +
-          b * 0.114
-
-        value =
-          gray >= 90
-            ? 255
-            : 0
-      }
-
-      if (mode === 'invertGray') {
-        const gray =
-          r * 0.299 +
-          g * 0.587 +
-          b * 0.114
-
-        const contrasted = Math.max(
-          0,
-          Math.min(
-            255,
-            Math.round(
-              (gray - 92) * 2.25 + 128
-            )
-          )
-        )
-
-        value = 255 - contrasted
-      }
-
-      if (mode === 'pinkMask') {
-        /*
-         * Smartwatch heart-rate values are commonly drawn in
-         * pink/red on a nearly black display. Convert those pixels
-         * to solid black on a white background so Tesseract sees
-         * clean number shapes instead of tiny coloured anti-aliased
-         * pixels.
-         */
-        const maxOther = Math.max(g, b)
-        const redLead = r - g
-        const pinkBrightness = r + b
-
-        const isPinkOrRed =
-          r >= 105 &&
-          (
-            redLead >= 20 ||
-            (
-              r >= 145 &&
-              pinkBrightness >= 260 &&
-              r >= maxOther - 10
-            )
-          )
-
-        value =
-          isPinkOrRed
-            ? 0
-            : 255
-      }
-
-      pixels[i] = value
-      pixels[i + 1] = value
-      pixels[i + 2] = value
-      pixels[i + 3] = 255
-    }
-
-    ctx.putImageData(
-      imageData,
-      0,
-      0
-    )
-
-    return canvas
-  }
-
-  const extractContextCandidates = (
-    text,
-    source = 'full'
-  ) => {
-    if (!text) return []
-
-    const raw = String(text)
-      .replace(/\r/g, '\n')
-      .replace(/[|]/g, 'I')
-      .trim()
-
-    const candidates = []
-
-    const add = (
-      value,
-      score,
-      reason,
-      labelled = false
-    ) => {
-      const bpm = Number(value)
-
-      if (!isValidBpm(bpm)) {
-        return
-      }
-
-      candidates.push({
-        value: bpm,
-        score,
-        reason,
-        source,
-        labelled,
-      })
-    }
-
-    const sanitised = raw
-      .replace(
-        /\b(?:max(?:imum)?|min(?:imum)?)\b[^\n]{0,20}\b\d{2,3}\b/gi,
-        ' '
-      )
-      .replace(
-        /\b\d{2,3}\s*kcal\b/gi,
-        ' '
-      )
-      .replace(
-        /\b\d{1,3}\s*%/g,
-        ' '
-      )
-      .replace(
-        /\b\d{1,2}\s*:\s*\d{2}\b/g,
-        ' '
-      )
-
-    for (
-      const match of sanitised.matchAll(
-        /\baverage\b[^\d]{0,30}(\d{2,3})\s*bpm\b/gi
-      )
-    ) {
-      add(
-        match[1],
-        2000,
-        'Average + BPM',
-        true
-      )
-    }
-
-    for (
-      const match of sanitised.matchAll(
-        /\b(\d{2,3})\s*bpm\b/gi
-      )
-    ) {
-      const start = Math.max(
-        0,
-        match.index - 25
-      )
-      const end = Math.min(
-        sanitised.length,
-        match.index +
-          match[0].length +
-          35
-      )
-
-      const nearbyMatchText =
-        sanitised.slice(
-          start,
-          end
-        )
-
-      if (
-        /\bago\b|\bprevious\b|\bhistory\b/i.test(
-          nearbyMatchText
-        )
-      ) {
-        console.log(
-          'Rejecting historical BPM:',
-          nearbyMatchText
-        )
-        continue
-      }
-
-      add(
-        match[1],
-        1800,
-        'number directly beside BPM',
-        true
-      )
-    }
-
-    for (
-      const match of sanitised.matchAll(
-        /\bheart\s*rate\b(?:(?!\bmax\b|\bmin\b)[\s\S]){0,80}?(\d{2,3})\b/gi
-      )
-    ) {
-      add(
-        match[1],
-        1500,
-        'first number after Heart Rate',
-        true
-      )
-    }
-
-    for (
-      const match of sanitised.matchAll(
-        /\bpulse\b(?:(?!\bmax\b|\bmin\b)[\s\S]){0,50}?(\d{2,3})\b/gi
-      )
-    ) {
-      add(
-        match[1],
-        1400,
-        'first number after Pulse',
-        true
-      )
-    }
-
-    const lines = sanitised
-      .split(/\n+/)
-      .map(line =>
-        line.replace(/\s+/g, ' ').trim()
-      )
-      .filter(Boolean)
-
-    lines.forEach((line, index) => {
-      const previous = lines[index - 1] || ''
-      const next = lines[index + 1] || ''
-      const nearby =
-        `${previous} ${line} ${next}`
-
-      if (
-        /\bkcal\b|\bcalories?\b|\bduration\b|\bmax(?:imum)?\b|\bmin(?:imum)?\b|\bago\b|\bprevious\b|\bhistory\b/i.test(
-          nearby
-        )
-      ) {
-        return
-      }
-
-      const values = [
-        ...line.matchAll(
-          /\b(\d{2,3})\b/g
-        ),
-      ]
-        .map(match => Number(match[1]))
-        .filter(isValidBpm)
-
-      if (!values.length) {
-        return
-      }
-
-      if (values.length >= 3) {
-        return
-      }
-
-      values.forEach(value => {
-        let score =
-          source === 'summary'
-            ? 900
-            : source === 'full'
-              ? 120
-              : 400
-
-        let labelled = false
-        let reason =
-          `${source} contextual number`
-
-        if (/\baverage\b/i.test(nearby)) {
-          score += 700
-          labelled = true
-          reason = 'number near Average'
-        }
-
-        if (/\bbpm\b/i.test(nearby)) {
-          score += 800
-          labelled = true
-          reason = 'number near BPM'
-        }
-
-        if (
-          /heart\s*rate|\bpulse\b|\bHR\b/i.test(
-            nearby
-          )
-        ) {
-          score += 550
-          labelled = true
-          reason =
-            'number near Heart Rate'
-        }
-
-        add(
-          value,
-          score,
-          reason,
-          labelled
-        )
-      })
-    })
-
-    return candidates
-  }
-
-  const extractDigitCandidates = (
-    text,
-    source,
-    confidence = 0,
-    baseScore = 500
-  ) => {
-    const compact = String(text || '')
-      .replace(/\s+/g, '')
-      .trim()
-
-    /*
-     * On tiny seven-segment / smartwatch digits Tesseract can read
-     * an 8 as B. Correct that only inside short digit-like tokens.
-     */
-    const digitLike = compact.replace(
-      /(?<=[0-9B])B(?=[0-9B])|^B(?=[0-9B])|(?<=[0-9B])B$/g,
-      '8'
-    )
-
-    const values = (
-      digitLike.match(/\d{2,3}/g) ||
-      []
-    )
-      .map(Number)
-      .filter(isValidBpm)
-
-    return values.map(value => ({
-      value,
-      score:
-        baseScore +
-        Math.max(
-          0,
-          Number(confidence) || 0
-        ) *
-          0.6,
-      reason:
-        `${source} digit-only OCR`,
-      source,
-      labelled: false,
-    }))
-  }
-
-  const detectWatchScreenBounds = bitmap => {
-    /*
-     * Auto-find the smartwatch display using the red/pink pixels that
-     * normally belong to the heart-rate UI. This avoids requiring the
-     * user to crop the photo manually.
-     *
-     * The returned values are normalised 0..1 coordinates so they can
-     * be passed directly into createCrop().
-     */
-    const maxSide = 320
-    const scale = Math.min(
-      1,
-      maxSide /
-        Math.max(
-          bitmap.width,
-          bitmap.height
-        )
-    )
-
-    const width = Math.max(
-      1,
-      Math.round(bitmap.width * scale)
-    )
-    const height = Math.max(
-      1,
-      Math.round(bitmap.height * scale)
-    )
-
-    const canvas =
-      document.createElement('canvas')
-
-    canvas.width = width
-    canvas.height = height
-
-    const ctx = canvas.getContext('2d', {
-      willReadFrequently: true,
-    })
-
-    ctx.drawImage(
-      bitmap,
-      0,
-      0,
-      width,
-      height
-    )
-
-    const imageData =
-      ctx.getImageData(
-        0,
-        0,
-        width,
-        height
-      )
-
-    const pixels =
-      imageData.data
-
-    const points = []
-
-    /*
-     * Ignore the very outer edge of the photo. Pink/red pixels there
-     * are more likely to be unrelated objects or UI artefacts.
-     */
-    const minX =
-      Math.round(width * 0.08)
-    const maxX =
-      Math.round(width * 0.92)
-    const minY =
-      Math.round(height * 0.06)
-    const maxY =
-      Math.round(height * 0.94)
-
-    for (
-      let y = minY;
-      y < maxY;
-      y += 2
-    ) {
-      for (
-        let x = minX;
-        x < maxX;
-        x += 2
-      ) {
-        const index =
-          (y * width + x) * 4
-
-        const r = pixels[index]
-        const g = pixels[index + 1]
-        const b = pixels[index + 2]
-
-        const looksPinkOrRed =
-          r >= 105 &&
-          r >= g + 18 &&
-          (
-            r + b >= 220 ||
-            r >= 155
-          )
-
-        if (looksPinkOrRed) {
-          points.push({ x, y })
-        }
-      }
-    }
-
-    if (points.length < 3) {
-      return null
-    }
-
-    /*
-     * Use the median pink/red point instead of the extreme bounding
-     * box. This is resistant to one stray red pixel elsewhere.
-     */
-    const xs =
-      points
-        .map(point => point.x)
-        .sort((a, b) => a - b)
-
-    const ys =
-      points
-        .map(point => point.y)
-        .sort((a, b) => a - b)
-
-    const median = values =>
-      values[
-        Math.floor(
-          values.length / 2
-        )
-      ]
-
-    const centerX =
-      median(xs)
-    const centerY =
-      median(ys)
-
-    /*
-     * Estimate the spread of relevant red pixels around the median,
-     * then expand substantially to include the whole watch display.
-     */
-    const nearby = points.filter(
-      point =>
-        Math.abs(
-          point.x - centerX
-        ) <= width * 0.22 &&
-        Math.abs(
-          point.y - centerY
-        ) <= height * 0.28
-    )
-
-    const active =
-      nearby.length >= 3
-        ? nearby
-        : points
-
-    const activeXs =
-      active.map(point => point.x)
-    const activeYs =
-      active.map(point => point.y)
-
-    const left =
-      Math.min(...activeXs)
-    const right =
-      Math.max(...activeXs)
-    const top =
-      Math.min(...activeYs)
-    const bottom =
-      Math.max(...activeYs)
-
-    const pinkWidth =
-      Math.max(
-        8,
-        right - left
-      )
-    const pinkHeight =
-      Math.max(
-        8,
-        bottom - top
-      )
-
-    /*
-     * The red graph/heart elements occupy only part of the display,
-     * so expand generously around them.
-     */
-    let cropWidth =
-      Math.max(
-        pinkWidth * 2.7,
-        width * 0.18
-      )
-
-    let cropHeight =
-      Math.max(
-        pinkHeight * 2.9,
-        height * 0.24
-      )
-
-    /*
-     * Smartwatch displays are usually taller than they are wide.
-     */
-    cropHeight =
-      Math.max(
-        cropHeight,
-        cropWidth * 1.05
-      )
-
-    cropWidth =
-      Math.min(
-        cropWidth,
-        width * 0.55
-      )
-
-    cropHeight =
-      Math.min(
-        cropHeight,
-        height * 0.62
-      )
-
-    let cropX =
-      centerX -
-      cropWidth / 2
-
-    let cropY =
-      centerY -
-      cropHeight / 2
-
-    cropX =
-      Math.max(
-        0,
-        Math.min(
-          width - cropWidth,
-          cropX
-        )
-      )
-
-    cropY =
-      Math.max(
-        0,
-        Math.min(
-          height - cropHeight,
-          cropY
-        )
-      )
-
-    const bounds = {
-      x: cropX / width,
-      y: cropY / height,
-      width:
-        cropWidth / width,
-      height:
-        cropHeight / height,
-    }
-
-    console.log(
-      'AUTO WATCH BOUNDS:',
-      bounds
-    )
-
-    return bounds
-  }
-
-  const createRotatedCanvas = (
-    sourceCanvas,
-    degrees = 180
-  ) => {
-    const canvas =
-      document.createElement('canvas')
-
-    const normalized =
-      ((degrees % 360) + 360) % 360
-
-    if (
-      normalized === 90 ||
-      normalized === 270
-    ) {
-      canvas.width =
-        sourceCanvas.height
-      canvas.height =
-        sourceCanvas.width
-    } else {
-      canvas.width =
-        sourceCanvas.width
-      canvas.height =
-        sourceCanvas.height
-    }
-
-    const ctx =
-      canvas.getContext('2d', {
-        willReadFrequently: true,
-      })
-
-    ctx.translate(
-      canvas.width / 2,
-      canvas.height / 2
-    )
-
-    ctx.rotate(
-      normalized *
-        Math.PI /
-        180
-    )
-
-    ctx.drawImage(
-      sourceCanvas,
-      -sourceCanvas.width / 2,
-      -sourceCanvas.height / 2
-    )
-
-    return canvas
-  }
-
-  const scanAutoZoomedWatch = async (
-    worker,
-    bitmap,
-    candidates
-  ) => {
-    const bounds =
-      detectWatchScreenBounds(
-        bitmap
-      )
-
-    if (!bounds) {
-      return null
-    }
-
-    /*
-     * Auto-zoom the detected watch area before OCR. This is the step
-     * that replaces manual cropping by the user.
-     */
-    const baseNormal =
-      createCrop(
-        bitmap,
-        {
-          ...bounds,
-          scale: 10,
-          mode: 'normal',
-        }
-      )
-
-    const baseGray =
-      createCrop(
-        bitmap,
-        {
-          ...bounds,
-          scale: 10,
-          mode: 'gray',
-        }
-      )
-
-    const basePink =
-      createCrop(
-        bitmap,
-        {
-          ...bounds,
-          scale: 10,
-          mode: 'pinkMask',
-        }
-      )
-
-    const versions = [
-      {
-        name: 'auto-normal',
-        canvas: baseNormal,
-      },
-      {
-        name: 'auto-gray',
-        canvas: baseGray,
-      },
-      {
-        name: 'auto-pink',
-        canvas: basePink,
-      },
-
-      /*
-       * People often photograph the watch upside down. Tesseract is
-       * much more accurate if we explicitly try a 180° copy.
-       */
-      {
-        name:
-          'auto-normal-180',
-        canvas:
-          createRotatedCanvas(
-            baseNormal,
-            180
-          ),
-      },
-      {
-        name:
-          'auto-gray-180',
-        canvas:
-          createRotatedCanvas(
-            baseGray,
-            180
-          ),
-      },
-      {
-        name:
-          'auto-pink-180',
-        canvas:
-          createRotatedCanvas(
-            basePink,
-            180
-          ),
-      },
-    ]
-
-    const hits = new Map()
-
-    for (const version of versions) {
-      await worker.setParameters({
-        tessedit_pageseg_mode:
-          PSM.SPARSE_TEXT,
-        tessedit_char_whitelist:
-          '0123456789',
-        user_defined_dpi:
-          '300',
-      })
-
-      const result =
-        await recognizeOcr(worker, 
-          version.canvas
-        )
-
-      const found =
-        extractDigitCandidates(
-          result.data.text,
-          version.name,
-          result.data.confidence,
-          1850
-        )
-
-      console.log(
-        `AUTO ZOOM ${version.name}:`,
-        result.data.text,
-        result.data.confidence
-      )
-
-      for (const item of found) {
-        candidates.push(item)
-
-        const current =
-          hits.get(item.value) || {
-            value: item.value,
-            hits: 0,
-            bestConfidence: 0,
-            sources: new Set(),
-          }
-
-        current.hits += 1
-        current.bestConfidence =
-          Math.max(
-            current.bestConfidence,
-            Number(
-              result.data.confidence
-            ) || 0
-          )
-        current.sources.add(
-          version.name
-        )
-
-        hits.set(
-          item.value,
-          current
-        )
-      }
-    }
-
-    const ranked =
-      [...hits.values()]
-        .sort((a, b) => {
-          if (
-            b.hits !== a.hits
-          ) {
-            return (
-              b.hits - a.hits
-            )
-          }
-
-          return (
-            b.bestConfidence -
-            a.bestConfidence
-          )
-        })
-
-    console.log(
-      'AUTO ZOOM BPM RANKING:',
-      ranked
-    )
-
-    /*
-     * Require agreement across two processed versions before the
-     * automatic crop is allowed to fill the form.
-     */
-    const agreed =
-      ranked.find(
-        item =>
-          item.hits >= 2
-      )
-
-    if (agreed) {
-      return agreed.value
-    }
-
-    const strongSingle =
-      ranked.find(
-        item =>
-          item.hits === 1 &&
-          item.bestConfidence >= 78
-      )
-
-    return (
-      strongSingle?.value ||
-      null
-    )
-  }
-
-  const scanPrimaryTopBpm = async (
-    worker,
-    bitmap,
-    candidates
-  ) => {
-    /*
-     * The actual BPM on smartwatch screens is usually the large
-     * number near the top of the display. Small numbers lower down
-     * are often graph scale labels, min/max values or historical
-     * readings. Scan narrow top-display bands first and give them
-     * much higher authority.
-     */
-    const topRegions = [
-      {
-        name: 'top-bpm-a',
-        x: 0.34,
-        y: 0.18,
-        width: 0.32,
-        height: 0.16,
-      },
-      {
-        name: 'top-bpm-b',
-        x: 0.34,
-        y: 0.22,
-        width: 0.32,
-        height: 0.16,
-      },
-      {
-        name: 'top-bpm-c',
-        x: 0.36,
-        y: 0.26,
-        width: 0.28,
-        height: 0.15,
-      },
-      {
-        name: 'top-bpm-tight-a',
-        x: 0.40,
-        y: 0.20,
-        width: 0.20,
-        height: 0.13,
-      },
-      {
-        name: 'top-bpm-tight-b',
-        x: 0.40,
-        y: 0.24,
-        width: 0.20,
-        height: 0.13,
-      },
-      {
-        name: 'top-bpm-tight-c',
-        x: 0.40,
-        y: 0.28,
-        width: 0.20,
-        height: 0.13,
-      },
-    ]
-
-    const modes = [
-      'pinkMask',
-      'invertGray',
-      'gray',
-      'normal',
-    ]
-
-    const hits = new Map()
-
-    for (const region of topRegions) {
-      for (const mode of modes) {
-        await worker.setParameters({
-          tessedit_pageseg_mode:
-            PSM.SINGLE_WORD,
-          tessedit_char_whitelist:
-            '0123456789',
-          user_defined_dpi:
-            '300',
-        })
-
-        const crop =
-          createCrop(
-            bitmap,
-            {
-              ...region,
-              scale:
-                region.name.includes('tight')
-                  ? 28
-                  : 22,
-              mode,
-            }
-          )
-
-        const result =
-          await recognizeOcr(worker, crop)
-
-        const found =
-          extractDigitCandidates(
-            result.data.text,
-            `${region.name}-${mode}`,
-            result.data.confidence,
-            2400
-          )
-
-        console.log(
-          `PRIMARY TOP BPM ${region.name} ${mode}:`,
-          result.data.text,
-          result.data.confidence
-        )
-
-        for (const item of found) {
-          candidates.push({
-            ...item,
-            score: item.score + 300,
-          })
-
-          const current =
-            hits.get(item.value) || {
-              value: item.value,
-              hits: 0,
-              bestConfidence: 0,
-              sources: new Set(),
-            }
-
-          current.hits += 1
-          current.bestConfidence = Math.max(
-            current.bestConfidence,
-            Number(result.data.confidence) || 0
-          )
-          current.sources.add(
-            `${region.name}-${mode}`
-          )
-
-          hits.set(item.value, current)
-        }
-      }
-    }
-
-    const ranked =
-      [...hits.values()]
-        .sort((a, b) => {
-          if (b.hits !== a.hits) {
-            return b.hits - a.hits
-          }
-
-          return (
-            b.bestConfidence -
-            a.bestConfidence
-          )
-        })
-
-    console.log(
-      'PRIMARY TOP BPM RANKING:',
-      ranked
-    )
-
-    /*
-     * If the same top-display value appears at least twice, trust it
-     * immediately. This stops graph tick values such as 100/150/200
-     * from winning simply because they appear multiple times lower
-     * on the screen.
-     */
-    const repeatedTop =
-      ranked.find(
-        item => item.hits >= 2
-      )
-
-    if (repeatedTop) {
-      return repeatedTop.value
-    }
-
-    /*
-     * A single very confident read from a tight top crop is also
-     * acceptable.
-     */
-    const strongTop =
-      ranked.find(
-        item =>
-          item.hits === 1 &&
-          item.bestConfidence >= 72
-      )
-
-    return strongTop?.value || null
-  }
-
-  const scanFocusedWatchBpm = async (
-    worker,
-    bitmap,
-    candidates
-  ) => {
-    /*
-     * Do not rely on one fixed crop. Phone photos vary in framing,
-     * tilt and distance, so scan several overlapping areas around
-     * the central watch display.
-     */
-    const regions = [
-      {
-        name: 'watch-upper',
-        x: 0.32,
-        y: 0.22,
-        width: 0.36,
-        height: 0.24,
-      },
-      {
-        name: 'watch-upper-mid',
-        x: 0.32,
-        y: 0.29,
-        width: 0.36,
-        height: 0.24,
-      },
-      {
-        name: 'watch-center',
-        x: 0.32,
-        y: 0.36,
-        width: 0.36,
-        height: 0.24,
-      },
-      {
-        name: 'watch-center-low',
-        x: 0.32,
-        y: 0.43,
-        width: 0.36,
-        height: 0.23,
-      },
-      {
-        name: 'watch-tight-upper',
-        x: 0.39,
-        y: 0.27,
-        width: 0.22,
-        height: 0.18,
-      },
-      {
-        name: 'watch-tight-mid',
-        x: 0.39,
-        y: 0.34,
-        width: 0.22,
-        height: 0.18,
-      },
-      {
-        name: 'watch-tight-low',
-        x: 0.39,
-        y: 0.41,
-        width: 0.22,
-        height: 0.18,
-      },
-    ]
-
-    const modes = [
-      'pinkMask',
-      'invertGray',
-      'gray',
-      'normal',
-    ]
-
-    await worker.setParameters({
-      tessedit_pageseg_mode:
-        PSM.SINGLE_WORD,
-      tessedit_char_whitelist:
-        '0123456789',
-      user_defined_dpi:
-        '300',
-    })
-
-    const focusedHits = new Map()
-
-    for (const region of regions) {
-      for (const mode of modes) {
-        await worker.setParameters({
-          tessedit_pageseg_mode:
-            region.name.includes('tight')
-              ? PSM.SINGLE_WORD
-              : PSM.SINGLE_LINE,
-          tessedit_char_whitelist:
-            '0123456789',
-          user_defined_dpi:
-            '300',
-        })
-
-        const crop =
-          createCrop(
-            bitmap,
-            {
-              ...region,
-              scale:
-                region.name.includes('tight')
-                  ? 24
-                  : 18,
-              mode,
-            }
-          )
-
-        const result =
-          await recognizeOcr(worker, crop)
-
-        const extracted =
-          extractDigitCandidates(
-            result.data.text,
-            `${region.name}-${mode}`,
-            result.data.confidence,
-            1050
-          )
-
-        console.log(
-          `BPM ${region.name} ${mode}:`,
-          result.data.text,
-          result.data.confidence
-        )
-
-        for (const item of extracted) {
-          /*
-           * Prefer likely resting-heart-rate values, but still allow
-           * higher values because the upload may be from a general
-           * heart-rate screen rather than a true resting measurement.
-           */
-          let bonus = 0
-
-          if (item.value >= 45 && item.value <= 120) {
-            bonus += 120
-          }
-
-          candidates.push({
-            ...item,
-            score: item.score + bonus,
-          })
-
-          const current =
-            focusedHits.get(item.value) || {
-              value: item.value,
-              hits: 0,
-              sources: new Set(),
-              bestConfidence: 0,
-            }
-
-          current.hits += 1
-          current.sources.add(
-            `${region.name}-${mode}`
-          )
-          current.bestConfidence =
-            Math.max(
-              current.bestConfidence,
-              Number(result.data.confidence) || 0
-            )
-
-          focusedHits.set(
-            item.value,
-            current
-          )
-        }
-      }
-    }
-
-    const rankedFocused =
-      [...focusedHits.values()]
-        .sort((a, b) => {
-          if (b.hits !== a.hits) {
-            return b.hits - a.hits
-          }
-
-          return (
-            b.bestConfidence -
-            a.bestConfidence
-          )
-        })
-
-    console.log(
-      'FOCUSED BPM HITS:',
-      rankedFocused
-    )
-
-    /*
-     * Two independent focused reads of the same value are enough.
-     * This is much safer than accepting a single broad OCR number.
-     */
-    const agreed =
-      rankedFocused.find(
-        item => item.hits >= 2
-      )
-
-    if (agreed) {
-      return agreed.value
-    }
-
-    /*
-     * If only one focused crop reads a value, only trust it when
-     * Tesseract confidence is reasonably strong.
-     */
-    const strongSingle =
-      rankedFocused.find(
-        item =>
-          item.hits === 1 &&
-          item.bestConfidence >= 62
-      )
-
-    return strongSingle?.value || null
-  }
-
-  const chooseBestBpm = candidates => {
-    if (!candidates.length) {
-      return null
-    }
-
-    const grouped = new Map()
-
-    candidates.forEach(candidate => {
-      const current =
-        grouped.get(candidate.value) || {
-          value: candidate.value,
-          bestScore: -Infinity,
-          hits: 0,
-          sources: new Set(),
-          labelledHits: 0,
-          reasons: [],
-        }
-
-      current.bestScore =
-        Math.max(
-          current.bestScore,
-          candidate.score
-        )
-      current.hits += 1
-      current.sources.add(
-        candidate.source
-      )
-
-      if (candidate.labelled) {
-        current.labelledHits += 1
-      }
-
-      current.reasons.push(
-        `${candidate.source}: ${candidate.reason}`
-      )
-
-      grouped.set(
-        candidate.value,
-        current
-      )
-    })
-
-    const ranked = [
-      ...grouped.values(),
-    ]
-      .map(item => ({
-        ...item,
-        finalScore:
-          item.bestScore +
-          Math.min(
-            450,
-            (item.sources.size - 1) *
-              150
-          ) +
-          Math.min(
-            300,
-            item.labelledHits * 150
-          ) +
-          Math.min(
-            120,
-            (item.hits - 1) * 35
-          ),
-      }))
-      .sort(
-        (a, b) =>
-          b.finalScore -
-          a.finalScore
-      )
-
-    console.log(
-      'BPM FINAL RANKING:',
-      ranked
-    )
-
-    const labelledWinner =
-      ranked.find(
-        item =>
-          item.labelledHits > 0 &&
-          item.bestScore >= 1400
-      )
-
-    if (labelledWinner) {
-      return labelledWinner.value
-    }
-
-    const best = ranked[0]
-    const second = ranked[1]
-
-    if (!best) return null
-
-    if (
-      best.sources.size >= 2 &&
-      (
-        !second ||
-        best.finalScore -
-          second.finalScore >=
-          80
-      )
-    ) {
-      return best.value
-    }
-
-    /*
-     * A tightly focused BPM crop is intentionally given a score
-     * above 1400. If one of those focused scans finds a clear
-     * 2-3 digit number, allow it to win even when another image
-     * preprocessing pass did not recognise the same digits.
-     *
-     * This prevents a clear large BPM such as 88, 120 or 198 from
-     * being rejected simply because only one focused OCR pass read it.
-     */
-    if (
-      best.bestScore >= 1400 &&
-      (
-        !second ||
-        best.finalScore -
-          second.finalScore >=
-          120
-      )
-    ) {
-      return best.value
-    }
-
-    return null
-  }
-
-  const clamp01 = value =>
-    Math.max(
-      0,
-      Math.min(
-        1,
-        Number(value) || 0
-      )
-    )
-
-  const getCropPointer = event => {
-    const image =
-      cropImageRef.current
-
-    if (!image) return null
-
-    const rect =
-      image.getBoundingClientRect()
-
-    if (
-      !rect.width ||
-      !rect.height
-    ) {
-      return null
-    }
-
-    return {
-      x: clamp01(
-        (event.clientX - rect.left) /
-          rect.width
-      ),
-      y: clamp01(
-        (event.clientY - rect.top) /
-          rect.height
-      ),
-    }
-  }
-
-  const handleCropPointerDown = event => {
-    const point =
-      getCropPointer(event)
-
-    if (!point) return
-
-    event.preventDefault()
-
-    cropDragStartRef.current =
-      point
-
-    setCropRect({
-      x: point.x,
-      y: point.y,
-      width: 0,
-      height: 0,
-    })
-
-    try {
-      event.currentTarget
-        .setPointerCapture(
-          event.pointerId
-        )
-    } catch {
-      // Pointer capture is optional.
-    }
-  }
-
-  const handleCropPointerMove = event => {
-    const start =
-      cropDragStartRef.current
-
-    if (!start) return
-
-    const point =
-      getCropPointer(event)
-
-    if (!point) return
-
-    const x =
-      Math.min(
-        start.x,
-        point.x
-      )
-    const y =
-      Math.min(
-        start.y,
-        point.y
-      )
-
-    const width =
-      Math.abs(
-        point.x - start.x
-      )
-    const height =
-      Math.abs(
-        point.y - start.y
-      )
-
-    setCropRect({
-      x,
-      y,
-      width,
-      height,
-    })
-  }
-
-  const handleCropPointerUp = event => {
-    cropDragStartRef.current =
-      null
-
-    try {
-      event.currentTarget
-        .releasePointerCapture(
-          event.pointerId
-        )
-    } catch {
-      // Pointer capture is optional.
-    }
-  }
-
-  const scanManualCrop = async () => {
-    if (
-      !uploadedBpmFile ||
-      !cropRect
-    ) {
-      setOcrMessage(
-        'Drag a box around the watch screen first.'
-      )
-      return
-    }
-
-    if (
-      cropRect.width < 0.025 ||
-      cropRect.height < 0.025
-    ) {
-      setOcrMessage(
-        'The crop area is too small. Drag a box around the watch screen.'
-      )
-      return
-    }
-
-    ocrCancelledRef.current = false
-
-    setOcrLoading(true)
-    setDetectedBpm(null)
-    setOcrMessage(
-      'Scanning the selected watch area...'
-    )
-
-    let worker = null
-    let bitmap = null
-
-    try {
-      bitmap =
-        await createImageBitmap(
-          uploadedBpmFile
-        )
-
-      worker =
-        await createWorker('eng')
-
-      /*
-       * Convert a region expressed relative to the selected crop
-       * into coordinates relative to the original uploaded image.
-       *
-       * This means the user can crop around the WHOLE watch screen.
-       * We then automatically inspect smaller zones inside that crop.
-       */
-      const subCrop = ({
-        x,
-        y,
-        width,
-        height,
-      }) => ({
-        x:
-          cropRect.x +
-          cropRect.width * x,
-        y:
-          cropRect.y +
-          cropRect.height * y,
-        width:
-          cropRect.width *
-          width,
-        height:
-          cropRect.height *
-          height,
-      })
-
-      /*
-       * Search several overlapping zones inside the user's crop.
-       *
-       * The main BPM number on smartwatch displays is usually near
-       * one end of the screen. Because the watch may be upside down,
-       * we scan both the upper and lower portions.
-       */
-      const regions = [
-        {
-          name: 'whole',
-          ...subCrop({
-            x: 0,
-            y: 0,
-            width: 1,
-            height: 1,
-          }),
-          priority: 250,
-        },
-        {
-          name: 'upper-half',
-          ...subCrop({
-            x: 0.08,
-            y: 0.02,
-            width: 0.84,
-            height: 0.48,
-          }),
-          priority: 550,
-        },
-        {
-          name: 'lower-half',
-          ...subCrop({
-            x: 0.08,
-            y: 0.50,
-            width: 0.84,
-            height: 0.48,
-          }),
-          priority: 550,
-        },
-        {
-          name: 'upper-number',
-          ...subCrop({
-            x: 0.18,
-            y: 0.02,
-            width: 0.64,
-            height: 0.30,
-          }),
-          priority: 900,
-        },
-        {
-          name: 'lower-number',
-          ...subCrop({
-            x: 0.18,
-            y: 0.68,
-            width: 0.64,
-            height: 0.30,
-          }),
-          priority: 900,
-        },
-        {
-          name: 'center-upper',
-          ...subCrop({
-            x: 0.16,
-            y: 0.18,
-            width: 0.68,
-            height: 0.30,
-          }),
-          priority: 650,
-        },
-        {
-          name: 'center-lower',
-          ...subCrop({
-            x: 0.16,
-            y: 0.52,
-            width: 0.68,
-            height: 0.30,
-          }),
-          priority: 650,
-        },
-      ]
-
-      const modes = [
-        'pinkMask',
-        'gray',
-        'normal',
-      ]
-
-      const manualCandidates = []
-
-      for (const region of regions) {
-        for (const mode of modes) {
-          const crop =
-            createCrop(
-              bitmap,
-              {
-                x: region.x,
-                y: region.y,
-                width:
-                  region.width,
-                height:
-                  region.height,
-                scale:
-                  region.name ===
-                    'whole'
-                    ? 10
-                    : 18,
-                mode,
-              }
-            )
-
-          const versions = [
-            {
-              name:
-                `${region.name}-${mode}`,
-              canvas: crop,
-            },
-            {
-              name:
-                `${region.name}-${mode}-180`,
-              canvas:
-                createRotatedCanvas(
-                  crop,
-                  180
-                ),
-            },
-          ]
-
-          for (
-            const version of versions
-          ) {
-            await worker.setParameters({
-              tessedit_pageseg_mode:
-                region.name ===
-                  'whole'
-                  ? PSM.SPARSE_TEXT
-                  : PSM.SINGLE_LINE,
-              tessedit_char_whitelist:
-                '0123456789',
-              user_defined_dpi:
-                '300',
-            })
-
-            const result =
-              await recognizeOcr(
-                worker,
-                version.canvas
-              )
-
-            console.log(
-              `MANUAL SMART CROP ${version.name}:`,
-              result.data.text,
-              result.data.confidence
-            )
-
-            const found =
-              extractDigitCandidates(
-                result.data.text,
-                version.name,
-                result.data.confidence,
-                2200 +
-                  region.priority
-              )
-
-            /*
-             * Prefer realistic resting BPM values slightly, but do
-             * not exclude higher readings because users may upload
-             * a general heart-rate screen.
-             */
-            manualCandidates.push(
-              ...found.map(item => ({
-                ...item,
-                score:
-                  item.score +
-                  (
-                    item.value >= 45 &&
-                    item.value <= 120
-                      ? 180
-                      : 0
-                  ),
-              }))
-            )
-          }
-        }
-      }
-
-      const grouped =
-        new Map()
-
-      manualCandidates.forEach(
-        candidate => {
-          const current =
-            grouped.get(
-              candidate.value
-            ) || {
-              value:
-                candidate.value,
-              hits: 0,
-              bestScore:
-                -Infinity,
-              sources:
-                new Set(),
-            }
-
-          current.hits += 1
-
-          current.bestScore =
-            Math.max(
-              current.bestScore,
-              candidate.score
-            )
-
-          current.sources.add(
-            candidate.source
-          )
-
-          grouped.set(
-            candidate.value,
-            current
-          )
-        }
-      )
-
-      const ranked =
-        [...grouped.values()]
-          .map(item => ({
-            ...item,
-            finalScore:
-              item.bestScore +
-              Math.min(
-                900,
-                (item.sources.size -
-                  1) *
-                  180
-              ) +
-              Math.min(
-                500,
-                (item.hits - 1) *
-                  90
-              ),
-          }))
-          .sort(
-            (a, b) =>
-              b.finalScore -
-              a.finalScore
-          )
-
-      console.log(
-        'MANUAL SMART CROP BPM RANKING:',
-        ranked
-      )
-
-      const best =
-        ranked[0]
-
-      const second =
-        ranked[1]
-
-      let bpm = null
-
-      /*
-       * Tight upper/lower BPM zones receive a much larger base score,
-       * so the main large number should outrank graph labels and
-       * secondary values even when the user selected the whole watch.
-       */
-      if (
-        best &&
-        (
-          best.hits >= 2 ||
-          !second ||
-          best.finalScore -
-            second.finalScore >=
-            140
-        )
-      ) {
-        bpm =
-          best.value
-      }
-
-      if (
-        !bpm ||
-        !isValidBpm(bpm)
-      ) {
-        setOcrMessage(
-          'Could not identify the main BPM number. Try selecting the watch screen more closely, but you do not need to crop only the digits.'
-        )
-        return
-      }
-
-      if (
-        ocrCancelledRef.current
-      ) {
-        return
-      }
-
-      setDetectedBpm(bpm)
-      onChange('hr', bpm)
-
-      setOcrMessage(
-        `BPM detected from crop: ${bpm} BPM. Please verify the value before saving.`
-      )
-
-      setCropMode(false)
-    } catch (error) {
-      if (
-        !ocrCancelledRef.current
-      ) {
-        console.error(
-          'Manual BPM crop OCR error:',
-          error
-        )
-
-        setOcrMessage(
-          'Unable to scan the cropped watch area. Please try again or enter the BPM manually.'
-        )
-      }
-    } finally {
-      if (bitmap) {
-        bitmap.close()
-      }
-
-      if (worker) {
-        try {
-          await worker.terminate()
-        } catch (error) {
-          console.error(
-            'Failed to terminate crop OCR worker:',
-            error
-          )
-        }
-      }
-
-      setOcrLoading(false)
-    }
-  }
-
-  const stopBpmCamera = () => {
-    if (cameraVideoRef.current) {
-      cameraVideoRef.current.pause()
-      cameraVideoRef.current.srcObject = null
-    }
-
-    if (cameraStreamRef.current) {
-      cameraStreamRef.current
-        .getTracks()
-        .forEach(track => track.stop())
-
-      cameraStreamRef.current = null
-    }
-
-    setCameraOpen(false)
-  }
-
-  const startBpmCamera = async () => {
-    setCameraError('')
-
-    if (
-      !navigator.mediaDevices ||
-      !navigator.mediaDevices.getUserMedia
-    ) {
-      setCameraError(
-        'Camera access is not supported in this browser. Use Upload BPM Image instead.'
-      )
-      return
-    }
-
-    stopBpmCamera()
-
-    try {
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: {
-              ideal: 'environment',
-            },
-          },
-          audio: false,
-        })
-
-      cameraStreamRef.current = stream
-      setCameraOpen(true)
-    } catch (error) {
-      console.error(
-        'Unable to open BPM camera:',
-        error
-      )
-
-      setCameraError(
-        window.isSecureContext
-          ? 'Camera permission was blocked or the camera is unavailable.'
-          : 'Camera access requires HTTPS. Open ShuttleTrack using the deployed HTTPS link.'
-      )
-    }
-  }
-
-  const captureBpmPhoto = async () => {
-    const video = cameraVideoRef.current
-    const canvas = cameraCanvasRef.current
-
-    if (!video || !canvas) {
-      setCameraError(
-        'Camera is not ready yet. Please try again.'
-      )
-      return
-    }
-
-    const width =
-      video.videoWidth ||
-      video.clientWidth
-
-    const height =
-      video.videoHeight ||
-      video.clientHeight
-
-    if (!width || !height) {
-      setCameraError(
-        'Camera is still starting. Please wait a moment and try again.'
-      )
-      return
-    }
-
-    canvas.width = width
-    canvas.height = height
-
-    const ctx =
-      canvas.getContext('2d')
-
-    ctx.drawImage(
-      video,
-      0,
-      0,
-      width,
-      height
-    )
-
-    const blob =
-      await new Promise(resolve => {
-        canvas.toBlob(
-          resolve,
-          'image/jpeg',
-          0.92
-        )
-      })
-
-    if (!blob) {
-      setCameraError(
-        'Unable to capture the photo. Please try again.'
-      )
-      return
-    }
-
-    const file =
-      new File(
-        [blob],
-        `bpm-${Date.now()}.jpg`,
-        {
-          type: 'image/jpeg',
-        }
-      )
-
-    stopBpmCamera()
-
-    await handleBpmImage({
-      target: {
-        files: [file],
-        value: '',
-      },
-    })
-  }
-
-  const handleBpmImage = async event => {
-    const file =
-      event.target.files?.[0]
-
-    if (!file) return
-
-    if (
-      !file.type.startsWith(
-        'image/'
-      )
-    ) {
-      setOcrMessage(
-        'Please upload an image file.'
-      )
-      return
-    }
-
-    if (
-      file.size >
-      10 * 1024 * 1024
-    ) {
-      setOcrMessage(
-        'Please choose an image smaller than 10 MB.'
-      )
-      return
-    }
-
-    if (imagePreview) {
-      URL.revokeObjectURL(
-        imagePreview
-      )
-    }
-
-    ocrCancelledRef.current = false
-
-    setImagePreview(
-      URL.createObjectURL(file)
-    )
-    setUploadedBpmFile(file)
-    setCropMode(false)
-    setCropRect(null)
-    setDetectedBpm(null)
-    setOcrMessage(
-      'Scanning image for heart rate...'
-    )
-    setOcrLoading(true)
-
-    let worker = null
-    let bitmap = null
-
-    try {
-      bitmap =
-        await createImageBitmap(file)
-
-      worker =
-        await createWorker('eng')
-
-      const candidates = []
-
-      await worker.setParameters({
-        tessedit_pageseg_mode:
-          PSM.SPARSE_TEXT,
-        preserve_interword_spaces:
-          '1',
-        user_defined_dpi:
-          '300',
-      })
-
-      const fullResult =
-        await recognizeOcr(worker, file)
-
-      console.log(
-        'BPM FULL:',
-        fullResult.data.text
-      )
-
-      candidates.push(
-        ...extractContextCandidates(
-          fullResult.data.text,
-          'full'
-        )
-      )
-
-      let bpm =
-        chooseBestBpm(candidates)
-
-      if (!bpm) {
-        const summaryCrop =
-          createCrop(
-            bitmap,
-            {
-              x: 0.03,
-              y: 0.72,
-              width: 0.94,
-              height: 0.20,
-              scale: 4,
-            }
-          )
-
-        const summaryResult =
-          await recognizeOcr(worker, 
-            summaryCrop
-          )
-
-        console.log(
-          'BPM SUMMARY:',
-          summaryResult.data.text
-        )
-
-        candidates.push(
-          ...extractContextCandidates(
-            summaryResult.data.text,
-            'summary'
-          )
-        )
-
-        bpm =
-          chooseBestBpm(candidates)
-      }
-
-      await worker.setParameters({
-        tessedit_pageseg_mode:
-          PSM.SPARSE_TEXT,
-        tessedit_char_whitelist:
-          '0123456789',
-        user_defined_dpi:
-          '300',
-      })
-
-      /*
-       * AUTO CROP / AUTO ZOOM
-       *
-       * Find the watch display from its pink/red UI pixels, enlarge it
-       * automatically and also test a 180-degree copy. The user no
-       * longer needs to crop the source image manually.
-       */
-      if (!bpm) {
-        bpm =
-          await scanAutoZoomedWatch(
-            worker,
-            bitmap,
-            candidates
-          )
-      }
-
-      /*
-       * If automatic localisation did not produce a reliable value,
-       * use the older fixed-position top BPM scan as a fallback.
-       */
-      if (!bpm) {
-        bpm =
-          await scanPrimaryTopBpm(
-            worker,
-            bitmap,
-            candidates
-          )
-      }
-
-      /*
-       * If the main number was not readable, fall back to broader
-       * overlapping watch-screen scans.
-       */
-      if (!bpm) {
-        bpm =
-          await scanFocusedWatchBpm(
-            worker,
-            bitmap,
-            candidates
-          )
-      }
-
-      /*
-       * Return to sparse digit mode for the broader fallback crops.
-       */
-      await worker.setParameters({
-        tessedit_pageseg_mode:
-          PSM.SPARSE_TEXT,
-        tessedit_char_whitelist:
-          '0123456789',
-        user_defined_dpi:
-          '300',
-      })
-
-      if (!bpm) {
-        const watchCrop =
-          createCrop(
-            bitmap,
-            {
-              x: 0.32,
-              y: 0.25,
-              width: 0.36,
-              height: 0.50,
-              scale: 8,
-              mode: 'normal',
-            }
-          )
-
-        const watchResult =
-          await recognizeOcr(worker, 
-            watchCrop
-          )
-
-        candidates.push(
-          ...extractDigitCandidates(
-            watchResult.data.text,
-            'watch-normal',
-            watchResult.data.confidence,
-            650
-          )
-        )
-      }
-
-      if (!bpm) {
-        const watchGrayCrop =
-          createCrop(
-            bitmap,
-            {
-              x: 0.32,
-              y: 0.25,
-              width: 0.36,
-              height: 0.50,
-              scale: 8,
-              mode: 'gray',
-            }
-          )
-
-        const watchGrayResult =
-          await recognizeOcr(worker, 
-            watchGrayCrop
-          )
-
-        candidates.push(
-          ...extractDigitCandidates(
-            watchGrayResult.data.text,
-            'watch-gray',
-            watchGrayResult.data.confidence,
-            650
-          )
-        )
-
-        bpm =
-          chooseBestBpm(candidates)
-      }
-
-      if (!bpm) {
-        const centerCrop =
-          createCrop(
-            bitmap,
-            {
-              x: 0.23,
-              y: 0.23,
-              width: 0.54,
-              height: 0.35,
-              scale: 6,
-              mode: 'normal',
-            }
-          )
-
-        const centerResult =
-          await recognizeOcr(worker, 
-            centerCrop
-          )
-
-        candidates.push(
-          ...extractDigitCandidates(
-            centerResult.data.text,
-            'center-normal',
-            centerResult.data.confidence,
-            620
-          )
-        )
-      }
-
-      if (!bpm) {
-        const redCrop =
-          createCrop(
-            bitmap,
-            {
-              x: 0.23,
-              y: 0.23,
-              width: 0.54,
-              height: 0.35,
-              scale: 6,
-              mode: 'red',
-            }
-          )
-
-        const redResult =
-          await recognizeOcr(worker, 
-            redCrop
-          )
-
-        candidates.push(
-          ...extractDigitCandidates(
-            redResult.data.text,
-            'center-red',
-            redResult.data.confidence,
-            700
-          )
-        )
-
-        bpm =
-          chooseBestBpm(candidates)
-      }
-
-      if (!bpm) {
-        const lowerCrop =
-          createCrop(
-            bitmap,
-            {
-              x: 0.28,
-              y: 0.44,
-              width: 0.44,
-              height: 0.29,
-              scale: 7,
-              mode: 'normal',
-            }
-          )
-
-        const lowerResult =
-          await recognizeOcr(worker, 
-            lowerCrop
-          )
-
-        candidates.push(
-          ...extractDigitCandidates(
-            lowerResult.data.text,
-            'lower-normal',
-            lowerResult.data.confidence,
-            700
-          )
-        )
-      }
-
-      if (!bpm) {
-        const lowerBrightCrop =
-          createCrop(
-            bitmap,
-            {
-              x: 0.28,
-              y: 0.44,
-              width: 0.44,
-              height: 0.29,
-              scale: 7,
-              mode: 'bright',
-            }
-          )
-
-        const lowerBrightResult =
-          await recognizeOcr(worker, 
-            lowerBrightCrop
-          )
-
-        candidates.push(
-          ...extractDigitCandidates(
-            lowerBrightResult.data.text,
-            'lower-bright',
-            lowerBrightResult.data.confidence,
-            700
-          )
-        )
-
-        bpm =
-          chooseBestBpm(candidates)
-      }
-
-      {
-        const microWatchNormal =
-          createCrop(
-            bitmap,
-            {
-              x: 0.405,
-              y: 0.335,
-              width: 0.19,
-              height: 0.13,
-              scale: 18,
-              mode: 'normal',
-            }
-          )
-
-        await worker.setParameters({
-          tessedit_pageseg_mode:
-            PSM.SINGLE_WORD,
-          tessedit_char_whitelist:
-            '0123456789',
-          user_defined_dpi:
-            '300',
-        })
-
-        const microWatchNormalResult =
-          await recognizeOcr(worker, 
-            microWatchNormal
-          )
-
-        const microWatchGray =
-          createCrop(
-            bitmap,
-            {
-              x: 0.405,
-              y: 0.335,
-              width: 0.19,
-              height: 0.13,
-              scale: 18,
-              mode: 'gray',
-            }
-          )
-
-        const microWatchGrayResult =
-          await recognizeOcr(worker, 
-            microWatchGray
-          )
-
-        const normalValues =
-          extractDigitCandidates(
-            microWatchNormalResult.data.text,
-            'micro-watch-normal',
-            microWatchNormalResult.data.confidence,
-            900
-          )
-
-        const grayValues =
-          extractDigitCandidates(
-            microWatchGrayResult.data.text,
-            'micro-watch-gray',
-            microWatchGrayResult.data.confidence,
-            900
-          )
-
-        candidates.push(
-          ...normalValues,
-          ...grayValues
-        )
-
-        console.log(
-          'MICRO WATCH NORMAL:',
-          microWatchNormalResult.data.text,
-          microWatchNormalResult.data.confidence
-        )
-
-        console.log(
-          'MICRO WATCH GRAY:',
-          microWatchGrayResult.data.text,
-          microWatchGrayResult.data.confidence
-        )
-
-        const normalBpms =
-          normalValues.map(
-            item => item.value
-          )
-
-        const grayBpms =
-          grayValues.map(
-            item => item.value
-          )
-
-        const microAgreement =
-          normalBpms.find(value =>
-            grayBpms.includes(value)
-          )
-
-        if (microAgreement) {
-          bpm = microAgreement
-        }
-      }
-
-      if (!bpm) {
-        const heartDigitsNormal =
-          createCrop(
-            bitmap,
-            {
-              x: 0.365,
-              y: 0.61,
-              width: 0.27,
-              height: 0.105,
-              scale: 12,
-              mode: 'normal',
-            }
-          )
-
-        await worker.setParameters({
-          tessedit_pageseg_mode:
-            PSM.SINGLE_WORD,
-          tessedit_char_whitelist:
-            '0123456789',
-          user_defined_dpi:
-            '300',
-        })
-
-        const heartDigitsNormalResult =
-          await recognizeOcr(worker, 
-            heartDigitsNormal
-          )
-
-        candidates.push(
-          ...extractDigitCandidates(
-            heartDigitsNormalResult.data.text,
-            'heart-digits-normal',
-            heartDigitsNormalResult.data.confidence,
-            980
-          )
-        )
-
-        const heartDigitsGray =
-          createCrop(
-            bitmap,
-            {
-              x: 0.365,
-              y: 0.61,
-              width: 0.27,
-              height: 0.105,
-              scale: 12,
-              mode: 'gray',
-            }
-          )
-
-        const heartDigitsGrayResult =
-          await recognizeOcr(worker, 
-            heartDigitsGray
-          )
-
-        candidates.push(
-          ...extractDigitCandidates(
-            heartDigitsGrayResult.data.text,
-            'heart-digits-gray',
-            heartDigitsGrayResult.data.confidence,
-            980
-          )
-        )
-
-        const heartNormalValues =
-          extractDigitCandidates(
-            heartDigitsNormalResult.data.text,
-            'heart-normal-check',
-            heartDigitsNormalResult.data.confidence,
-            0
-          ).map(item => item.value)
-
-        const heartGrayValues =
-          extractDigitCandidates(
-            heartDigitsGrayResult.data.text,
-            'heart-gray-check',
-            heartDigitsGrayResult.data.confidence,
-            0
-          ).map(item => item.value)
-
-        const heartAgreement =
-          heartNormalValues.find(value =>
-            heartGrayValues.includes(value)
-          )
-
-        if (heartAgreement) {
-          bpm = heartAgreement
-        }
-      }
-
-      if (!bpm) {
-        bpm =
-          chooseBestBpm(candidates)
-      }
-
-      console.log(
-        'ALL BPM CANDIDATES:',
-        candidates
-      )
-
-      console.log(
-        'FINAL BPM:',
-        bpm
-      )
-
-      if (!bpm) {
-        setOcrMessage(
-          'Could not detect a reliable BPM value. Please try another screenshot or enter it manually.'
-        )
-        return
-      }
-
-      if (ocrCancelledRef.current) {
-        return
-      }
-
-      setDetectedBpm(bpm)
-      onChange('hr', bpm)
-
-      setOcrMessage(
-        `BPM detected successfully: ${bpm} BPM. Please verify the value before saving.`
-      )
-    } catch (error) {
-      if (!ocrCancelledRef.current) {
-        console.error(
-          'BPM OCR error:',
-          error
-        )
-
-        setOcrMessage(
-          'Unable to scan this image. Please try another image or enter the BPM manually.'
-        )
-      }
-    } finally {
-      if (bitmap) {
-        bitmap.close()
-      }
-
-      if (worker) {
-        try {
-          await worker.terminate()
-        } catch (error) {
-          console.error(
-            'Failed to terminate OCR worker:',
-            error
-          )
-        }
-      }
-
-      setOcrLoading(false)
-
-      if (event.target) {
-        event.target.value = ''
-      }
-    }
-  }
-
-  const clearBpmImage = () => {
-    stopBpmCamera()
-
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview)
-    }
-
-    setImagePreview('')
-    setUploadedBpmFile(null)
-    setCropMode(false)
-    setCropRect(null)
-    cropDragStartRef.current = null
-    setDetectedBpm(null)
-    setOcrMessage('')
-  }
-
-  const handleClose = () => {
-    ocrCancelledRef.current = true
-    stopBpmCamera()
-    onClose()
-  }
-
-  const hrValue = form.hr === null || form.hr === undefined
-    ? ''
-    : form.hr
-
-  return (
-    <ModalShell title={title} onClose={handleClose}>
-      <div
-        className="fitness-recovery-top-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 14,
-        }}
-      >
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Date</label>
-          <input
-            className={styles.formInput}
-            type="date"
-            value={form.date}
-            onChange={e => onChange('date', e.target.value)}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>
-            Resting heart rate
-          </label>
-
-          <div style={{ position: 'relative' }}>
-            <input
-              className={styles.formInput}
-              type="number"
-              min="30"
-              max="220"
-              inputMode="numeric"
-              placeholder="e.g. 62"
-              value={hrValue}
-              onChange={e => {
-                setDetectedBpm(null)
-                onChange('hr', e.target.value)
-              }}
-              style={{ paddingRight: 58 }}
-            />
-
-            <span
-              style={{
-                position: 'absolute',
-                right: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                fontSize: 11,
-                fontWeight: 700,
-                color: '#8892A4',
-                pointerEvents: 'none',
-              }}
-            >
-              BPM
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>
-          Scan or upload BPM image
-        </label>
-
-        {/* Existing image picker for screenshots/gallery/desktop. */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleBpmImage}
-          style={{ display: 'none' }}
-        />
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 8,
-          }}
-        >
-          <button
-            type="button"
-            className={styles.btnPrimary}
-            onClick={startBpmCamera}
-            disabled={ocrLoading || saving || cameraOpen}
-            style={{
-              width: '100%',
-              minHeight: 44,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}
-          >
-            📷 Snap & Detect BPM
-          </button>
-
-          <button
-            type="button"
-            className={styles.btnOutline}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={ocrLoading || saving || cameraOpen}
-            style={{
-              width: '100%',
-              minHeight: 44,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              borderStyle: 'dashed',
-            }}
-          >
-            🖼️ Upload BPM Image
-          </button>
-        </div>
-
-        <div
-          style={{
-            marginTop: 5,
-            fontSize: 10,
-            color: '#8892A4',
-            lineHeight: 1.45,
-          }}
-        >
-          Snap a photo or upload an image to detect BPM automatically.
-        </div>
-
-        {cameraError && (
-          <div
-            style={{
-              marginTop: 8,
-              padding: '9px 11px',
-              borderRadius: 9,
-              border: '1px solid #FECACA',
-              background: '#FEF2F2',
-              color: '#B91C1C',
-              fontSize: 11,
-              lineHeight: 1.45,
-              fontWeight: 700,
-            }}
-          >
-            {cameraError}
-          </div>
-        )}
-
-        {cameraOpen && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: 10,
-              borderRadius: 12,
-              border: '1px solid #DCE5F5',
-              background: '#F7F9FF',
-            }}
-          >
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 11,
-                fontWeight: 700,
-                color: '#0D1B3E',
-              }}
-            >
-              Point the camera at the BPM reading
-            </div>
-
-            <video
-              ref={cameraVideoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{
-                display: 'block',
-                width: '100%',
-                maxHeight: 360,
-                objectFit: 'cover',
-                borderRadius: 10,
-                background: '#000000',
-              }}
-            />
-
-            <canvas
-              ref={cameraCanvasRef}
-              style={{ display: 'none' }}
-            />
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 8,
-                marginTop: 10,
-              }}
-            >
-              <button
-                type="button"
-                className={styles.btnOutline}
-                onClick={stopBpmCamera}
-                disabled={ocrLoading}
-              >
-                Cancel Camera
-              </button>
-
-              <button
-                type="button"
-                className={styles.btnPrimary}
-                onClick={captureBpmPhoto}
-                disabled={ocrLoading}
-              >
-                📸 Capture & Scan
-              </button>
-            </div>
-          </div>
-        )}
-
-        {imagePreview && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: 10,
-              borderRadius: 12,
-              border: '1px solid #E8EEF8',
-              background: '#F7F9FF',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 10,
-                marginBottom: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: '#0D1B3E',
-                }}
-              >
-                Uploaded image
-              </span>
-
-              <button
-                type="button"
-                onClick={clearBpmImage}
-                disabled={ocrLoading}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: '#EF4444',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Remove
-              </button>
-            </div>
-
-            <img
-              src={imagePreview}
-              alt="Uploaded BPM reading"
-              style={{
-                display: 'block',
-                width: '100%',
-                maxHeight: 180,
-                objectFit: 'contain',
-                borderRadius: 8,
-                background: '#FFFFFF',
-              }}
-            />
-          </div>
-        )}
-
-        {imagePreview && (
-          <div
-            style={{
-              marginTop: 8,
-            }}
-          >
-            <button
-              type="button"
-              className={styles.btnOutline}
-              disabled={
-                ocrLoading ||
-                saving
-              }
-              onClick={() => {
-                setCropMode(
-                  current =>
-                    !current
-                )
-
-                setCropRect(null)
-              }}
-              style={{
-                width: '100%',
-                minHeight: 38,
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              {cropMode
-                ? 'Cancel Crop'
-                : 'Crop & Rescan BPM'}
-            </button>
-          </div>
-        )}
-
-        {imagePreview &&
-          cropMode && (
-            <div
-              style={{
-                marginTop: 10,
-                padding: 12,
-                borderRadius: 12,
-                border:
-                  '1px solid #DCE5F5',
-                background:
-                  '#F7F9FF',
-              }}
-            >
-              <div
-                style={{
-                  marginBottom: 8,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color:
-                    '#0D1B3E',
-                }}
-              >
-                Drag a box around the watch screen
-              </div>
-
-              <div
-                style={{
-                  marginBottom: 10,
-                  fontSize: 10,
-                  lineHeight: 1.45,
-                  color:
-                    '#64748B',
-                }}
-              >
-                Select the watch display area. You do not need to crop tightly
-                around only the BPM digits; the scanner will search inside
-                your selected area automatically.
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent:
-                    'center',
-                  overflow: 'hidden',
-                  borderRadius: 10,
-                  background:
-                    '#FFFFFF',
-                  border:
-                    '1px solid #E8EEF8',
-                  padding: 8,
-                }}
-              >
-                <div
-                  onPointerDown={
-                    handleCropPointerDown
-                  }
-                  onPointerMove={
-                    handleCropPointerMove
-                  }
-                  onPointerUp={
-                    handleCropPointerUp
-                  }
-                  onPointerCancel={
-                    handleCropPointerUp
-                  }
-                  style={{
-                    position:
-                      'relative',
-                    display:
-                      'inline-block',
-                    maxWidth:
-                      '100%',
-                    touchAction:
-                      'none',
-                    cursor:
-                      'crosshair',
-                    userSelect:
-                      'none',
-                  }}
-                >
-                  <img
-                    ref={
-                      cropImageRef
-                    }
-                    src={
-                      imagePreview
-                    }
-                    alt="Select BPM crop area"
-                    draggable="false"
-                    style={{
-                      display:
-                        'block',
-                      maxWidth:
-                        '100%',
-                      maxHeight:
-                        330,
-                      width:
-                        'auto',
-                      height:
-                        'auto',
-                      pointerEvents:
-                        'none',
-                      userSelect:
-                        'none',
-                    }}
-                  />
-
-                  {cropRect &&
-                    cropRect.width >
-                      0 &&
-                    cropRect.height >
-                      0 && (
-                      <div
-                        style={{
-                          position:
-                            'absolute',
-                          left:
-                            `${cropRect.x * 100}%`,
-                          top:
-                            `${cropRect.y * 100}%`,
-                          width:
-                            `${cropRect.width * 100}%`,
-                          height:
-                            `${cropRect.height * 100}%`,
-                          border:
-                            '2px solid #1A5FFF',
-                          background:
-                            'rgba(26,95,255,0.12)',
-                          boxShadow:
-                            '0 0 0 9999px rgba(15,23,42,0.35)',
-                          boxSizing:
-                            'border-box',
-                          pointerEvents:
-                            'none',
-                        }}
-                      />
-                    )}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent:
-                    'space-between',
-                  alignItems:
-                    'center',
-                  gap: 10,
-                  marginTop: 10,
-                }}
-              >
-                <button
-                  type="button"
-                  className={
-                    styles.btnOutline
-                  }
-                  disabled={
-                    ocrLoading
-                  }
-                  onClick={() =>
-                    setCropRect(
-                      null
-                    )
-                  }
-                  style={{
-                    fontSize: 11,
-                  }}
-                >
-                  Reset Crop
-                </button>
-
-                <button
-                  type="button"
-                  className={
-                    styles.btnPrimary
-                  }
-                  disabled={
-                    ocrLoading ||
-                    !cropRect ||
-                    cropRect.width <
-                      0.025 ||
-                    cropRect.height <
-                      0.025
-                  }
-                  onClick={
-                    scanManualCrop
-                  }
-                  style={{
-                    fontSize: 11,
-                  }}
-                >
-                  {ocrLoading
-                    ? 'Scanning...'
-                    : 'Scan Crop'}
-                </button>
-              </div>
-            </div>
-          )}
-
-        {ocrMessage && (
-          <div
-            style={{
-              marginTop: 8,
-              padding: '9px 11px',
-              borderRadius: 9,
-              background: detectedBpm
-                ? '#ECFDF5'
-                : '#F7F9FF',
-              border: detectedBpm
-                ? '1px solid #A7F3D0'
-                : '1px solid #E8EEF8',
-              color: detectedBpm
-                ? '#047857'
-                : '#64748B',
-              fontSize: 11,
-              lineHeight: 1.45,
-              fontWeight: 700,
-            }}
-          >
-            {ocrMessage}
-          </div>
-        )}
-      </div>
-
-      <div
-        className="fitness-recovery-metrics-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: 14,
-        }}
-      >
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Sleep hours</label>
-          <input
-            className={styles.formInput}
-            type="number"
-            min="0"
-            max="24"
-            value={form.sleep}
-            onChange={e => onChange('sleep', e.target.value)}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Tiredness /10</label>
-          <input
-            className={styles.formInput}
-            type="number"
-            min="1"
-            max="10"
-            value={form.tiredness}
-            onChange={e => onChange('tiredness', e.target.value)}
-          />
-          <div
-            style={{
-              fontSize: 10,
-              color: '#8892A4',
-              marginTop: 4,
-            }}
-          >
-            1 = not tired, 10 = very tired
-          </div>
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Muscle ache /10</label>
-          <input
-            className={styles.formInput}
-            type="number"
-            min="1"
-            max="10"
-            value={form.muscleAche}
-            onChange={e => onChange('muscleAche', e.target.value)}
-          />
-          <div
-            style={{
-              fontSize: 10,
-              color: '#8892A4',
-              marginTop: 4,
-            }}
-          >
-            1 = no ache, 10 = very painful
-          </div>
-        </div>
-      </div>
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>Notes</label>
-        <textarea
-          className={styles.formTextarea}
-          placeholder="e.g. Slept only 6 hours, felt tired after training."
-          value={form.notes}
-          onChange={e => onChange('notes', e.target.value)}
-        />
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginTop: 8,
-        }}
-      >
-        {onDelete ? (
-          <button
-            onClick={onDelete}
-            disabled={saving}
-            style={{
-              padding: '9px 16px',
-              borderRadius: 10,
-              border: '1.5px solid #FCA5A5',
-              background: '#FEF2F2',
-              color: '#EF4444',
-              fontWeight: 700,
-              fontSize: 12,
-              cursor: 'pointer',
-            }}
-          >
-            Delete
-          </button>
-        ) : (
-          <div />
-        )}
-
-        <div
-          style={{
-            display: 'flex',
-            gap: 10,
-          }}
-        >
-          <button
-            className={styles.btnOutline}
-            onClick={handleClose}
-            disabled={saving}
-          >
-            Cancel
-          </button>
-
-          <button
-            className={styles.btnPrimary}
-            onClick={onSave}
-            disabled={saving || ocrLoading}
-          >
-            {saving
-              ? 'Saving...'
-              : ocrLoading
-                ? 'Scanning...'
-                : 'Save'}
-          </button>
-        </div>
-      </div>
-    </ModalShell>
-  )
-}
-
-function getBodyPointFromName(name = '') {
-  const lower = String(name || '')
-    .toLowerCase()
-    .trim()
-
-  if (!lower) return null
-
-  const isLeft = /\bleft\b/.test(lower)
-  const isRight = /\bright\b/.test(lower)
-
-  const sideX = isLeft ? 50 : isRight ? 70 : 60
-  const sideLabel = isLeft
-    ? 'Left'
-    : isRight
-      ? 'Right'
-      : ''
-
-  if (
-    lower.includes('head') ||
-    lower.includes('forehead')
-  ) {
-    return {
-      x: 60,
-      y: 16,
-      label: 'Head',
-    }
-  }
-
-  if (lower.includes('neck')) {
-    return {
-      x: sideX,
-      y: 31,
-      label: sideLabel
-        ? `${sideLabel} neck`
-        : 'Neck',
-    }
-  }
-
-  if (lower.includes('shoulder')) {
-    return {
-      x: isLeft ? 42 : isRight ? 78 : 60,
-      y: 43,
-      label: sideLabel
-        ? `${sideLabel} shoulder`
-        : 'Shoulder',
-    }
-  }
-
-  if (
-    lower.includes('upper chest') ||
-    lower.includes('chest') ||
-    lower.includes('pectoral')
-  ) {
-    return {
-      x: isLeft ? 52 : isRight ? 68 : 60,
-      y: 50,
-      label: sideLabel
-        ? `${sideLabel} upper chest`
-        : 'Upper chest',
-    }
-  }
-
-  if (
-    lower.includes('upper arm') ||
-    lower.includes('bicep') ||
-    lower.includes('tricep') ||
-    (
-      lower.includes('arm') &&
-      !lower.includes('forearm')
-    )
-  ) {
-    return {
-      x: isLeft ? 37 : isRight ? 83 : 60,
-      y: 63,
-      label: sideLabel
-        ? `${sideLabel} upper arm`
-        : 'Upper arm',
-    }
-  }
-
-  if (
-    lower.includes('elbow')
-  ) {
-    return {
-      x: isLeft ? 31 : isRight ? 89 : 60,
-      y: 78,
-      label: sideLabel
-        ? `${sideLabel} elbow`
-        : 'Elbow',
-    }
-  }
-
-  if (
-    lower.includes('forearm')
-  ) {
-    return {
-      x: isLeft ? 29 : isRight ? 91 : 60,
-      y: 88,
-      label: sideLabel
-        ? `${sideLabel} forearm`
-        : 'Forearm',
-    }
-  }
-
-  if (
-    lower.includes('wrist') ||
-    lower.includes('hand') ||
-    lower.includes('palm') ||
-    lower.includes('finger')
-  ) {
-    return {
-      x: isLeft ? 27 : isRight ? 93 : 60,
-      y: 98,
-      label: sideLabel
-        ? `${sideLabel} wrist`
-        : 'Wrist',
-    }
-  }
-
-  if (
-    lower.includes('ribs') ||
-    lower.includes('rib')
-  ) {
-    return {
-      x: isLeft ? 51 : isRight ? 69 : 60,
-      y: 67,
-      label: sideLabel
-        ? `${sideLabel} ribs`
-        : 'Ribs',
-    }
-  }
-
-  if (
-    lower.includes('waist') ||
-    lower.includes('abdomen') ||
-    lower.includes('stomach')
-  ) {
-    return {
-      x: sideX,
-      y: 86,
-      label: sideLabel
-        ? `${sideLabel} waist`
-        : 'Waist',
-    }
-  }
-
-  if (
-    lower.includes('back')
-  ) {
-    return {
-      x: sideX,
-      y: lower.includes('lower') ? 86 : 66,
-      label: sideLabel
-        ? `${sideLabel} back`
-        : lower.includes('lower')
-          ? 'Lower back'
-          : 'Back',
-    }
-  }
-
-  if (
-    lower.includes('hip') ||
-    lower.includes('groin')
-  ) {
-    return {
-      x: sideX,
-      y: 94,
-      label: sideLabel
-        ? `${sideLabel} hip`
-        : 'Hip',
-    }
-  }
-
-  if (
-    lower.includes('thigh') ||
-    lower.includes('hamstring') ||
-    lower.includes('quadricep') ||
-    lower.includes('quad')
-  ) {
-    return {
-      x: sideX,
-      y: 106,
-      label: sideLabel
-        ? `${sideLabel} thigh`
-        : 'Thigh',
-    }
-  }
-
-  if (lower.includes('knee')) {
-    return {
-      x: sideX,
-      y: 122,
-      label: sideLabel
-        ? `${sideLabel} knee`
-        : 'Knee',
-    }
-  }
-
-  if (
-    lower.includes('calf') ||
-    lower.includes('shin') ||
-    lower.includes('lower leg')
-  ) {
-    return {
-      x: sideX,
-      y: 140,
-      label: sideLabel
-        ? `${sideLabel} calf`
-        : 'Calf',
-    }
-  }
-
-  if (
-    lower.includes('ankle')
-  ) {
-    return {
-      x: sideX,
-      y: 153,
-      label: sideLabel
-        ? `${sideLabel} ankle`
-        : 'Ankle',
-    }
-  }
-
-  if (
-    lower.includes('foot') ||
-    lower.includes('heel') ||
-    lower.includes('toe')
-  ) {
-    return {
-      x: sideX,
-      y: 160,
-      label: sideLabel
-        ? `${sideLabel} foot`
-        : 'Foot',
-    }
-  }
-
-  return null
-}
-
-function getTappedBodyLabel(x, y) {
-  const px = Number(x)
-  const py = Number(y)
-
-  if (!Number.isFinite(px) || !Number.isFinite(py)) {
-    return ''
-  }
-
-  const side =
-    px < 55
-      ? 'Left'
-      : px > 65
-        ? 'Right'
-        : ''
-
-  if (py <= 25) return 'Head'
-  if (py <= 34) return side ? `${side} neck` : 'Neck'
-
-  if (py <= 48) {
-    if (px < 48) return 'Left shoulder'
-    if (px > 72) return 'Right shoulder'
-    if (px < 60) return 'Left upper chest'
-    if (px > 60) return 'Right upper chest'
-    return 'Upper chest'
-  }
-
-  if (py <= 68) {
-    if (px < 38) return 'Left upper arm'
-    if (px > 82) return 'Right upper arm'
-    return side ? `${side} ribs` : 'Chest'
-  }
-
-  if (py <= 88) {
-    if (px < 32) return 'Left elbow'
-    if (px > 88) return 'Right elbow'
-    return side ? `${side} waist` : 'Waist'
-  }
-
-  if (py <= 98) {
-    if (px < 32) return 'Left wrist'
-    if (px > 88) return 'Right wrist'
-    return side ? `${side} hip` : 'Hip'
-  }
-
-  if (py <= 114) {
-    return side ? `${side} thigh` : 'Thigh'
-  }
-
-  if (py <= 130) {
-    return side ? `${side} knee` : 'Knee'
-  }
-
-  if (py <= 150) {
-    return side ? `${side} calf` : 'Calf'
-  }
-
-  return side ? `${side} ankle` : 'Ankle'
-}
-
-function InjuryModal({
-  title,
-  form,
-  onChange,
-  onSave,
-  onClose,
-  onDelete,
-  saving,
-}) {
-  const injuryImageInputRef = useRef(null)
-
-  const handleBodyTap = event => {
-    const svg = event.currentTarget
-    const rect = svg.getBoundingClientRect()
-
-    const x = ((event.clientX - rect.left) / rect.width) * 120
-    const y = ((event.clientY - rect.top) / rect.height) * 170
-
-    const roundedX = Math.round(x)
-    const roundedY = Math.round(y)
-    const suggestedLabel = getTappedBodyLabel(
-      roundedX,
-      roundedY
-    )
-
-    onChange('bodyX', roundedX)
-    onChange('bodyY', roundedY)
-
-    const currentName = String(form.name || '').trim()
-
-    const isAutoGeneratedName =
-      !currentName ||
-      /^[a-z ]+\s+(pain|injury|strain|sprain)$/i.test(
-        currentName
-      )
-
-    if (isAutoGeneratedName && suggestedLabel) {
-      onChange('name', `${suggestedLabel} pain`)
-    }
-  }
-
-  const handleInjuryImage = event => {
-    const file = event.target.files?.[0]
-
-    if (!file) return
-
-    if (!file.type.startsWith('image/')) {
-      return
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      alert(
-        'Image is too large. Please upload a photo smaller than 10 MB.'
-      )
-      return
-    }
-
-    if (
-      form.imageUrl &&
-      form.imageUrl.startsWith('blob:')
-    ) {
-      URL.revokeObjectURL(form.imageUrl)
-    }
-
-    onChange('imageFile', file)
-    onChange('imageUrl', URL.createObjectURL(file))
-    onChange('imageRemoved', false)
-
-    if (event.target) {
-      event.target.value = ''
-    }
-  }
-
-  const clearInjuryImage = () => {
-    if (
-      form.imageUrl &&
-      form.imageUrl.startsWith('blob:')
-    ) {
-      URL.revokeObjectURL(form.imageUrl)
-    }
-
-    onChange('imageFile', null)
-    onChange('imageUrl', '')
-    onChange('imagePath', '')
-    onChange('imageRemoved', true)
-  }
-
-  const hasBodyPoint =
-    form.bodyX !== null &&
-    form.bodyX !== undefined &&
-    form.bodyY !== null &&
-    form.bodyY !== undefined &&
-    Number.isFinite(Number(form.bodyX)) &&
-    Number.isFinite(Number(form.bodyY))
-
-  const severityColor =
-    form.severity === 'Severe'
-      ? '#EF4444'
-      : form.severity === 'Moderate'
-        ? '#F59E0B'
-        : '#10B981'
-
-  return (
-    <ModalShell title={title} onClose={onClose}>
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>
-          Injury description
-        </label>
-        <input
-          className={styles.formInput}
-          placeholder="e.g. Left wrist pain or right hip strain"
-          value={form.name}
-          onChange={event => {
-            const value = event.target.value
-            const detectedPoint =
-              getBodyPointFromName(value)
-
-            onChange('name', value)
-
-            if (detectedPoint) {
-              onChange('bodyX', detectedPoint.x)
-              onChange('bodyY', detectedPoint.y)
-            } else if (!value.trim()) {
-              onChange('bodyX', null)
-              onChange('bodyY', null)
-            }
-          }}
-        />
-        <div
-          style={{
-            marginTop: 5,
-            fontSize: 10,
-            color: 'var(--text-muted, #8892A4)',
-          }}
-        >
-          Type a recognised body part to place the dot automatically,
-          tap the body diagram, or use both.</div>
-      </div>
-
-      <div
-        className="fitness-injury-meta-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: 14,
-        }}
-      >
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Date</label>
-          <input
-            className={styles.formInput}
-            type="date"
-            value={form.date}
-            onChange={event =>
-              onChange('date', event.target.value)
-            }
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Status</label>
-          <select
-            className={styles.formSelect}
-            value={form.status}
-            onChange={event =>
-              onChange('status', event.target.value)
-            }
-          >
-            <option>Monitoring</option>
-            <option>Recovering</option>
-            <option>Recovered</option>
-          </select>
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Severity</label>
-          <select
-            className={styles.formSelect}
-            value={form.severity}
-            onChange={event =>
-              onChange('severity', event.target.value)
-            }
-            style={{
-              color: severityColor,
-              fontWeight: 700,
-            }}
-          >
-            <option value="Mild">Mild</option>
-            <option value="Moderate">Moderate</option>
-            <option value="Severe">Severe</option>
-          </select>
-        </div>
-      </div>
-
-      <div className={styles.formRow}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 10,
-            marginBottom: 8,
-          }}
-        >
-          <label
-            className={styles.formLabel}
-            style={{ marginBottom: 0 }}
-          >
-            Tap injury location optional
-          </label>
-
-          {hasBodyPoint && (
-            <button
-              type="button"
-              className={styles.btnOutline}
-              style={{
-                padding: '5px 9px',
-                fontSize: 10,
-              }}
-              onClick={() => {
-                onChange('bodyX', null)
-                onChange('bodyY', null)
-              }}
-            >
-              Clear point
-            </button>
-          )}
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            padding: 12,
-            borderRadius: 14,
-            border: '1px solid var(--line, #E8EEF8)',
-            background: 'var(--soft, #F7F9FF)',
-          }}
-        >
-          <div
-            style={{
-              position: 'relative',
-              width: 180,
-              height: 255,
-              flexShrink: 0,
-            }}
-          >
-            <img
-              src="/humanbody.png"
-              alt="Tap the human body to select the injury location"
-              draggable="false"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                objectPosition: 'center',
-                pointerEvents: 'none',
-                userSelect: 'none',
-              }}
-            />
-
-            <svg
-              viewBox="0 0 120 170"
-              width="180"
-              height="255"
-              onClick={handleBodyTap}
-              role="button"
-              tabIndex={0}
-              aria-label="Tap the body to select the injury location"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                cursor: 'crosshair',
-              }}
-            >
-              <g
-                fill="none"
-                stroke="transparent"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="60" cy="15" r="10" />
-                <path d="M54 25 L54 33" />
-                <path d="M66 25 L66 33" />
-                <path d="M45 35 C50 31, 70 31, 75 35" />
-                <path d="M46 36 C43 52, 42 72, 45 91" />
-                <path d="M74 36 C77 52, 78 72, 75 91" />
-                <path d="M45 91 C50 97, 55 100, 60 100" />
-                <path d="M75 91 C70 97, 65 100, 60 100" />
-                <path d="M60 35 L60 100" />
-                <path d="M45 38 C34 50, 29 72, 25 96" />
-                <path d="M75 38 C86 50, 91 72, 95 96" />
-                <path d="M54 100 C51 116, 48 132, 45 152" />
-                <path d="M45 152 L36 154" />
-                <path d="M66 100 C69 116, 72 132, 75 152" />
-                <path d="M75 152 L84 154" />
-              </g>
-
-              {hasBodyPoint && (
-                <>
-                  <circle
-                    cx={Number(form.bodyX)}
-                    cy={Number(form.bodyY)}
-                    r="8"
-                    fill="var(--card, #FFFFFF)"
-                  />
-                  <circle
-                    cx={Number(form.bodyX)}
-                    cy={Number(form.bodyY)}
-                    r="5.5"
-                    fill="#EF4444"
-                  />
-                </>
-              )}
-            </svg>
-          </div>
-        </div>
-
-        <div
-          style={{
-            marginTop: 6,
-            fontSize: 10,
-            textAlign: 'center',
-            color: 'var(--text-muted, #8892A4)',
-          }}
-        >
-          {hasBodyPoint
-            ? `Selected: ${getTappedBodyLabel(
-                form.bodyX,
-                form.bodyY
-              ) || 'Body location'}`
-            : 'No location selected yet.'}
-        </div>
-      </div>
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>
-          Injury photo optional
-        </label>
-
-        <input
-          ref={injuryImageInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleInjuryImage}
-          style={{ display: 'none' }}
-        />
-
-        {!form.imageUrl ? (
-          <button
-            type="button"
-            className={styles.btnOutline}
-            onClick={() =>
-              injuryImageInputRef.current?.click()
-            }
-            disabled={saving}
-            style={{
-              width: '100%',
-              minHeight: 44,
-              borderStyle: 'dashed',
-            }}
-          >
-            📷 Upload Injury Photo
-          </button>
-        ) : (
-          <div
-            style={{
-              padding: 10,
-              borderRadius: 12,
-              border: '1px solid var(--line, #E8EEF8)',
-              background: 'var(--soft, #F7F9FF)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 10,
-                marginBottom: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: 'var(--text, #0D1B3E)',
-                }}
-              >
-                Injury photo
-              </span>
-
-              <button
-                type="button"
-                onClick={clearInjuryImage}
-                disabled={saving}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: '#EF4444',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Remove
-              </button>
-            </div>
-
-            <img
-              src={form.imageUrl}
-              alt="Injury preview"
-              style={{
-                width: '100%',
-                maxHeight: 180,
-                objectFit: 'contain',
-                borderRadius: 8,
-                background: '#FFFFFF',
-              }}
-            />
-          </div>
-        )}
-
-        <div
-          style={{
-            marginTop: 5,
-            fontSize: 10,
-            color: 'var(--text-muted, #8892A4)',
-          }}
-        >
-          JPG, PNG or other image formats supported by your browser. Maximum 10 MB.
-        </div>
-      </div>
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>Notes</label>
-        <textarea
-          className={styles.formTextarea}
-          placeholder="e.g. Pain increases during overhead shots"
-          value={form.notes}
-          onChange={event =>
-            onChange('notes', event.target.value)
-          }
-        />
-      </div>
-
-      <FormActions
-        onSave={onSave}
-        onClose={onClose}
-        onDelete={onDelete}
-        saving={saving}
-      />
-    </ModalShell>
-  )
-}
-
-function ScheduleModal({
-  title,
-  form,
-  onChange,
-  onSave,
-  onClose,
-  onDelete,
-  onComplete,
-  onMiss,
-  scheduleItem,
-  canChangeStatus = false,
-  coachOptions = [],
-  venueHistory = [],
-  saving,
-  error = '',
-  availabilityError = '',
-  checkingAvailability = false,
-}) {
-  const selectedType = String(form.type || 'Training')
-  const typeLower = selectedType.toLowerCase()
-
-  const isRestDay = typeLower.includes('rest')
-  const isCompetition = typeLower.includes('competition')
-  const isFriendly = typeLower.includes('friendly')
-  const isRecovery = typeLower.includes('recovery')
-  const isTraining = typeLower === 'training'
-
-  const currentScheduleStatus =
-    String(
-      scheduleItem?.scheduleStatus ||
-      'scheduled'
-    ).toLowerCase()
-
-  const isCurrentlyMissed =
-    currentScheduleStatus === 'missed'
-
-  const isCurrentlyCompleted =
-    currentScheduleStatus === 'completed'
-
-  const activityLabel = isCompetition
-    ? 'Competition name'
-    : isFriendly
-      ? 'Match title'
-      : isRecovery
-        ? 'Recovery activity'
-        : selectedType === 'Other'
-          ? 'Activity name'
-          : 'Training activity'
-
-  const activityPlaceholder = isCompetition
-    ? 'e.g. Penang Open Championship'
-    : isFriendly
-      ? 'e.g. Club friendly vs KBA'
-      : isRecovery
-        ? 'e.g. Mobility and stretching'
-        : selectedType === 'Other'
-          ? 'e.g. Team briefing'
-          : 'e.g. Footwork drills'
-
-  const helperText = isCompetition
-    ? 'This competition will appear under Upcoming Events. After it ends, mark it Completed or Missed.'
-    : isFriendly
-      ? 'This friendly match will appear under Upcoming Events. After it ends, mark it Completed or Missed.'
-      : isRecovery
-        ? 'This recovery session will appear under Upcoming Events and can be completed after the end time.'
-        : isRestDay
-          ? 'This rest day will appear in your calendar. No training history record will be created.'
-          : 'This is a planned session. After the end time, choose Completed to add it automatically to Training Log, or Missed if you did not attend.'
-
-  const handleTimeChange = (field, value) => {
-    onChange(field, value)
-
-    if (field === 'time' && form.duration) {
-      const nextEndTime = calculateEndTime(
-        value,
-        form.duration
-      )
-
-      if (nextEndTime) {
-        onChange('endTime', nextEndTime)
-      }
-    }
-
-    if (field === 'endTime' && form.time) {
-      onChange(
-        'duration',
-        calculateDuration(form.time, value)
-      )
-    }
-  }
-
-  const handleDurationChange = value => {
-    onChange('duration', value)
-
-    const nextEndTime = calculateEndTime(
-      form.time,
-      value
-    )
-
-    if (nextEndTime) {
-      onChange('endTime', nextEndTime)
-    }
-  }
-
-  return (
-    <ModalShell
-      title={title}
-      onClose={onClose}
-      maxWidth={820}
-    >
-      {(checkingAvailability || availabilityError) && (
-        <div
-          role={availabilityError ? 'alert' : 'status'}
-          style={{
-            marginBottom: 14,
-            padding: '10px 12px',
-            borderRadius: 10,
-            border: availabilityError
-              ? '1px solid color-mix(in srgb, #EF4444 30%, var(--line, #EEF1F8))'
-              : '1px solid color-mix(in srgb, #2563EB 24%, var(--line, #EEF1F8))',
-            background: availabilityError
-              ? 'color-mix(in srgb, #EF4444 8%, var(--card, #FFFFFF))'
-              : 'color-mix(in srgb, #2563EB 7%, var(--card, #FFFFFF))',
-            color: availabilityError
-              ? '#B91C1C'
-              : 'var(--text, #0D1B3E)',
-            fontSize: 12,
-            lineHeight: 1.5,
-            fontWeight: 700,
-          }}
-        >
-          {checkingAvailability
-            ? 'Checking schedule availability...'
-            : availabilityError}
-        </div>
-      )}
-
-      {error && (
-        <div
-          role="alert"
-          style={{
-            marginBottom: 14,
-            padding: '10px 12px',
-            borderRadius: 10,
-            border:
-              '1px solid color-mix(in srgb, #EF4444 30%, var(--line, #EEF1F8))',
-            background:
-              'color-mix(in srgb, #EF4444 8%, var(--card, #FFFFFF))',
-            color: '#B91C1C',
-            fontSize: 12,
-            lineHeight: 1.5,
-            fontWeight: 700,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 18,
-        }}
-      >
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Date</label>
-          <input
-            className={styles.formInput}
-            type="date"
-            value={form.date}
-            onChange={event =>
-              onChange('date', event.target.value)
-            }
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Type</label>
-          <select
-            className={styles.formSelect}
-            value={form.type}
-            onChange={event => {
-              const nextType = event.target.value
-              onChange('type', nextType)
-
-              if (nextType !== 'Training') {
-                onChange(
-                  'focus',
-                  normalizeTrainingFocus(
-                    nextType,
-                    nextType
-                  )
-                )
-              }
-            }}
-          >
-            <option>Training</option>
-            <option>Competition</option>
-            <option>Friendly Match</option>
-            <option>Rest Day</option>
-            <option>Recovery</option>
-            <option>Other</option>
-          </select>
-        </div>
-      </div>
-
-      {!isRestDay && (
-        <>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 18,
-            }}
-          >
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>Start time</label>
-              <input
-                className={styles.formInput}
-                type="time"
-                value={form.time}
-                onChange={event =>
-                  handleTimeChange('time', event.target.value)
-                }
-              />
-            </div>
-
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>End time</label>
-              <input
-                className={styles.formInput}
-                type="time"
-                value={form.endTime}
-                onChange={event =>
-                  handleTimeChange('endTime', event.target.value)
-                }
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns:
-                isTraining || isCompetition || isFriendly
-                  ? '1fr 1fr'
-                  : '1fr',
-              gap: 18,
-            }}
-          >
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>
-                {activityLabel}
-              </label>
-              <input
-                className={styles.formInput}
-                placeholder={activityPlaceholder}
-                value={form.activity}
-                onChange={event =>
-                  onChange('activity', event.target.value)
-                }
-              />
-            </div>
-
-            {isTraining && (
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Focus area
-                </label>
-                <select
-                  className={styles.formSelect}
-                  value={form.focus}
-                  onChange={event =>
-                    onChange('focus', event.target.value)
-                  }
-                >
-                  <option>Endurance</option>
-                  <option>Speed</option>
-                  <option>Strength</option>
-                  <option value="Agility">Agility</option>
-                  <option>Recovery</option>
-                  <option>Matches</option>
-                </select>
-              </div>
-            )}
-
-            {(isCompetition || isFriendly) && (
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Match type
-                </label>
-                <select
-                  className={styles.formSelect}
-                  value={form.matchType || 'Singles'}
-                  onChange={event =>
-                    onChange('matchType', event.target.value)
-                  }
-                >
-                  <option>Singles</option>
-                  <option>Mixed Doubles</option>
-                  <option>Womens Doubles</option>
-                  <option>Mens Double</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          <div className={styles.formRow}>
-            <label className={styles.formLabel}>
-              Planned duration
-            </label>
-            <input
-              className={styles.formInput}
-              value={
-                form.duration ||
-                calculateDuration(
-                  form.time,
-                  form.endTime
-                )
-              }
-              onChange={event =>
-                handleDurationChange(event.target.value)
-              }
-              placeholder="e.g. 2h, 1h 30min or 45min"
-            />
-            <div
-              style={{
-                marginTop: 5,
-                fontSize: 10,
-                color: '#8892A4',
-              }}
-            >
-              Enter a duration to calculate the end time automatically.
-            </div>
-          </div>
-        </>
-      )}
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>Venue</label>
-        <input
-          className={styles.formInput}
-          placeholder={
-            isRestDay
-              ? 'Optional'
-              : 'e.g. Sports Arena'
-          }
-          value={form.venue}
-          list="player-venue-history"
-          autoComplete="off"
-          onChange={event =>
-            onChange('venue', event.target.value)
-          }
-        />
-
-        <datalist id="player-venue-history">
-          {venueHistory.map(venue => (
-            <option
-              key={venue}
-              value={venue}
-            />
-          ))}
-        </datalist>
-      </div>
-
-      {coachOptions.length > 0 && (
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>
-            Tag coach optional
-          </label>
-          <select
-            className={styles.formSelect}
-            value={form.taggedCoachUserId || ''}
-            onChange={event =>
-              onChange(
-                'taggedCoachUserId',
-                event.target.value
-              )
-            }
-          >
-            <option value="">Do not tag a coach</option>
-            {coachOptions.map(coach => (
-              <option
-                key={coach.userId}
-                value={coach.userId}
-              >
-                {coach.name}
-              </option>
-            ))}
-          </select>
-          <div
-            style={{
-              marginTop: 5,
-              fontSize: 10,
-              color: '#8892A4',
-              lineHeight: 1.45,
-            }}
-          >
-            The tagged coach can view this player-added
-            schedule in Coach Sessions. They cannot edit or
-            delete it.
-          </div>
-        </div>
-      )}
-
-      <div className={styles.formRow}>
-        <label className={styles.formLabel}>Notes optional</label>
-        <textarea
-          className={styles.formTextarea}
-          placeholder="e.g. Bring extra racket and warm up early"
-          value={form.notes}
-          onChange={event =>
-            onChange('notes', event.target.value)
-          }
-        />
-      </div>
-
-      <div
-        style={{
-          marginBottom: 14,
-          padding: '10px 12px',
-          borderRadius: 10,
-          background:
-            'color-mix(in srgb, #1A5FFF 8%, var(--card, #FFFFFF))',
-          color: 'var(--text-muted, #8892A4)',
-          fontSize: 11,
-          lineHeight: 1.5,
-        }}
-      >
-        {helperText}
-      </div>
-
-      {scheduleItem && !isRestDay && (
-        <div
-          style={{
-            marginBottom: 14,
-            padding: '12px',
-            borderRadius: 12,
-            border: '1px solid var(--line, #E8EEF8)',
-            background:
-              canChangeStatus
-                ? 'color-mix(in srgb, #2563EB 6%, var(--card, #FFFFFF))'
-                : 'var(--soft, #F7F9FF)',
-          }}
-        >
-          <div
-            style={{
-              marginBottom: 8,
-              fontSize: 11,
-              fontWeight: 700,
-              color: 'var(--text, #0D1B3E)',
-            }}
-          >
-            Schedule status
-          </div>
-
-          {canChangeStatus ? (
-            <div
-              style={{
-                display: 'flex',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              {!isCurrentlyCompleted && (
-                <button
-                  type="button"
-                  className={styles.btnPrimary}
-                  style={{ background: '#10B981' }}
-                  disabled={saving}
-                  onClick={onComplete}
-                >
-                  {isCurrentlyMissed
-                    ? 'Change to Completed'
-                    : 'Mark Completed'}
-                </button>
-              )}
-
-              {!isCurrentlyMissed &&
-                scheduleItem?.type !== 'Rest Day' && (
-                  <button
-                    type="button"
-                    className={styles.btnOutline}
-                    style={{
-                      borderColor: '#EF4444',
-                      color: '#EF4444',
-                    }}
-                    disabled={saving}
-                    onClick={onMiss}
-                  >
-                    {isCurrentlyCompleted
-                      ? 'Change to Missed'
-                      : 'Mark Missed'}
-                  </button>
-                )}
-
-              {isCurrentlyCompleted &&
-                scheduleItem?.type === 'Rest Day' && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: '#10B981',
-                    }}
-                  >
-                    This rest day is completed.
-                  </div>
-                )}
-            </div>
-          ) : (
-            <div
-              style={{
-                fontSize: 11,
-                lineHeight: 1.5,
-                color: 'var(--text-muted, #8892A4)',
-              }}
-            >
-              Status can be changed to Completed or Missed after the scheduled end time.
-            </div>
-          )}
-        </div>
-      )}
-
-      <FormActions
-        onSave={onSave}
-        onClose={onClose}
-        onDelete={onDelete}
-        saving={saving}
-      />
-    </ModalShell>
-  )
-}
-
 function ScheduleCalendar({
   schedules,
   selectedDate,
@@ -6387,7 +1220,7 @@ function ScheduleCalendar({
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', marginBottom: 6 }}>
-        {DAYS.map(d => <div key={d} style={{ fontSize: 10, fontWeight: 700, color: '#8892A4' }}>{d}</div>)}
+        {DAYS.map(d => <div key={d} style={{ fontSize: 12, fontWeight: 700, color: '#8892A4' }}>{d}</div>)}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
@@ -6412,7 +1245,7 @@ function ScheduleCalendar({
                 background: isSelected ? '#1A5FFF' : isToday ? '#E8EFFE' : dayItems.length ? 'rgba(26,95,255,0.06)' : 'transparent',
               }}
             >
-              <span style={{ fontSize: 12, fontWeight: isToday || isSelected ? 700 : 400, color: isSelected ? '#fff' : isToday ? '#1A5FFF' : '#0D1B3E', lineHeight: '24px' }}>
+              <span style={{ fontSize: 13, fontWeight: isToday || isSelected ? 700 : 400, color: isSelected ? '#fff' : isToday ? '#1A5FFF' : '#0D1B3E', lineHeight: '24px' }}>
                 {d}
               </span>
 
@@ -6436,7 +1269,7 @@ function ScheduleCalendar({
               display: 'flex',
               alignItems: 'center',
               gap: 4,
-              fontSize: 10,
+              fontSize: 12,
               color: '#8892A4',
             }}
           >
@@ -6455,12 +1288,12 @@ function ScheduleCalendar({
 
       {selectedDate && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #E8EEF8' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#0D1B3E', marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0D1B3E', marginBottom: 8 }}>
             {fmtDate(selectedDate)} planned, completed and absent activities
           </div>
 
           {selectedItems.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#8892A4' }}>No planned or completed activity for this date.</div>
+            <div style={{ fontSize: 13, color: '#8892A4' }}>No planned or completed activity for this date.</div>
           ) : selectedItems.map(item => {
             const isAbsent =
               item.source === 'coach_training' &&
@@ -6514,7 +1347,7 @@ function ScheduleCalendar({
                       : item.activity || item.title || item.type}
                   </div>
 
-                  <div style={{ fontSize: 11, color: '#8892A4' }}>
+                  <div style={{ fontSize: 13, color: '#8892A4' }}>
                     {item.source === 'training_log'
                       ? `${fmtTimeRange(
                           item.startTime,
@@ -6534,7 +1367,7 @@ function ScheduleCalendar({
                     <div
                       style={{
                         marginTop: 3,
-                        fontSize: 10,
+                        fontSize: 12,
                         color:
                           'var(--text-muted, #9AA3B2)',
                       }}
@@ -6586,7 +1419,7 @@ function ScheduleCalendar({
                           onCompleteSchedule(item)
                         }}
                         style={{
-                          fontSize: 11,
+                          fontSize: 13,
                           padding: '7px 10px',
                           whiteSpace: 'nowrap',
                         }}
@@ -6608,7 +1441,7 @@ function ScheduleCalendar({
                           borderRadius: 9,
                           background: '#FEF2F2',
                           color: '#DC2626',
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: 700,
                           padding: '7px 10px',
                           cursor: saving ? 'wait' : 'pointer',
@@ -6947,11 +1780,17 @@ function AllFitnessRecordsModal({
     (a, b) => b.date.localeCompare(a.date)
   )
 
+  const visibleTests =
+    tests.filter(
+      test => !isInitialFitnessBaseline(test)
+    )
+
+
   const recordCount =
     type === 'training'
       ? trainingItems.length
       : type === 'tests'
-        ? tests.length
+        ? visibleTests.length
         : type === 'recovery'
           ? sortedRecovery.length
           : injuries.length
@@ -6966,7 +1805,7 @@ function AllFitnessRecordsModal({
         .toLowerCase()
 
     const latestPlayerTest =
-      tests
+      visibleTests
         .filter(
           test =>
             !test.addedByCoach &&
@@ -7170,7 +2009,7 @@ function AllFitnessRecordsModal({
                   No fitness test records yet.
                 </div>
               ) : (
-                tests.map(test => {
+                visibleTests.map(test => {
                   const playerScore =
                     test.addedByCoach
                       ? getPlayerTestScoreForIndicator(
@@ -7477,7 +2316,7 @@ function FitnessComparisonRow({
             display: 'grid',
             placeItems: 'center',
             fontWeight: 700,
-            fontSize: 13,
+            fontSize: 14,
             flexShrink: 0,
           }}
         >
@@ -7489,6 +2328,7 @@ function FitnessComparisonRow({
           style={{
             width: 'auto',
             minWidth: 0,
+            fontSize: 15,
           }}
         >
           {label}
@@ -7498,7 +2338,7 @@ function FitnessComparisonRow({
       <div
         style={{
           position: 'relative',
-          height: 8,
+          height: 10,
           borderRadius: 999,
           background: 'var(--line, #EEF1F8)',
           overflow: 'visible',
@@ -7537,7 +2377,7 @@ function FitnessComparisonRow({
                 top: -24,
                 minWidth: 44,
                 textAlign: 'center',
-                fontSize: 9,
+                fontSize: 10,
                 fontWeight: 700,
                 color: '#7C3AED',
                 background:
@@ -7556,7 +2396,7 @@ function FitnessComparisonRow({
       <div
         style={{
           textAlign: 'right',
-          fontSize: 11,
+          fontSize: 14,
           fontWeight: 700,
           color: playerHasData
             ? playerColor.text
@@ -7571,6 +2411,7 @@ function FitnessComparisonRow({
               style={{
                 color: 'var(--text-muted, #8892A4)',
                 fontWeight: 500,
+                fontSize: 13,
               }}
             >
               {' '} /100
@@ -7773,6 +2614,13 @@ export default function Fitness() {
   const [checkingScheduleAvailability, setCheckingScheduleAvailability] = useState(false)
   const [trainingForm, setTrainingForm] = useState(emptyTraining())
   const [testForm, setTestForm] = useState(emptyTest())
+  const [showInitialFitness, setShowInitialFitness] = useState(false)
+  const [initialFitnessForm, setInitialFitnessForm] = useState({
+    Endurance: 50,
+    Speed: 50,
+    Strength: 50,
+    Agility: 50,
+  })
   const [recoveryForm, setRecoveryForm] = useState(emptyRecovery())
   const [injuryForm, setInjuryForm] = useState(emptyInjury())
 
@@ -8380,17 +3228,41 @@ export default function Fitness() {
     [tests]
   )
 
+  const baselineFitnessTests = useMemo(
+    () =>
+      playerFitnessTests.filter(
+        test => isInitialFitnessBaseline(test)
+      ),
+    [playerFitnessTests]
+  )
+
+  const realPlayerFitnessTests = useMemo(
+    () =>
+      playerFitnessTests.filter(
+        test => !isInitialFitnessBaseline(test)
+      ),
+    [playerFitnessTests]
+  )
+
+  const visibleFitnessTests = useMemo(
+    () =>
+      tests.filter(
+        test => !isInitialFitnessBaseline(test)
+      ),
+    [tests]
+  )
+
   const fitnessSummary = useMemo(
     () =>
       calculateFitnessSummary({
-        tests: playerFitnessTests,
+        tests: realPlayerFitnessTests,
         sessions,
         recoveryLogs,
         injuries,
         scheduleList,
       }),
     [
-      playerFitnessTests,
+      realPlayerFitnessTests,
       sessions,
       recoveryLogs,
       injuries,
@@ -8418,7 +3290,7 @@ export default function Fitness() {
           ? 'Agility'
           : indicatorName
 
-      return [...playerFitnessTests]
+      return [...realPlayerFitnessTests]
         .filter(test => {
           const testIndicator =
             test.indicator === 'Flexibility'
@@ -8443,7 +3315,42 @@ export default function Fitness() {
           return bTime - aTime
         })[0] || null
     },
-    [playerFitnessTests]
+    [realPlayerFitnessTests]
+  )
+
+  const latestBaselineFor = useMemo(
+    () => indicatorName => {
+      const normalizedName =
+        indicatorName === 'Flexibility'
+          ? 'Agility'
+          : indicatorName
+
+      return [...baselineFitnessTests]
+        .filter(test => {
+          const testIndicator =
+            test.indicator === 'Flexibility'
+              ? 'Agility'
+              : test.indicator
+
+          return testIndicator === normalizedName
+        })
+        .sort((a, b) => {
+          const aTime = new Date(
+            a.updatedAt ||
+            a.createdAt ||
+            `${a.date || ''}T00:00:00`
+          ).getTime()
+
+          const bTime = new Date(
+            b.updatedAt ||
+            b.createdAt ||
+            `${b.date || ''}T00:00:00`
+          ).getTime()
+
+          return bTime - aTime
+        })[0] || null
+    },
+    [baselineFitnessTests]
   )
 
   const indicators = useMemo(() => {
@@ -8456,19 +3363,22 @@ export default function Fitness() {
 
     const testIndicators = indicatorNames.map(name => {
       const latestTest = latestPlayerTestFor(name)
+      const baseline = latestBaselineFor(name)
+      const source = latestTest || baseline
 
       return {
         name,
-        val: latestTest
+        val: source
           ? Math.max(
               0,
               Math.min(
                 100,
-                Number(latestTest.score) || 0
+                Number(source.score) || 0
               )
             )
           : 0,
-        hasData: Boolean(latestTest),
+        hasData: Boolean(source),
+        isBaseline: !latestTest && Boolean(baseline),
       }
     })
 
@@ -8492,9 +3402,25 @@ export default function Fitness() {
     ]
   }, [
     latestPlayerTestFor,
+    latestBaselineFor,
     latestRecovery,
     recoveryScore,
   ])
+
+  const testIndicatorNames = [
+    'Endurance',
+    'Speed',
+    'Strength',
+    'Agility',
+  ]
+
+  const missingTestIndicators =
+    testIndicatorNames.filter(
+      name => !latestPlayerTestFor(name)
+    )
+
+  const canSetInitialFitness =
+    missingTestIndicators.length > 0
 
   const recordedIndicators =
     indicators.filter(item => item.hasData)
@@ -10041,6 +4967,98 @@ export default function Fitness() {
     })
   }
 
+  const openInitialFitness = () => {
+    setInitialFitnessForm(previous => {
+      const next = { ...previous }
+
+      testIndicatorNames.forEach(name => {
+        const currentTest = latestPlayerTestFor(name)
+        const savedBaseline = latestBaselineFor(name)
+
+        next[name] = currentTest
+          ? clamp(currentTest.score)
+          : savedBaseline
+            ? clamp(savedBaseline.score)
+            : clamp(previous[name] || 50)
+      })
+
+      return next
+    })
+
+    setShowInitialFitness(true)
+  }
+
+  const saveInitialFitness = async () => {
+    if (saving || missingTestIndicators.length === 0) {
+      setShowInitialFitness(false)
+      return
+    }
+
+    setSaving(true)
+    setLoadError('')
+
+    try {
+      const uid = await getUserId()
+      const now = new Date().toISOString()
+      const savedItems = []
+
+      for (const name of missingTestIndicators) {
+        const existingBaseline = latestBaselineFor(name)
+
+        const payload = {
+          user_id: uid,
+          test_date:
+            existingBaseline?.date ||
+            todayISO(),
+          test_name: 'Initial self-assessment',
+          result: 'Self-assessed baseline',
+          indicator: name,
+          score: clamp(initialFitnessForm[name]),
+          added_by_coach: false,
+          coach_user_id: null,
+          change_note: 'Initial self-assessment',
+          updated_at: now,
+        }
+
+        const query = existingBaseline?.id
+          ? supabase
+              .from('fitness_tests')
+              .update(payload)
+              .eq('id', existingBaseline.id)
+              .eq('user_id', uid)
+          : supabase
+              .from('fitness_tests')
+              .insert(payload)
+
+        const { data, error } =
+          await query.select('*').single()
+
+        if (error) throw error
+
+        savedItems.push(rowToTest(data))
+      }
+
+      setTests(previous => [
+        ...savedItems,
+        ...previous.filter(
+          item =>
+            !savedItems.some(
+              saved => saved.id === item.id
+            )
+        ),
+      ])
+
+      setShowInitialFitness(false)
+    } catch (err) {
+      setLoadError(
+        err.message ||
+          'Failed to save initial fitness levels.'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const openAddTest = () => {
     setTestForm(emptyTest())
     setShowTest(true)
@@ -10058,6 +5076,8 @@ export default function Fitness() {
       result: row.result,
       indicator: row.indicator,
       score: row.score,
+      adjustmentSign: '+',
+      adjustmentAmount: 0,
     })
   }
 
@@ -10329,7 +5349,12 @@ export default function Fitness() {
         added_by_coach: false,
         coach_user_id: null,
 
-        change_note: editingTest ? 'Updated' : 'New',
+        change_note:
+          Number(testForm.adjustmentAmount) > 0
+            ? `${testForm.adjustmentSign === '-' ? '-' : '+'}${Number(testForm.adjustmentAmount)} points`
+            : editingTest
+              ? 'Updated'
+              : 'No score adjustment',
         updated_at: new Date().toISOString(),
       }
 
@@ -11060,7 +6085,7 @@ export default function Fitness() {
             background: loadError ? '#FEF2F2' : '#F7F9FF',
             color: loadError ? '#EF4444' : '#64748B',
             border: loadError ? '1px solid #FCA5A5' : '1px solid #E8EEF8',
-            fontSize: 12,
+            fontSize: 14,
             fontWeight: 700,
           }}
         >
@@ -11075,7 +6100,7 @@ export default function Fitness() {
           borderRadius: 12,
           border: '1px solid var(--line, #E8EEF8)',
           background: 'var(--card, #FFFFFF)',
-          fontSize: 12,
+          fontSize: 14,
           lineHeight: 1.55,
           color: 'var(--text-muted, #64748B)',
         }}
@@ -11173,7 +6198,7 @@ export default function Fitness() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     padding: 0,
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: 700,
                     lineHeight: 1,
                     cursor: 'pointer',
@@ -11186,7 +6211,7 @@ export default function Fitness() {
               <div
                 style={{
                   marginTop: 6,
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: 700,
                   color: fitnessScore >= 70 ? '#00C48C' : fitnessScore >= 50 ? '#F59E0B' : '#EF4444',
                 }}
@@ -11233,7 +6258,7 @@ export default function Fitness() {
             </div>
 
             <div className={styles.metricLbl}>Upcoming activities</div>
-            <div style={{ marginTop: 5, fontSize: 11, color: '#8892A4' }}>
+            <div style={{ marginTop: 5, fontSize: 13, color: '#8892A4' }}>
               planned training, matches & events
             </div>
           </div>
@@ -11268,7 +6293,7 @@ export default function Fitness() {
             </div>
 
             <div className={styles.metricLbl}>Completed training</div>
-            <div style={{ marginTop: 5, fontSize: 11, color: '#8892A4' }}>
+            <div style={{ marginTop: 5, fontSize: 13, color: '#8892A4' }}>
               this month
             </div>
           </div>
@@ -11303,7 +6328,7 @@ export default function Fitness() {
             </div>
 
             <div className={styles.metricLbl}>Fitness tests</div>
-            <div style={{ marginTop: 5, fontSize: 11, color: '#8892A4' }}>
+            <div style={{ marginTop: 5, fontSize: 13, color: '#8892A4' }}>
               recorded test results
             </div>
           </div>
@@ -11342,7 +6367,7 @@ export default function Fitness() {
             </div>
 
             <div className={styles.metricLbl}>Active injuries</div>
-            <div style={{ marginTop: 5, fontSize: 11, color: '#8892A4' }}>
+            <div style={{ marginTop: 5, fontSize: 13, color: '#8892A4' }}>
               {activeInjuries > 0 ? 'currently monitored' : 'no active injury'}
             </div>
           </div>
@@ -11391,7 +6416,7 @@ export default function Fitness() {
                 }
                 disabled={googleCalendarBusy}
                 style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   padding: '7px 14px',
                   whiteSpace: 'nowrap',
                   opacity: googleCalendarBusy ? 0.7 : 1,
@@ -11409,7 +6434,7 @@ export default function Fitness() {
                 type="button"
                 className={styles.btnPrimary}
                 style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   padding: '7px 14px',
                   whiteSpace: 'nowrap',
                 }}
@@ -11494,7 +6519,7 @@ export default function Fitness() {
                       '1px solid var(--line, #C9D4E5)',
                     color:
                       'var(--text-muted, #64748B)',
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: 700,
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -11567,7 +6592,7 @@ export default function Fitness() {
                       >
                         <div
                           style={{
-                            fontSize: 11,
+                            fontSize: 13,
                             fontWeight: 700,
                             color: '#1A5FFF',
                           }}
@@ -11577,7 +6602,7 @@ export default function Fitness() {
 
                         <div
                           style={{
-                            fontSize: 11,
+                            fontSize: 13,
                             lineHeight: 1.45,
                             color:
                               'var(--text-muted, #64748B)',
@@ -11592,16 +6617,41 @@ export default function Fitness() {
               </div>
             </div>
 
-            <button
-              className={styles.btnOutline}
+            <div
               style={{
-                fontSize: 12,
-                padding: '7px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
               }}
-              onClick={openAddTest}
             >
-              {hasAnyFitnessIndicatorData ? 'Update' : 'Add fitness test'}
-            </button>
+              {canSetInitialFitness && (
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  style={{
+                    fontSize: 13,
+                    padding: '7px 12px',
+                  }}
+                  onClick={openInitialFitness}
+                >
+                  Set initial levels
+                </button>
+              )}
+
+              <button
+                type="button"
+                className={styles.btnOutline}
+                style={{
+                  fontSize: 13,
+                  padding: '7px 12px',
+                }}
+                onClick={openAddTest}
+              >
+                Add fitness test
+              </button>
+            </div>
           </div>
 
           {indicators.map(item => {
@@ -11627,8 +6677,19 @@ export default function Fitness() {
             )
           })}
 
-          <div style={{ fontSize: 12, color: '#8892A4', marginTop: 8 }}>
-            New players begin with no fitness data. Each indicator appears after you record the related fitness test, while Recovery appears after a recovery check-in. Coach-added results stay separate and are shown by the purple coach assessment marker.
+          <div
+            style={{
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: '#8892A4',
+              marginTop: 8,
+            }}
+          >
+            Self-assessed starting levels can be edited only before a fitness
+            test is recorded for that indicator. After a fitness test is added,
+            the tested score is used and the starting level is locked. Recovery
+            is calculated from the latest recovery check-in. Coach assessments
+            remain separate and are shown by the purple marker.
           </div>
         </div>
       </div>
@@ -11658,7 +6719,7 @@ export default function Fitness() {
 
             <button
               className={styles.btnOutline}
-              style={{ fontSize: 12, padding: '7px 14px' }}
+              style={{ fontSize: 14, padding: '7px 14px' }}
               onClick={exportReport}
             >
               Export Report
@@ -11668,7 +6729,7 @@ export default function Fitness() {
           <div
             style={{
               marginBottom: 10,
-              fontSize: 12,
+              fontSize: 14,
               lineHeight: 1.55,
               color: 'var(--text-muted, #8892A4)',
             }}
@@ -11724,7 +6785,7 @@ export default function Fitness() {
               </div>
 
               {latestCoachUpdate && (
-                <div style={{ fontSize: 10, color: 'var(--text-muted, #8892A4)' }}>
+                <div style={{ fontSize: 13, color: 'var(--text-muted, #8892A4)' }}>
                   {new Date(
                     latestCoachUpdate
                   ).toLocaleDateString('en-MY', {
@@ -11748,7 +6809,7 @@ export default function Fitness() {
             >
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: 700,
                   color: '#7C3AED',
                   textTransform: 'uppercase',
@@ -11761,7 +6822,7 @@ export default function Fitness() {
 
               <div
                 style={{
-                  fontSize: 13,
+                  fontSize: 14,
                   lineHeight: 1.6,
                   color: 'var(--text, #0D1B3E)',
                   whiteSpace: 'pre-wrap',
@@ -11831,7 +6892,7 @@ export default function Fitness() {
               )}
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: 700,
                   color: '#1A5FFF',
                   textTransform: 'uppercase',
@@ -11844,7 +6905,7 @@ export default function Fitness() {
 
               <div
                 style={{
-                  fontSize: 13,
+                  fontSize: 14,
                   lineHeight: 1.6,
                   color: 'var(--text, #0D1B3E)',
                   whiteSpace: 'pre-wrap',
@@ -11867,7 +6928,7 @@ export default function Fitness() {
                       alignItems: 'center',
                       gap: 10,
                       flexWrap: 'wrap',
-                      fontSize: 12,
+                      fontSize: 14,
                       color:
                         'var(--text-muted, #8892A4)',
                     }}
@@ -11891,7 +6952,7 @@ export default function Fitness() {
 
                     <span
                       style={{
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: 700,
                         color:
                           coachFitnessDeadlineStatus?.label ===
@@ -12005,7 +7066,7 @@ export default function Fitness() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         marginTop: 4,
-                        fontSize: 10,
+                        fontSize: 13,
                         color:
                           'var(--text-muted, #8892A4)',
                       }}
@@ -12018,7 +7079,7 @@ export default function Fitness() {
                     <div
                       style={{
                         marginTop: 6,
-                        fontSize: 11,
+                        fontSize: 13,
                         color:
                           'var(--text-muted, #8892A4)',
                       }}
@@ -12061,7 +7122,7 @@ export default function Fitness() {
                   background:
                     'color-mix(in srgb, #1A5FFF 10%, var(--card, #FFFFFF))',
                   color: '#1A5FFF',
-                  fontSize: 10,
+                  fontSize: 13,
                   fontWeight: 700,
                 }}
               >
@@ -12072,7 +7133,7 @@ export default function Fitness() {
             <div
               style={{
                 marginBottom: 10,
-                fontSize: 12,
+                fontSize: 14,
                 lineHeight: 1.55,
                 color: 'var(--text-muted, #8892A4)',
               }}
@@ -12109,7 +7170,7 @@ export default function Fitness() {
             >
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: 13,
                   color: '#8892A4',
                 }}
               >
@@ -12180,7 +7241,7 @@ export default function Fitness() {
             >
               Training Log
             </button>
-            <div style={{ fontSize: 11, color: 'var(--text-muted, #8892A4)' }}>
+            <div style={{ fontSize: 14, color: 'var(--text-muted, #8892A4)' }}>
               Upcoming schedules are highlighted in blue. Completed sessions remain as training history.
             </div>
           </div>
@@ -12241,7 +7302,7 @@ export default function Fitness() {
                   border: 'none',
                   background: 'transparent',
                   color: '#1A5FFF',
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: 700,
                   padding: '8px 4px',
                   cursor: 'pointer',
@@ -12278,7 +7339,7 @@ export default function Fitness() {
                 gap: 10,
                 padding: '0 10px 8px',
                 color: '#8892A4',
-                fontSize: 10,
+                fontSize: 14,
                 fontWeight: 700,
                 alignItems: 'center',
                 boxSizing: 'border-box',
@@ -12299,7 +7360,7 @@ export default function Fitness() {
                 style={{
                   padding: '18px 8px',
                   color: '#8892A4',
-                  fontSize: 12,
+                  fontSize: 14,
                 }}
               >
                 No scheduled or completed sessions yet.
@@ -12370,7 +7431,7 @@ export default function Fitness() {
                       <div>
                         <div
                           style={{
-                            fontSize: 11,
+                            fontSize: 14,
                             fontWeight: 700,
                             color: 'var(--text, #0D1B3E)',
                           }}
@@ -12382,7 +7443,7 @@ export default function Fitness() {
                             month: 'short',
                           })}
                         </div>
-                        <div style={{ fontSize: 10, color: '#8892A4' }}>
+                        <div style={{ fontSize: 13, color: '#8892A4' }}>
                           {new Date(
                             `${t.date}T00:00:00`
                           ).toLocaleDateString('en-MY', {
@@ -12391,14 +7452,14 @@ export default function Fitness() {
                         </div>
                       </div>
 
-                      <div style={{ fontSize: 11, color: '#8892A4', fontWeight: 700 }}>
+                      <div style={{ fontSize: 13, color: '#8892A4', fontWeight: 700 }}>
                         {safeTimeRange(t.time, t.endTime)}
                       </div>
 
                       <div
                         style={{
                           minWidth: 0,
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: 700,
                           lineHeight: 1.2,
                           overflowWrap: 'anywhere',
@@ -12411,7 +7472,7 @@ export default function Fitness() {
                         style={{
                           minWidth: 0,
                           maxWidth: '100%',
-                          fontSize: 11,
+                          fontSize: 14,
                           color: 'var(--text, #0D1B3E)',
                           fontWeight: 600,
                           lineHeight: 1.25,
@@ -12426,7 +7487,7 @@ export default function Fitness() {
                         style={{
                           minWidth: 0,
                           maxWidth: '100%',
-                          fontSize: 10,
+                          fontSize: 13,
                           fontWeight: 700,
                           textAlign: 'left',
                           whiteSpace:
@@ -12509,10 +7570,10 @@ export default function Fitness() {
             >
               Fitness Test Records
             </button>
-            <button className={styles.btnOutline} style={{ fontSize: 12, padding: '7px 14px' }} onClick={openAddTest}>Add</button>
+            <button className={styles.btnOutline} style={{ fontSize: 14, padding: '7px 14px' }} onClick={openAddTest}>Add</button>
           </div>
 
-          {tests.length === 0 && (
+          {visibleFitnessTests.length === 0 && (
             <div
               style={{
                 flex: 1,
@@ -12520,14 +7581,14 @@ export default function Fitness() {
                 alignItems: 'flex-start',
                 padding: '18px 0',
                 color: '#8892A4',
-                fontSize: 12,
+                fontSize: 14,
               }}
             >
               No fitness test saved yet.
             </div>
           )}
 
-          {tests.length > 0 && (
+          {visibleFitnessTests.length > 0 && (
             <div
               style={{
                 flex: 1,
@@ -12537,7 +7598,7 @@ export default function Fitness() {
                 overflow: 'hidden',
               }}
             >
-              {tests.slice(0, 5).map(test => (
+              {visibleFitnessTests.slice(0, 5).map(test => (
             <div
               key={test.id}
               className={styles.listRow}
@@ -12560,12 +7621,12 @@ export default function Fitness() {
               }}
             >
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>
                   {test.test}
                 </div>
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 14,
                     color: '#8892A4',
                     display: 'flex',
                     alignItems: 'center',
@@ -12585,7 +7646,7 @@ export default function Fitness() {
                         background:
                           'color-mix(in srgb, #7C3AED 10%, var(--card, #FFFFFF))',
                         color: '#7C3AED',
-                        fontSize: 9,
+                        fontSize: 12,
                         fontWeight: 700,
                         whiteSpace: 'nowrap',
                       }}
@@ -12598,7 +7659,7 @@ export default function Fitness() {
 
               <div
                 style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   color: '#0D1B3E',
                   fontWeight: 700,
                 }}
@@ -12641,13 +7702,13 @@ export default function Fitness() {
               >
                 Recovery Check-in
               </button>
-              <button className={styles.btnOutline} style={{ fontSize: 12, padding: '7px 14px' }} onClick={openAddRecovery}>Add</button>
+              <button className={styles.btnOutline} style={{ fontSize: 14, padding: '7px 14px' }} onClick={openAddRecovery}>Add</button>
             </div>
 
             {[
               { label: 'Sleep Hours', val: latestRecovery ? `${latestRecovery.sleep} h` : '-', badge: latestRecovery ? (latestRecovery.sleep >= 7 ? 'Good' : 'Low') : 'No data', color: latestRecovery ? (latestRecovery.sleep >= 7 ? 'green' : 'amber') : 'gray' },
-              { label: 'Tiredness', val: latestRecovery ? `${latestRecovery.tiredness} /10` : '-', badge: latestRecovery ? (latestRecovery.tiredness <= 3 ? 'Low' : 'Monitor') : 'No data', color: latestRecovery ? (latestRecovery.tiredness <= 3 ? 'green' : 'amber') : 'gray' },
-              { label: 'Muscle Ache', val: latestRecovery ? `${latestRecovery.muscleAche} /10` : '-', badge: latestRecovery ? (latestRecovery.muscleAche <= 3 ? 'Low' : 'Monitor') : 'No data', color: latestRecovery ? (latestRecovery.muscleAche <= 3 ? 'green' : 'amber') : 'gray' },
+              { label: 'Tiredness', val: latestRecovery ? `${latestRecovery.tiredness} /10` : '-', badge: latestRecovery ? (latestRecovery.tiredness <= 3 ? 'Low' : 'Moderate') : 'No data', color: latestRecovery ? (latestRecovery.tiredness <= 3 ? 'green' : 'amber') : 'gray' },
+              { label: 'Muscle Ache', val: latestRecovery ? `${latestRecovery.muscleAche} /10` : '-', badge: latestRecovery ? (latestRecovery.muscleAche <= 3 ? 'Low' : 'Moderate') : 'No data', color: latestRecovery ? (latestRecovery.muscleAche <= 3 ? 'green' : 'amber') : 'gray' },
               { label: 'Resting Heart Rate', val: latestRecovery ? `${latestRecovery.hr} bpm` : '-', badge: latestRecovery ? 'Saved' : 'No data', color: latestRecovery ? 'green' : 'gray' },
               {
                 label: 'Recovery Score',
@@ -12666,7 +7727,7 @@ export default function Fitness() {
                 <span className={styles.statLabel}>{r.label}</span>
                 <span className={styles.statVal}>
                   {r.val}
-                  <span className={getBadgeClass(r.color)} style={{ fontSize: 10, marginLeft: 8 }}>{r.badge}</span>
+                  <span className={getBadgeClass(r.color)} style={{ fontSize: 13, marginLeft: 8 }}>{r.badge}</span>
                 </span>
               </div>
             ))}
@@ -12675,8 +7736,8 @@ export default function Fitness() {
               {[...recoveryLogs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).map(r => (
                 <div key={r.id} className={styles.listRow} onClick={() => openEditRecovery(r)} style={{ cursor: 'pointer', borderRadius: 8 }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{fmtDate(r.date)}</div>
-                    <div style={{ fontSize: 11, color: '#8892A4' }}>Sleep {r.sleep}h · Tired {r.tiredness}/10 · Ache {r.muscleAche}/10</div>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{fmtDate(r.date)}</div>
+                    <div style={{ fontSize: 14, color: '#8892A4' }}>Sleep {r.sleep}h · Tired {r.tiredness}/10 · Ache {r.muscleAche}/10</div>
                   </div>
                   {pencilIcon}
                 </div>
@@ -12712,7 +7773,7 @@ export default function Fitness() {
             >
               Injury Log
             </button>
-              <button className={styles.btnOutline} style={{ fontSize: 12, padding: '7px 14px' }} onClick={openAddInjury}>Add</button>
+              <button className={styles.btnOutline} style={{ fontSize: 14, padding: '7px 14px' }} onClick={openAddInjury}>Add</button>
             </div>
 
             <div
@@ -12735,7 +7796,7 @@ export default function Fitness() {
                     style={{
                       padding: '18px 0',
                       color: '#8892A4',
-                      fontSize: 12,
+                      fontSize: 14,
                     }}
                   >
                     No injury records yet.
@@ -12792,7 +7853,7 @@ export default function Fitness() {
                       >
                         <div
                           style={{
-                            fontSize: 13,
+                            fontSize: 14,
                             fontWeight: 700,
                             color: 'var(--text, #0D1B3E)',
                             lineHeight: 1.3,
@@ -12805,7 +7866,7 @@ export default function Fitness() {
                         <div
                           style={{
                             marginTop: 2,
-                            fontSize: 11,
+                            fontSize: 14,
                             color: '#8892A4',
                           }}
                         >
@@ -12815,7 +7876,7 @@ export default function Fitness() {
                         <div
                           style={{
                             marginTop: 3,
-                            fontSize: 11,
+                            fontSize: 14,
                             fontWeight: 700,
                             color: severityColor,
                           }}
@@ -13302,6 +8363,237 @@ export default function Fitness() {
         />
       )}
 
+      {showInitialFitness && (
+        <div
+          className={styles.modalOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="initial-fitness-title"
+          onClick={event => {
+            if (event.target === event.currentTarget && !saving) {
+              setShowInitialFitness(false)
+            }
+          }}
+        >
+          <div
+            className={styles.modal}
+            style={{
+              maxWidth: 540,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div className={styles.modalHead}>
+              <div>
+                <div
+                  id="initial-fitness-title"
+                  className={styles.modalTitle}
+                >
+                  Set Initial Fitness Levels
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 5,
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    color: 'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  Set or edit a starting self-assessment before a fitness
+                  test is recorded. Once a test is added for an indicator,
+                  its starting level is locked.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() => {
+                  if (!saving) setShowInitialFitness(false)
+                }}
+                aria-label="Close initial fitness levels"
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+            >
+              {testIndicatorNames.map(name => {
+                const existingTest = latestPlayerTestFor(name)
+                const isLocked = Boolean(existingTest)
+                const currentValue = isLocked
+                  ? clamp(existingTest.score)
+                  : clamp(initialFitnessForm[name])
+
+                return (
+                  <div
+                    key={name}
+                    className={styles.formRow}
+                    style={{
+                      marginBottom: 0,
+                      paddingBottom: 14,
+                      borderBottom:
+                        '1px solid var(--line, #E8EEF8)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <label
+                        className={styles.formLabel}
+                        style={{
+                          marginBottom: 0,
+                          fontSize: 14,
+                        }}
+                      >
+                        {name}
+                      </label>
+
+                      {isLocked ? (
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: '#10B981',
+                          }}
+                        >
+                          {currentValue} /100 · Locked
+                        </span>
+                      ) : (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                        >
+                          <input
+                            className={styles.formInput}
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={currentValue}
+                            disabled={saving}
+                            onChange={event =>
+                              setInitialFitnessForm(previous => ({
+                                ...previous,
+                                [name]: clamp(event.target.value),
+                              }))
+                            }
+                            style={{
+                              width: 78,
+                              height: 38,
+                              padding: '7px 9px',
+                              textAlign: 'center',
+                              fontSize: 14,
+                              fontWeight: 600,
+                            }}
+                          />
+
+                          <span
+                            style={{
+                              fontSize: 14,
+                              color:
+                                'var(--text-muted, #8892A4)',
+                            }}
+                          >
+                            /100
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={currentValue}
+                      disabled={isLocked || saving}
+                      onChange={event =>
+                        setInitialFitnessForm(previous => ({
+                          ...previous,
+                          [name]: Number(event.target.value),
+                        }))
+                      }
+                      style={{
+                        width: '100%',
+                        accentColor: '#1A5FFF',
+                        cursor: isLocked
+                          ? 'not-allowed'
+                          : 'pointer',
+                      }}
+                    />
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        marginTop: 5,
+                        fontSize: 12,
+                        color:
+                          'var(--text-muted, #8892A4)',
+                      }}
+                    >
+                      <span>0</span>
+                      <span>
+                        {isLocked
+                          ? 'Locked after fitness test'
+                          : 'Self-assessed starting level'}
+                      </span>
+                      <span>100</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 10,
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                disabled={saving}
+                onClick={() => setShowInitialFitness(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                disabled={
+                  saving ||
+                  missingTestIndicators.length === 0
+                }
+                onClick={saveInitialFitness}
+              >
+                {saving ? 'Saving...' : 'Save initial levels'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showTest && (
         <TestModal
           title="Add Fitness Test"
@@ -13310,6 +8602,16 @@ export default function Fitness() {
           onSave={saveTest}
           onClose={() => { setShowTest(false); setTestForm(emptyTest()) }}
           saving={saving}
+          currentScore={
+            testForm.indicator
+              ? Number(
+                  (
+                    latestPlayerTestFor(testForm.indicator) ||
+                    latestBaselineFor(testForm.indicator)
+                  )?.score
+                ) || 0
+              : 0
+          }
         />
       )}
 
@@ -13322,6 +8624,16 @@ export default function Fitness() {
           onClose={() => { setEditingTest(null); setTestForm(emptyTest()) }}
           onDelete={requestDeleteTest}
           saving={saving}
+          currentScore={
+            testForm.indicator
+              ? Number(
+                  (
+                    latestPlayerTestFor(testForm.indicator) ||
+                    latestBaselineFor(testForm.indicator)
+                  )?.score
+                ) || 0
+              : 0
+          }
         />
       )}
 

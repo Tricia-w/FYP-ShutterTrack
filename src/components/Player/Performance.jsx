@@ -603,7 +603,7 @@ function PerformanceComparisonRow({
         marginBottom: 14,
       }}
     >
-      <div className={styles.skillLbl} style={{ width: 'auto', minWidth: 0 }}>
+      <div className={styles.skillLbl} style={{ width: 'auto', minWidth: 0, fontSize: 14 }}>
         {label}
       </div>
 
@@ -648,7 +648,7 @@ function PerformanceComparisonRow({
                 top: -24,
                 minWidth: 52,
                 textAlign: 'center',
-                fontSize: 9,
+                fontSize: 10,
                 fontWeight: 700,
                 color: verifierColor,
                 background: `color-mix(in srgb, ${verifierColor} 12%, var(--card, #FFFFFF))`,
@@ -667,7 +667,7 @@ function PerformanceComparisonRow({
         style={{
           width: 48,
           textAlign: 'center',
-          fontSize: 11,
+          fontSize: 14,
           fontWeight: 700,
           color: playerColor.text,
           whiteSpace: 'nowrap',
@@ -1976,7 +1976,7 @@ export default function Performance() {
               style={{
                 width: 28,
                 height: 28,
-                fontSize: 10,
+                fontSize: 12,
                 background: '#E8EFFE',
                 color: '#1A5FFF',
                 WebkitTextFillColor: '#1A5FFF',
@@ -1990,7 +1990,7 @@ export default function Performance() {
             <div style={{ minWidth: 0, flex: 1 }}>
               <div
                 style={{
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: 700,
                   color: '#0D1B3E',
                   WebkitTextFillColor: '#0D1B3E',
@@ -2003,7 +2003,7 @@ export default function Performance() {
 
             <span
               style={{
-                fontSize: 11,
+                fontSize: 13,
                 color: '#8892A4',
                 WebkitTextFillColor: '#8892A4',
                 marginLeft: 'auto',
@@ -2034,16 +2034,16 @@ export default function Performance() {
     <div className={styles.playerReadablePage}>
       <style>{`
         .performanceVerificationNote {
-          font-size: 13px !important;
-        }
-
-        .performanceCoachFeedback [style*='font-size: 10px'],
-        .performanceCoachFeedback [style*='font-size: 11px'] {
-          font-size: 13px !important;
+          font-size: 14px !important;
         }
 
         .performanceCoachFeedback [style*='font-size: 12px'],
         .performanceCoachFeedback [style*='font-size: 13px'] {
+          font-size: 14px !important;
+        }
+
+        .performanceCoachFeedback [style*='font-size: 14px'],
+        .performanceCoachFeedback [style*='font-size: 14px'] {
           font-size: 14px !important;
         }
 
@@ -2089,7 +2089,7 @@ export default function Performance() {
           padding: 3px 9px;
           border: 2px solid currentColor;
           border-radius: 7px;
-          font-size: 10px;
+          font-size: 12px;
           font-weight: 800;
           letter-spacing: 0.8px;
           line-height: 1;
@@ -2368,7 +2368,7 @@ export default function Performance() {
               <div
                 style={{
                   marginTop: 3,
-                  fontSize: 10,
+                  fontSize: 12,
                   color: C.muted,
                   fontWeight: 500,
                 }}
@@ -2390,7 +2390,7 @@ export default function Performance() {
                 }
                 style={{
                   height: 36,
-                  fontSize: 11,
+                  fontSize: 13,
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -2450,7 +2450,7 @@ export default function Performance() {
                       <div style={{ fontWeight: 700, color: C.text }}>
                         No matches logged yet
                       </div>
-                      <div style={{ marginTop: 6, fontSize: 13 }}>
+                      <div style={{ marginTop: 6, fontSize: 14 }}>
                         Start by adding your first match to see your win rate and progress.
                       </div>
                       <button
@@ -2472,7 +2472,7 @@ export default function Performance() {
                         onClick={() => openUpcomingEdit(match)}
                         style={{ cursor: 'pointer' }}
                       >
-                        <td style={{ color: C.muted, fontSize: 12 }}>
+                        <td style={{ color: C.muted, fontSize: 14 }}>
                           {fmtDate(match.match_date)}
                         </td>
 
@@ -2490,7 +2490,7 @@ export default function Performance() {
                               style={{
                                 width: 28,
                                 height: 28,
-                                fontSize: 10,
+                                fontSize: 12,
                                 flexShrink: 0,
                               }}
                             >
@@ -2505,7 +2505,7 @@ export default function Performance() {
                               <div
                                 style={{
                                   marginTop: 2,
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   color: C.muted,
                                 }}
                               >
@@ -2528,7 +2528,7 @@ export default function Performance() {
                           </span>
                         </td>
 
-                        <td style={{ fontSize: 12, color: C.muted }}>—</td>
+                        <td style={{ fontSize: 14, color: C.muted }}>—</td>
 
                         <td style={{ textAlign: 'center' }}>
                           <span className={styles.badgeBlue}>Upcoming</span>
@@ -2551,7 +2551,7 @@ export default function Performance() {
                       }}
                       style={{ cursor: 'pointer' }}
                     >
-                      <td style={{ color: C.muted, fontSize: 12 }}>
+                      <td style={{ color: C.muted, fontSize: 14 }}>
                           {fmtDate(match.match_date)}
                         </td>
 
@@ -2568,7 +2568,7 @@ export default function Performance() {
                             style={{
                               width: 28,
                               height: 28,
-                              fontSize: 10,
+                              fontSize: 12,
                             }}
                           >
                             {getInitials(getDisplayName(match))}
@@ -2583,7 +2583,7 @@ export default function Performance() {
                               <div
                                 style={{
                                   marginTop: 2,
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   color: C.muted,
                                 }}
                               >
@@ -2596,7 +2596,7 @@ export default function Performance() {
                             <span
                               title="Coach note available"
                               style={{
-                                fontSize: 9,
+                                fontSize: 10,
                                 fontWeight: 700,
                                 color: '#7C3AED',
                                 background:
@@ -2627,7 +2627,7 @@ export default function Performance() {
                       <td
                         style={{
                           fontWeight: 600,
-                          fontSize: 12,
+                          fontSize: 14,
                           color: C.text,
                         }}
                       >
@@ -2652,7 +2652,7 @@ export default function Performance() {
                             🎬
                           </span>
                         ) : (
-                          <span style={{ fontSize: 12, color: C.muted }}>
+                          <span style={{ fontSize: 14, color: C.muted }}>
                             —
                           </span>
                         )}
@@ -2705,7 +2705,7 @@ export default function Performance() {
               <div>
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: 700,
                     color: C.text,
                     marginBottom: 4,
@@ -2719,7 +2719,7 @@ export default function Performance() {
                     {verificationSummary.playerCount > 0 && (
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 700,
                           color: '#059669',
                           background: '#ECFDF5',
@@ -2735,7 +2735,7 @@ export default function Performance() {
                     {verificationSummary.coachCount > 0 && (
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 700,
                           color: '#7C3AED',
                           background: '#F3E8FF',
@@ -2751,7 +2751,7 @@ export default function Performance() {
                       verificationSummary.coachCount === 0 && (
                         <span
                           style={{
-                            fontSize: 10,
+                            fontSize: 12,
                             fontWeight: 700,
                             color: '#D97706',
                             background: '#FFF7ED',
@@ -2769,7 +2769,7 @@ export default function Performance() {
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: 700,
                         color: '#D97706',
                         background: '#FFF7ED',
@@ -2782,7 +2782,7 @@ export default function Performance() {
                     <div
                       style={{
                         marginTop: 5,
-                        fontSize: 10,
+                        fontSize: 12,
                         color: C.muted,
                       }}
                     >
@@ -2795,7 +2795,7 @@ export default function Performance() {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button
                   className={styles.btnOutline}
-                  style={{ fontSize: 12, padding: '7px 14px' }}
+                  style={{ fontSize: 14, padding: '7px 14px' }}
                   onClick={() => {
                     setSkillVals(
                       hasSkillRecord
@@ -2811,7 +2811,7 @@ export default function Performance() {
                 {verificationAssessments.length > 0 && (
                   <button
                     className={styles.btnOutline}
-                    style={{ fontSize: 12, padding: '7px 14px' }}
+                    style={{ fontSize: 14, padding: '7px 14px' }}
                     onClick={() => setShowVerificationDetailsModal(true)}
                   >
                     View verification
@@ -2820,7 +2820,7 @@ export default function Performance() {
 
                 <button
                   className={styles.btnPrimary}
-                  style={{ fontSize: 12, padding: '7px 14px' }}
+                  style={{ fontSize: 14, padding: '7px 14px' }}
                   onClick={() => {
                     if (verificationRequest) {
                       setShowVerificationModal(true)
@@ -2842,7 +2842,7 @@ export default function Performance() {
 
           <div
             className="performanceVerificationNote"
-            style={{ marginTop: 10, fontSize: 11, color: C.muted, lineHeight: 1.5 }}
+            style={{ marginTop: 10, fontSize: 13, color: C.muted, lineHeight: 1.5 }}
           >
             Verification is optional. Unverified ratings use your self-assessment;
             the purple marker shows your coach&apos;s rating. Verified results remain
@@ -3012,7 +3012,7 @@ export default function Performance() {
                       {item.progress_status || 'Not reviewed'}
                     </span>
 
-                    <span style={{ fontSize: 11, color: C.muted }}>
+                    <span style={{ fontSize: 13, color: C.muted }}>
                       {item.updated_at
                         ? new Date(item.updated_at).toLocaleDateString('en-MY', {
                             day: 'numeric',
@@ -3025,7 +3025,7 @@ export default function Performance() {
 
                   <div
                     style={{
-                      fontSize: 13,
+                      fontSize: 14,
                       color: C.text,
                       lineHeight: 1.65,
                       whiteSpace: 'pre-wrap',
@@ -3044,10 +3044,10 @@ export default function Performance() {
                         padding: '10px 12px',
                       }}
                     >
-                      <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 3 }}>
                         Focus area
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
                         {item.focus_area || 'Not set'}
                       </div>
                     </div>
@@ -3066,7 +3066,7 @@ export default function Performance() {
                     >
                       <div
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           color: C.muted,
                           marginBottom: 3,
                         }}
@@ -3077,7 +3077,7 @@ export default function Performance() {
                       <div
                         className="performanceCoachActionPlanText"
                         style={{
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: 600,
                           color: C.text,
                           lineHeight: 1.55,
@@ -3101,7 +3101,7 @@ export default function Performance() {
                                 'space-between',
                               gap: 10,
                               flexWrap: 'wrap',
-                              fontSize: 12,
+                              fontSize: 14,
                               color: C.muted,
                             }}
                           >
@@ -3141,7 +3141,7 @@ export default function Performance() {
 
                             <span
                               style={{
-                                fontSize: 12,
+                                fontSize: 14,
                                 fontWeight: 700,
                                 color:
                                   deadlineStatus?.label === 'COMPLETED'
@@ -3255,7 +3255,7 @@ export default function Performance() {
                                 justifyContent:
                                   'space-between',
                                 marginTop: 4,
-                                fontSize: 10,
+                                fontSize: 12,
                                 color: C.muted,
                               }}
                             >
@@ -3267,7 +3267,7 @@ export default function Performance() {
                             <div
                               style={{
                                 marginTop: 6,
-                                fontSize: 11,
+                                fontSize: 13,
                                 color: C.muted,
                               }}
                             >
@@ -3289,10 +3289,10 @@ export default function Performance() {
                         padding: '10px 12px',
                       }}
                     >
-                      <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 3 }}>
                         Next review
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
                         {item.next_review_date
                           ? new Date(
                               `${item.next_review_date}T00:00:00`
@@ -3397,7 +3397,7 @@ export default function Performance() {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: 12,
-                  fontSize: 11,
+                  fontSize: 13,
                 }}
               >
                 <span
@@ -3542,7 +3542,7 @@ export default function Performance() {
               >
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: 700,
                     color: C.text,
                     marginBottom: 8,
@@ -3566,7 +3566,7 @@ export default function Performance() {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: 10,
-                        fontSize: 11,
+                        fontSize: 13,
                       }}
                     >
                       <div style={{ minWidth: 0, color: C.text }}>
@@ -3600,7 +3600,7 @@ export default function Performance() {
                 background:
                   'color-mix(in srgb, #1A5FFF 8%, var(--card, #FFFFFF))',
                 color: C.muted,
-                fontSize: 11,
+                fontSize: 13,
                 lineHeight: 1.5,
               }}
             >
@@ -3719,7 +3719,7 @@ export default function Performance() {
               >
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight: 700,
                     color: '#1A5FFF',
                     textTransform: 'uppercase',
@@ -3732,7 +3732,7 @@ export default function Performance() {
 
                 <div
                   style={{
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: 700,
                     color: C.text,
                   }}
@@ -3743,7 +3743,7 @@ export default function Performance() {
                 <div
                   style={{
                     marginTop: 3,
-                    fontSize: 11,
+                    fontSize: 13,
                     color: C.muted,
                   }}
                 >
@@ -3824,7 +3824,7 @@ export default function Performance() {
                   <option value="Other" />
                 </datalist>
 
-                <div style={{ marginTop: 5, fontSize: 10, color: C.muted }}>
+                <div style={{ marginTop: 5, fontSize: 12, color: C.muted }}>
                   Select a suggested round or type your own, e.g. Qualifier, Pool A Match 2, Bronze Match.
                 </div>
               </div>
@@ -3846,7 +3846,7 @@ export default function Performance() {
                 {form.partnerUserId && (
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 13,
                       color: '#00C48C',
                       marginTop: 5,
                     }}
@@ -3884,7 +3884,7 @@ export default function Performance() {
                 {form.opponentUserId && (
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 13,
                       color: '#00C48C',
                       marginTop: 5,
                     }}
@@ -3910,7 +3910,7 @@ export default function Performance() {
                   {form.opponentUserId2 && (
                     <div
                       style={{
-                        fontSize: 11,
+                        fontSize: 13,
                         color: '#00C48C',
                         marginTop: 5,
                       }}
@@ -3936,7 +3936,7 @@ export default function Performance() {
                   <div key={key}>
                     <div
                       style={{
-                        fontSize: 11,
+                        fontSize: 13,
                         color: C.muted,
                         marginBottom: 5,
                         fontWeight: 500,
@@ -4008,7 +4008,7 @@ export default function Performance() {
                       form.videoFile || form.videoUrl
                         ? '#00A878'
                         : 'var(--text-muted)',
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
@@ -4048,7 +4048,7 @@ export default function Performance() {
                   <div
                     style={{
                       marginTop: 7,
-                      fontSize: 11,
+                      fontSize: 13,
                       color: 'var(--text-muted)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
@@ -4149,7 +4149,7 @@ export default function Performance() {
                   <div
                     style={{
                       marginTop: 7,
-                      fontSize: 10,
+                      fontSize: 12,
                       lineHeight: 1.5,
                       color: C.muted,
                     }}
@@ -4165,7 +4165,7 @@ export default function Performance() {
                     borderRadius: 10,
                     background: C.card,
                     border: `1px solid ${C.line}`,
-                    fontSize: 11,
+                    fontSize: 13,
                     lineHeight: 1.5,
                     color: C.muted,
                   }}
@@ -4294,7 +4294,7 @@ export default function Performance() {
                 </div>
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: 14,
                     color: C.muted,
                     marginTop: 2,
                   }}
@@ -4311,7 +4311,7 @@ export default function Performance() {
                 }
                 style={{
                   marginLeft: 'auto',
-                  fontSize: 13,
+                  fontSize: 14,
                   padding: '5px 14px',
                 }}
               >
@@ -4370,7 +4370,7 @@ export default function Performance() {
                       style={{
                         display: 'block',
                         marginTop: 2,
-                        fontSize: 9,
+                        fontSize: 10,
                         color: '#1A5FFF',
                         fontWeight: 700,
                       }}
@@ -4442,7 +4442,7 @@ export default function Performance() {
               >
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight: 600,
                     color: '#7C3AED',
                     textTransform: 'uppercase',
@@ -4472,7 +4472,7 @@ export default function Performance() {
                     >
                       <div
                         style={{
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: 600,
                           lineHeight: 1.6,
                           color: C.text,
@@ -4485,7 +4485,7 @@ export default function Performance() {
                       <div
                         style={{
                           marginTop: 7,
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: 400,
                           color: C.muted,
                         }}
@@ -4503,7 +4503,7 @@ export default function Performance() {
                 <div
                   style={{
                     marginTop: 8,
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: 400,
                     color: C.muted,
                   }}
@@ -4535,7 +4535,7 @@ export default function Performance() {
                     padding: '32px 20px',
                     textAlign: 'center',
                     color: C.muted,
-                    fontSize: 13,
+                    fontSize: 14,
                     border: `2px dashed ${C.line}`,
                   }}
                 >
@@ -4615,7 +4615,7 @@ export default function Performance() {
             >
               <div
                 style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: 700,
                   color: C.text,
                   marginBottom: 5,
@@ -4626,7 +4626,7 @@ export default function Performance() {
 
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: 13,
                   color: C.muted,
                   lineHeight: 1.55,
                 }}
@@ -4644,7 +4644,7 @@ export default function Performance() {
             >
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: 700,
                   color: C.text,
                   marginBottom: 8,
@@ -4679,7 +4679,7 @@ export default function Performance() {
                   >
                     <div
                       style={{
-                        fontSize: 10,
+                        fontSize: 12,
                         color: C.muted,
                         marginBottom: 3,
                       }}
@@ -4708,7 +4708,7 @@ export default function Performance() {
                 background:
                   'color-mix(in srgb, #1A5FFF 8%, var(--card, #FFFFFF))',
                 color: C.muted,
-                fontSize: 11,
+                fontSize: 13,
                 lineHeight: 1.55,
                 marginBottom: 16,
               }}
@@ -4777,7 +4777,7 @@ export default function Performance() {
 
             <div
               style={{
-                fontSize: 12,
+                fontSize: 14,
                 color: C.muted,
                 lineHeight: 1.6,
                 marginBottom: 16,
@@ -4797,7 +4797,7 @@ export default function Performance() {
                   background: C.soft,
                   border: `1px solid ${C.line}`,
                   color: C.muted,
-                  fontSize: 12,
+                  fontSize: 14,
                   textAlign: 'center',
                 }}
               >
@@ -4839,7 +4839,7 @@ export default function Performance() {
                       >
                         <span
                           style={{
-                            fontSize: 11,
+                            fontSize: 13,
                             fontWeight: 700,
                             color: accent,
                             background: `color-mix(in srgb, ${accent} 10%, var(--card, #FFFFFF))`,
@@ -4862,7 +4862,7 @@ export default function Performance() {
                         >
                           <span
                             style={{
-                              fontSize: 10,
+                              fontSize: 12,
                               color: C.muted,
                             }}
                           >
@@ -4899,7 +4899,7 @@ export default function Performance() {
                                 deletingVerificationId === item.id
                                   ? 0.55
                                   : 1,
-                              fontSize: 13,
+                              fontSize: 14,
                               fontWeight: 700,
                               lineHeight: 1,
                               flexShrink: 0,
@@ -4936,7 +4936,7 @@ export default function Performance() {
                             >
                               <div
                                 style={{
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   color: C.muted,
                                   marginBottom: 5,
                                 }}
@@ -4954,7 +4954,7 @@ export default function Performance() {
                               >
                                 <span
                                   style={{
-                                    fontSize: 11,
+                                    fontSize: 13,
                                     color: C.text,
                                   }}
                                 >
@@ -4963,7 +4963,7 @@ export default function Performance() {
 
                                 <span
                                   style={{
-                                    fontSize: 11,
+                                    fontSize: 13,
                                     color: accent,
                                   }}
                                 >
@@ -4975,7 +4975,7 @@ export default function Performance() {
                                 <div
                                   style={{
                                     marginTop: 4,
-                                    fontSize: 9,
+                                    fontSize: 10,
                                     color: C.muted,
                                   }}
                                 >
@@ -4999,7 +4999,7 @@ export default function Performance() {
                         >
                           <div
                             style={{
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 700,
                               color: accent,
                               marginBottom: 5,
@@ -5012,7 +5012,7 @@ export default function Performance() {
 
                           <div
                             style={{
-                              fontSize: 11,
+                              fontSize: 13,
                               lineHeight: 1.55,
                               color: C.text,
                               whiteSpace: 'pre-wrap',
@@ -5092,7 +5092,7 @@ export default function Performance() {
                   </label>
                   <span
                     style={{
-                      fontSize: 13,
+                      fontSize: 14,
                       fontWeight: 700,
                       color: C.text,
                     }}
