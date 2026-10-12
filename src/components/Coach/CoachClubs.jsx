@@ -85,6 +85,27 @@ function getVenueMapEmbedUrl(venue, club) {
   )}&output=embed`;
 }
 
+function normalizeRelatedLink(value) {
+  const raw = String(value || "").trim();
+
+  if (!raw) return "";
+
+  if (raw.startsWith("@")) {
+    return `https://instagram.com/${raw.slice(1)}`;
+  }
+
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+
+  if (/^(www\.)/i.test(raw)) {
+    return `https://${raw}`;
+  }
+
+  return raw;
+}
+
+
 function getVenueGoogleMapsUrl(venue, club) {
   const savedUrl = String(venue?.mapUrl || "").trim();
 
@@ -778,12 +799,12 @@ function CreateClubForm({ submitting, onCreate }) {
       <label style={labelStyle}>Related link optional</label>
       <input
         className={styles.formInput}
-        type="url"
+        type="text"
         value={form.relatedUrl}
         onChange={(event) =>
           updateField("relatedUrl", event.target.value)
         }
-        placeholder="Google Form, Instagram, Facebook or website URL"
+        placeholder="@username or Google Form, Facebook, Instagram, website link"
         style={inputStyle}
       />
 
@@ -1044,7 +1065,7 @@ function ClubDetail({
         {club.relatedUrl && (
           <div style={{ marginTop: 12 }}>
             <a
-              href={club.relatedUrl}
+              href={normalizeRelatedLink(club.relatedUrl)}
               target="_blank"
               rel="noreferrer"
               className={styles.btnOutline}
@@ -3490,12 +3511,12 @@ function EditClubModal({
         <label style={labelStyle}>Related link optional</label>
         <input
           className={styles.formInput}
-          type="url"
+          type="text"
           value={form.relatedUrl}
           onChange={(event) =>
             updateField("relatedUrl", event.target.value)
           }
-          placeholder="Google Form, Instagram, Facebook or website URL"
+          placeholder="@username or Google Form, Facebook, Instagram, website link"
           style={inputStyle}
         />
 
@@ -5384,7 +5405,8 @@ export default function CoachClubs() {
           state: form.state.trim(),
           location: form.location.trim(),
           description: form.description.trim() || null,
-          related_url: form.relatedUrl.trim() || null,
+          related_url:
+            normalizeRelatedLink(form.relatedUrl) || null,
           logo_url: logoUrl,
           accepting_members: true,
         })
@@ -6131,7 +6153,8 @@ export default function CoachClubs() {
           p_state: form.state.trim(),
           p_location: form.location.trim(),
           p_description: form.description.trim() || null,
-          p_related_url: form.relatedUrl.trim() || null,
+          p_related_url:
+            normalizeRelatedLink(form.relatedUrl) || null,
           p_logo_url: nextLogoUrl,
         },
       );

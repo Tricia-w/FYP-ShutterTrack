@@ -7,6 +7,7 @@ import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
 import { Avatar, CoachPageHeader, LevelBadge } from './CoachShared'
 import CoachNotificationBell from '../Notifications/CoachNotificationBell'
+import TestModal from '../Player/fitness/components/FitnessTestModal'
 
 const DEFAULT_SCORE = 50
 
@@ -16,7 +17,6 @@ const SCHEDULE_META_PREFIX = '__SHUTTLETRACK_TRAINING__:'
 
 function decodeScheduleNotes(value) {
   const raw = String(value || '')
-
   if (!raw.startsWith(SCHEDULE_META_PREFIX)) {
     return {
       notes: raw,
@@ -27,12 +27,10 @@ function decodeScheduleNotes(value) {
       status: 'scheduled',
     }
   }
-
   try {
     const parsed = JSON.parse(
       raw.slice(SCHEDULE_META_PREFIX.length)
     )
-
     return {
       notes: parsed?.notes || '',
       endTime: parsed?.endTime || '',
@@ -55,7 +53,6 @@ function decodeScheduleNotes(value) {
 
 function mapTaggedUpcomingMatch(row) {
   const meta = decodeScheduleNotes(row?.notes)
-
   return {
     id: row?.id,
     playerUserId: row?.user_id || '',
@@ -79,25 +76,23 @@ function mapTaggedUpcomingMatch(row) {
 
 function decodeActionPlans(value) {
   const raw = String(value || '')
-
   const empty = {
     performance: '',
     performanceDeadline: '',
     performanceCompletion: 0,
+    performanceReviewDate: '',
     fitness: '',
     fitnessDeadline: '',
     fitnessCompletion: 0,
+    fitnessReviewDate: '',
   }
-
   if (!raw.startsWith(ACTION_PLAN_META_PREFIX)) {
     return empty
   }
-
   try {
     const parsed = JSON.parse(
       raw.slice(ACTION_PLAN_META_PREFIX.length)
     )
-
     /*
      * Backward compatibility:
      * Old saved format:
@@ -122,54 +117,53 @@ function decodeActionPlans(value) {
      */
     const performanceValue =
       parsed?.performance
-
     const fitnessValue =
       parsed?.fitness
-
     const performanceIsObject =
       performanceValue &&
       typeof performanceValue === 'object' &&
       !Array.isArray(performanceValue)
-
     const fitnessIsObject =
       fitnessValue &&
       typeof fitnessValue === 'object' &&
       !Array.isArray(fitnessValue)
-
     return {
       performance:
         performanceIsObject
           ? performanceValue.text || ''
           : performanceValue || '',
-
       performanceDeadline:
         performanceIsObject
           ? performanceValue.deadline || ''
           : '',
-
       performanceCompletion:
         performanceIsObject
           ? clamp(
               performanceValue.completionRate
             )
           : 0,
-
+      performanceReviewDate:
+        performanceIsObject
+          ? performanceValue.reviewDate || ''
+          : '',
       fitness:
         fitnessIsObject
           ? fitnessValue.text || ''
           : fitnessValue || '',
-
       fitnessDeadline:
         fitnessIsObject
           ? fitnessValue.deadline || ''
           : '',
-
       fitnessCompletion:
         fitnessIsObject
           ? clamp(
               fitnessValue.completionRate
             )
           : 0,
+      fitnessReviewDate:
+        fitnessIsObject
+          ? fitnessValue.reviewDate || ''
+          : '',
     }
   } catch {
     return empty
@@ -180,50 +174,53 @@ function encodeActionPlans({
   performance = '',
   performanceDeadline = '',
   performanceCompletion = 0,
+  performanceReviewDate = '',
   fitness = '',
   fitnessDeadline = '',
   fitnessCompletion = 0,
+  fitnessReviewDate = '',
 }) {
   const cleanPerformance =
     String(performance || '').trim()
-
   const cleanFitness =
     String(fitness || '').trim()
-
   const cleanPerformanceDeadline =
     String(
       performanceDeadline || ''
     ).trim()
-
   const cleanFitnessDeadline =
     String(
       fitnessDeadline || ''
     ).trim()
-
   const cleanPerformanceCompletion =
     clamp(performanceCompletion)
-
+  const cleanPerformanceReviewDate =
+    String(
+      performanceReviewDate || ''
+    ).trim()
   const cleanFitnessCompletion =
     clamp(fitnessCompletion)
-
+  const cleanFitnessReviewDate =
+    String(
+      fitnessReviewDate || ''
+    ).trim()
   const hasPerformance =
     Boolean(
       cleanPerformance ||
       cleanPerformanceDeadline ||
-      cleanPerformanceCompletion
+      cleanPerformanceCompletion ||
+      cleanPerformanceReviewDate
     )
-
   const hasFitness =
     Boolean(
       cleanFitness ||
       cleanFitnessDeadline ||
-      cleanFitnessCompletion
+      cleanFitnessCompletion ||
+      cleanFitnessReviewDate
     )
-
   if (!hasPerformance && !hasFitness) {
     return null
   }
-
   return `${ACTION_PLAN_META_PREFIX}${JSON.stringify({
     performance: {
       text: cleanPerformance,
@@ -231,6 +228,8 @@ function encodeActionPlans({
         cleanPerformanceDeadline,
       completionRate:
         cleanPerformanceCompletion,
+      reviewDate:
+        cleanPerformanceReviewDate,
     },
     fitness: {
       text: cleanFitness,
@@ -238,6 +237,8 @@ function encodeActionPlans({
         cleanFitnessDeadline,
       completionRate:
         cleanFitnessCompletion,
+      reviewDate:
+        cleanFitnessReviewDate,
     },
   })}`
 }
@@ -265,7 +266,6 @@ const getMetricColor = (label, value, group = 'performance') => {
   const base = palette[label] || '#2563EB'
   const score = Math.max(0, Math.min(100, Number(value) || 0))
   const strength = Math.round(40 + score * 0.5)
-
   return `color-mix(
     in srgb,
     ${base} ${strength}%,
@@ -301,7 +301,6 @@ const parseMinutes = value => {
 const getThisWeekDates = () => {
   const today = new Date()
   const day = today.getDay()
-
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(today)
     date.setDate(today.getDate() - day + index)
@@ -321,13 +320,34 @@ const hasMeaningfulProgressNote = student => {
   const actionPlans = decodeActionPlans(
     student.progress?.coach_comment
   )
-
   return Boolean(
     String(actionPlans.performance || '').trim() ||
     String(actionPlans.fitness || '').trim() ||
     String(student.progress?.focus_area || '').trim() ||
     String(student.progress?.progress_status || '').trim() ||
     String(student.progress?.injury_recommendation || '').trim() ||
+    String(student.assessment?.performance_comment || '').trim() ||
+    String(student.assessment?.fitness_comment || '').trim()
+  )
+}
+
+const hasCoachProgressRecord = student => {
+  if (!student) return false
+  const actionPlans = decodeActionPlans(
+    student.progress?.coach_comment
+  )
+  return Boolean(
+    String(student.progress?.progress_status || '').trim() ||
+    String(student.progress?.focus_area || '').trim() ||
+    String(student.progress?.next_review_date || '').trim() ||
+    String(actionPlans.performance || '').trim() ||
+    String(actionPlans.performanceDeadline || '').trim() ||
+    Number(actionPlans.performanceCompletion || 0) > 0 ||
+    String(actionPlans.performanceReviewDate || '').trim() ||
+    String(actionPlans.fitness || '').trim() ||
+    String(actionPlans.fitnessDeadline || '').trim() ||
+    Number(actionPlans.fitnessCompletion || 0) > 0 ||
+    String(actionPlans.fitnessReviewDate || '').trim() ||
     String(student.assessment?.performance_comment || '').trim() ||
     String(student.assessment?.fitness_comment || '').trim()
   )
@@ -344,19 +364,15 @@ function calculateFitnessIndicators({
       String(a.test_date || '')
     )
     if (dateCompare !== 0) return dateCompare
-
     return String(b.created_at || '').localeCompare(
       String(a.created_at || '')
     )
   })
-
   const latestScore = indicator => {
     const row = sortedTests.find(item => item.indicator === indicator)
     return row ? clamp(row.score) : null
   }
-
   const weeklyDates = getThisWeekDates()
-
   const weeklyMinutes = trainingLogs
     .filter(log =>
       weeklyDates.includes(
@@ -367,7 +383,6 @@ function calculateFitnessIndicators({
       (sum, log) => sum + parseMinutes(log.duration),
       0
     )
-
   /*
    * IMPORTANT:
    * Recovery is NOT recalculated separately on the Coach Progress page.
@@ -394,7 +409,6 @@ function calculateFitnessIndicators({
       createdAt: row.created_at || '',
       updatedAt: row.updated_at || '',
     })),
-
     sessions: (trainingLogs || []).map(row => ({
       id: row.id,
       date: row.training_date,
@@ -407,7 +421,6 @@ function calculateFitnessIndicators({
       coachSessionId: row.coach_session_id || null,
       createdAt: row.created_at || '',
     })),
-
     recoveryLogs: (recoveryLogs || []).map(row => ({
       id: row.id,
       date: row.log_date,
@@ -417,7 +430,6 @@ function calculateFitnessIndicators({
       hr: Number(row.resting_hr || 0),
       notes: row.notes || '',
     })),
-
     injuries: (injuries || []).map(row => ({
       id: row.id,
       name: row.injury_description || '',
@@ -425,16 +437,13 @@ function calculateFitnessIndicators({
       status: row.status || 'Monitoring',
       notes: row.notes || '',
     })),
-
     // Recovery calculation does not need the coach page to invent a
     // separate schedule representation. Keep this empty rather than
     // creating different logic from Player Fitness.
     scheduleList: [],
   })
-
   const sharedRecoveryScore =
     Number(sharedFitnessSummary?.recoveryScore)
-
   return {
     endurance: Math.round(
       latestScore('Endurance') ??
@@ -447,7 +456,6 @@ function calculateFitnessIndicators({
     agility: Math.round(
       latestScore('Agility') ?? DEFAULT_SCORE
     ),
-
     // Exact same Recovery result source as Player Fitness.
     recovery: Number.isFinite(sharedRecoveryScore)
       ? Math.round(clamp(sharedRecoveryScore))
@@ -457,10 +465,8 @@ function calculateFitnessIndicators({
 
 function formatDate(value) {
   if (!value) return 'Not set'
-
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
-
   return date.toLocaleDateString('en-MY', {
     day: 'numeric',
     month: 'short',
@@ -473,7 +479,6 @@ const getMatchOpponent = match => {
     match?.opponent_name,
     match?.opponent_name2,
   ].filter(Boolean)
-
   return names.length
     ? names.join(' & ')
     : 'Unknown opponent'
@@ -511,7 +516,6 @@ const INJURY_META_PREFIX = '__SHUTTLETRACK_INJURY__:'
 
 function decodeInjuryNotes(value) {
   const raw = String(value || '')
-
   if (!raw.startsWith(INJURY_META_PREFIX)) {
     return {
       notes: raw,
@@ -521,12 +525,10 @@ function decodeInjuryNotes(value) {
       imagePath: '',
     }
   }
-
   try {
     const parsed = JSON.parse(
       raw.slice(INJURY_META_PREFIX.length)
     )
-
     return {
       notes: parsed?.notes || '',
       bodyX:
@@ -566,17 +568,14 @@ const INJURY_IMAGE_BUCKET = 'injury-images'
 
 function getInjuryImageUrl(imagePath) {
   if (!imagePath) return ''
-
   const { data } = supabase.storage
     .from(INJURY_IMAGE_BUCKET)
     .getPublicUrl(imagePath)
-
   return data?.publicUrl || ''
 }
 
 function getInjurySeverityColor(severity) {
   const normalized = String(severity || '').toLowerCase()
-
   if (normalized === 'severe') return '#EF4444'
   if (normalized === 'moderate') return '#F59E0B'
   return '#10B981'
@@ -585,17 +584,14 @@ function getInjurySeverityColor(severity) {
 function normalizeInjury(row) {
   const meta = decodeInjuryNotes(row?.notes)
   const status = row?.status || 'Monitoring'
-
   const severity =
     ['Mild', 'Moderate', 'Severe'].includes(row?.severity)
       ? row.severity
       : meta.severity || 'Mild'
-
   const imagePath =
     row?.image_path ||
     meta.imagePath ||
     ''
-
   return {
     id: row?.id,
     name: row?.injury_description || 'Unnamed injury',
@@ -616,7 +612,6 @@ function normalizeInjury(row) {
 
 function getInjuryStatusColor(status) {
   const normalized = String(status || '').toLowerCase()
-
   if (normalized === 'recovered') return '#10B981'
   if (normalized === 'recovering') return '#F59E0B'
   return '#EF4444'
@@ -627,7 +622,6 @@ function getFallbackInjuryPoint(name = '') {
   const isLeft = /\bleft\b/.test(lower)
   const isRight = /\bright\b/.test(lower)
   const sideX = isLeft ? 50 : isRight ? 70 : 60
-
   if (
     lower.includes('head') ||
     lower.includes('forehead')
@@ -744,7 +738,6 @@ function getFallbackInjuryPoint(name = '') {
   ) {
     return { cx: sideX, cy: 160 }
   }
-
   return { cx: 60, cy: 90 }
 }
 
@@ -791,7 +784,6 @@ function InjuryBodyMap({ injuries = [] }) {
           preserveAspectRatio="xMidYMid meet"
           pointerEvents="none"
         />
-
         {visibleInjuries.map((injury, index) => {
           const hasSavedPoint =
             injury.bodyX !== null &&
@@ -800,17 +792,14 @@ function InjuryBodyMap({ injuries = [] }) {
             injury.bodyY !== undefined &&
             Number.isFinite(Number(injury.bodyX)) &&
             Number.isFinite(Number(injury.bodyY))
-
           const point = hasSavedPoint
             ? {
                 cx: Number(injury.bodyX),
                 cy: Number(injury.bodyY),
               }
             : getFallbackInjuryPoint(injury.name)
-
           const markerColor =
             getInjuryStatusColor(injury.status)
-
           return (
             <g
               key={`${injury.id || injury.name}-${index}`}
@@ -844,16 +833,13 @@ function ComparisonSkillRow({
 }) {
   const studentScore =
     clamp(studentValue ?? DEFAULT_SCORE)
-
   const hasCoachValue =
     coachValue !== null &&
     coachValue !== undefined &&
     Number.isFinite(Number(coachValue))
-
   const coachScore = hasCoachValue
     ? clamp(coachValue)
     : studentScore
-
   const hasChange =
     hasCoachValue &&
     coachScore !== studentScore
@@ -900,7 +886,6 @@ function ComparisonSkillRow({
             background: color(studentScore),
           }}
         />
-
         {hasChange && (
           <>
             <div
@@ -972,7 +957,6 @@ function ProgressMetricIcon({
     fill: 'none',
     'aria-hidden': true,
   }
-
   if (type === 'students') {
     return (
       <svg {...props}>
@@ -1005,7 +989,6 @@ function ProgressMetricIcon({
       </svg>
     )
   }
-
   if (type === 'performance') {
     return (
       <svg {...props}>
@@ -1026,7 +1009,6 @@ function ProgressMetricIcon({
       </svg>
     )
   }
-
   if (type === 'fitness') {
     return (
       <svg {...props}>
@@ -1047,7 +1029,6 @@ function ProgressMetricIcon({
       </svg>
     )
   }
-
   if (type === 'notes') {
     return (
       <svg {...props}>
@@ -1072,24 +1053,20 @@ function ProgressMetricIcon({
       </svg>
     )
   }
-
   return null
 }
 
 const getPlayerInitials = name => {
   const value = String(name || '-').trim()
   if (!value) return '-'
-
   const words = value
     .split(/\s+/)
     .filter(Boolean)
-
   if (words.length === 1) {
     return words[0]
       .slice(0, 2)
       .toUpperCase()
   }
-
   return `${words[0][0]}${words[words.length - 1][0]}`
     .toUpperCase()
 }
@@ -1168,7 +1145,6 @@ function MatchPlayerSuggestions({
               {item.display_name}
             </div>
           </div>
-
           <span
             style={{
               fontSize: 11,
@@ -1192,6 +1168,7 @@ function AssessmentSlider({
   accentColor,
   onChange,
 }) {
+
   return (
     <div className={styles.formRow}>
       <div
@@ -1207,7 +1184,6 @@ function AssessmentSlider({
         >
           {label}
         </label>
-
         <span
           style={{
             fontSize: 13,
@@ -1217,7 +1193,6 @@ function AssessmentSlider({
           {value}
         </span>
       </div>
-
       <input
         type="range"
         min="0"
@@ -1244,26 +1219,21 @@ function ActionPlanProgress({
 }) {
   const value =
     clamp(completion)
-
   const today =
     new Date()
       .toISOString()
       .slice(0, 10)
-
   const deadlineValue =
     String(deadline || '')
       .slice(0, 10)
-
   const isCompleted =
     value >= 100
-
   const isOverdue =
     Boolean(
       deadlineValue &&
       deadlineValue < today &&
       !isCompleted
     )
-
   const isDueToday =
     Boolean(
       deadlineValue &&
@@ -1307,7 +1277,6 @@ function ActionPlanProgress({
               ? formatDate(deadline)
               : 'Not set'}
           </strong>
-
           {isCompleted && deadline && (
             <span
               style={{
@@ -1319,7 +1288,6 @@ function ActionPlanProgress({
               Completed
             </span>
           )}
-
           {isDueToday && (
             <span
               style={{
@@ -1331,7 +1299,6 @@ function ActionPlanProgress({
               Due today
             </span>
           )}
-
           {isOverdue && (
             <span
               style={{
@@ -1344,7 +1311,6 @@ function ActionPlanProgress({
             </span>
           )}
         </span>
-
         <span
           style={{
             fontWeight: 700,
@@ -1381,7 +1347,6 @@ function ActionPlanProgress({
 
 export default function CoachProgress() {
   const { user } = useAuth()
-
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth : 1600
   )
@@ -1390,29 +1355,23 @@ export default function CoachProgress() {
     const handleResize = () => {
       setViewportWidth(window.innerWidth)
     }
-
     window.addEventListener('resize', handleResize)
     handleResize()
-
     return () => {
       window.removeEventListener('resize', handleResize)
     }
   }, [])
-
   const progressSingleColumn = viewportWidth <= 900
   const progressCompact = viewportWidth <= 1350
-
   const [students, setStudents] = useState([])
   const [selectedId, setSelectedId] = useState(null)
-
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-
   const [editOpen, setEditOpen] = useState(false)
-
+  const [progressSection, setProgressSection] = useState('performance')
   const [matchModalOpen, setMatchModalOpen] =
     useState(false)
   const [matchDetailOpen, setMatchDetailOpen] =
@@ -1433,20 +1392,17 @@ export default function CoachProgress() {
     useState(null)
   const [savingFitnessTest, setSavingFitnessTest] =
     useState(false)
-
   const [selectedMatch, setSelectedMatch] =
     useState(null)
   const [selectedInjury, setSelectedInjury] =
     useState(null)
   const [injuryDetailOpen, setInjuryDetailOpen] =
     useState(false)
-
   const [matchNote, setMatchNote] = useState('')
   const [savingMatch, setSavingMatch] =
     useState(false)
   const [savingMatchNote, setSavingMatchNote] =
     useState(false)
-
   const [matchForm, setMatchForm] = useState({
     date: new Date()
       .toISOString()
@@ -1464,45 +1420,39 @@ export default function CoachProgress() {
     result: 'Win',
     notes: '',
   })
-
   const [fitnessTestForm, setFitnessTestForm] = useState({
     date: new Date().toISOString().split('T')[0],
-    indicator: 'Endurance',
-    testName: '',
+    indicator: '',
+    test: '',
     result: '',
-    score: 50,
+    score: 0,
+    adjustmentSign: '+',
+    adjustmentAmount: 0,
   })
-
   const [
     partnerSuggestions,
     setPartnerSuggestions,
   ] = useState([])
-
   const [
     opponent1Suggestions,
     setOpponent1Suggestions,
   ] = useState([])
-
   const [
     opponent2Suggestions,
     setOpponent2Suggestions,
   ] = useState([])
-
   const [
     recommendationOpen,
     setRecommendationOpen,
   ] = useState(false)
-
   const [
     injuryRecommendation,
     setInjuryRecommendation,
   ] = useState('')
-
   const [
     savingRecommendation,
     setSavingRecommendation,
   ] = useState(false)
-
   const [form, setForm] = useState({
     progress_status: 'On track',
     focus_area: '',
@@ -1514,7 +1464,8 @@ export default function CoachProgress() {
     fitness_action_plan: '',
     fitness_action_deadline: '',
     fitness_action_completion: 0,
-    next_review_date: '',
+    performance_review_date: '',
+    fitness_review_date: '',
     smash: 50,
     defense: 50,
     footwork: 50,
@@ -1527,17 +1478,14 @@ export default function CoachProgress() {
     agility: 50,
     recovery: 50,
   })
-
   const loadProgress = useCallback(async () => {
     if (!user?.id) {
       setStudents([])
       setLoading(false)
       return
     }
-
     setLoading(true)
     setError('')
-
     try {
       const {
         data: relationships,
@@ -1549,11 +1497,9 @@ export default function CoachProgress() {
         .select('player_user_id')
         .eq('coach_user_id', user.id)
         .eq('status', 'accepted')
-
       if (relationshipError) {
         throw relationshipError
       }
-
       const studentUserIds = [
         ...new Set(
           (relationships || [])
@@ -1563,13 +1509,11 @@ export default function CoachProgress() {
             .filter(Boolean)
         ),
       ]
-
       if (studentUserIds.length === 0) {
         setStudents([])
         setSelectedId(null)
         return
       }
-
       const [
         profilesResult,
         trainingResult,
@@ -1590,7 +1534,6 @@ export default function CoachProgress() {
           .order('display_name', {
             ascending: true,
           }),
-
         supabase
           .from('fitness_training_logs')
           .select('*')
@@ -1598,7 +1541,6 @@ export default function CoachProgress() {
             'user_id',
             studentUserIds
           ),
-
         supabase
           .from('fitness_tests')
           .select('*')
@@ -1606,7 +1548,6 @@ export default function CoachProgress() {
             'user_id',
             studentUserIds
           ),
-
         supabase
           .from(
             'fitness_recovery_logs'
@@ -1616,7 +1557,6 @@ export default function CoachProgress() {
             'user_id',
             studentUserIds
           ),
-
         supabase
           .from('fitness_injuries')
           .select('*')
@@ -1624,7 +1564,6 @@ export default function CoachProgress() {
             'user_id',
             studentUserIds
           ),
-
         supabase
           .from(
             'coach_player_progress'
@@ -1638,7 +1577,6 @@ export default function CoachProgress() {
             'player_user_id',
             studentUserIds
           ),
-
         supabase
           .from(
             'coach_player_assessments'
@@ -1652,7 +1590,6 @@ export default function CoachProgress() {
             'player_user_id',
             studentUserIds
           ),
-
         supabase
           .from('player_schedule')
           .select('*')
@@ -1681,7 +1618,6 @@ export default function CoachProgress() {
             ascending: true,
           }),
       ])
-
       const firstError = [
         profilesResult.error,
         trainingResult.error,
@@ -1691,18 +1627,14 @@ export default function CoachProgress() {
         progressResult.error,
         taggedScheduleResult.error,
       ].find(Boolean)
-
       if (firstError) {
         throw firstError
       }
-
       const profileRows =
         profilesResult.data || []
-
       const profileIds = profileRows
         .map(profile => profile.id)
         .filter(Boolean)
-
       const [skillResult, matchResult] =
         profileIds.length
           ? await Promise.all([
@@ -1715,7 +1647,6 @@ export default function CoachProgress() {
                   'player_id',
                   profileIds
                 ),
-
               supabase
                 .from('player_matches')
                 .select('*')
@@ -1740,27 +1671,20 @@ export default function CoachProgress() {
                 error: null,
               },
             ]
-
       if (skillResult.error) {
         throw skillResult.error
       }
-
       if (matchResult.error) {
         throw matchResult.error
       }
-
       const skillRows =
         skillResult.data || []
-
       const matchRows =
         matchResult.data || []
-
       const matchIds = matchRows
         .map(row => row.id)
         .filter(Boolean)
-
       let coachNoteRows = []
-
       if (matchIds.length > 0) {
         const {
           data: noteRows,
@@ -1773,7 +1697,6 @@ export default function CoachProgress() {
             user.id
           )
           .in('match_id', matchIds)
-
         if (noteError) {
           console.error(
             'Coach match notes load error:',
@@ -1784,7 +1707,6 @@ export default function CoachProgress() {
             noteRows || []
         }
       }
-
       const coachNoteByMatchId =
         new Map(
           coachNoteRows.map(row => [
@@ -1792,19 +1714,15 @@ export default function CoachProgress() {
             row,
           ])
         )
-
       const matchesByProfileId =
         new Map()
-
       matchRows.forEach(row => {
         const key = String(
           row.player_id
         )
-
         const current =
           matchesByProfileId.get(key) ||
           []
-
         current.push(
           mapPlayerMatch(
             row,
@@ -1813,13 +1731,11 @@ export default function CoachProgress() {
             ) || null
           )
         )
-
         matchesByProfileId.set(
           key,
           current
         )
       })
-
       const skillsByProfileId =
         new Map(
           skillRows.map(row => [
@@ -1827,7 +1743,6 @@ export default function CoachProgress() {
             row,
           ])
         )
-
       const progressByUserId =
         new Map(
           (
@@ -1839,14 +1754,12 @@ export default function CoachProgress() {
             row,
           ])
         )
-
       if (assessmentResult.error) {
         console.error(
           'Coach assessment load error:',
           assessmentResult.error
         )
       }
-
       const assessmentByUserId =
         new Map(
           (
@@ -1861,10 +1774,8 @@ export default function CoachProgress() {
             row,
           ])
         )
-
       const groupedByUserId = rows => {
         const map = new Map()
-
         ;(rows || []).forEach(row => {
           const key = String(
             row.user_id
@@ -1874,77 +1785,61 @@ export default function CoachProgress() {
           current.push(row)
           map.set(key, current)
         })
-
         return map
       }
-
       const trainingByUserId =
         groupedByUserId(
           trainingResult.data
         )
-
       const testsByUserId =
         groupedByUserId(
           testsResult.data
         )
-
       const recoveryByUserId =
         groupedByUserId(
           recoveryResult.data
         )
-
       const injuriesByUserId =
         groupedByUserId(
           injuriesResult.data
         )
-
       const taggedUpcomingByUserId =
         new Map()
-
       ;(
         taggedScheduleResult.data ||
         []
       ).forEach(row => {
         const mapped =
           mapTaggedUpcomingMatch(row)
-
         if (
           mapped.status !==
           'scheduled'
         ) {
           return
         }
-
         const key = String(
           row.user_id || ''
         )
-
         if (!key) return
-
         const current =
           taggedUpcomingByUserId.get(
             key
           ) || []
-
         current.push(mapped)
-
         taggedUpcomingByUserId.set(
           key,
           current
         )
       })
-
       const normalizedStudents =
         profileRows.map(profile => {
           const userId = String(
             profile.user_id
           )
-
           const skillRow =
             skillsByProfileId.get(
               String(profile.id)
             ) || {}
-
           const performance = {
             smash: Number(
               skillRow.smash ??
@@ -1971,17 +1866,14 @@ export default function CoachProgress() {
                 DEFAULT_SCORE
             ),
           }
-
           const injuryRows =
             injuriesByUserId.get(
               userId
             ) || []
-
           const playerFitnessTests =
             (testsByUserId.get(userId) || []).filter(
               test => !test.added_by_coach
             )
-
           const fitness =
             calculateFitnessIndicators({
               tests: playerFitnessTests,
@@ -1995,7 +1887,6 @@ export default function CoachProgress() {
                 ) || [],
               injuries: injuryRows,
             })
-
           const normalizedInjuries =
             injuryRows
               .map(normalizeInjury)
@@ -2008,7 +1899,6 @@ export default function CoachProgress() {
                     ? -1
                     : 1
                 }
-
                 const dateCompare =
                   String(
                     b.date || ''
@@ -2017,13 +1907,11 @@ export default function CoachProgress() {
                       a.date || ''
                     )
                   )
-
                 if (
                   dateCompare !== 0
                 ) {
                   return dateCompare
                 }
-
                 return String(
                   b.createdAt || ''
                 ).localeCompare(
@@ -2032,13 +1920,11 @@ export default function CoachProgress() {
                   )
                 )
               })
-
           const activeInjuryCount =
             normalizedInjuries.filter(
               injury =>
                 injury.isActive
             ).length
-
           return {
             id: profile.user_id,
             profileId: profile.id,
@@ -2068,11 +1954,9 @@ export default function CoachProgress() {
                     String(b.test_date || '').localeCompare(
                       String(a.test_date || '')
                     )
-
                   if (dateCompare !== 0) {
                     return dateCompare
                   }
-
                   return String(
                     b.created_at || ''
                   ).localeCompare(
@@ -2112,11 +1996,9 @@ export default function CoachProgress() {
               ) || null,
           }
         })
-
       setStudents(
         normalizedStudents
       )
-
       setSelectedId(current =>
         normalizedStudents.some(
           student =>
@@ -2126,168 +2008,180 @@ export default function CoachProgress() {
           : normalizedStudents[0]
               ?.id || null
       )
-
       try {
         const today =
           new Date()
             .toISOString()
             .slice(0, 10)
-
-        const todayStart =
-          `${today}T00:00:00.000Z`
-
         const {
           data: reminderSettings,
-          error:
-            reminderSettingsError,
+          error: reminderSettingsError,
         } = await supabase
           .from('user_settings')
-          .select(
-            'coach_progress_reminder'
-          )
+          .select('coach_progress_reminder')
           .eq('user_id', user.id)
           .maybeSingle()
-
-        if (
-          reminderSettingsError
-        ) {
+        if (reminderSettingsError) {
           console.error(
             'Load progress reminder setting error:',
             reminderSettingsError
           )
         }
-
         const remindersEnabled =
-          reminderSettings
-            ?.coach_progress_reminder !==
-          false
-
+          reminderSettings?.coach_progress_reminder !== false
         if (remindersEnabled) {
-          const dueStudents =
-            normalizedStudents.filter(
-              student => {
-                const reviewDate =
-                  String(
-                    student.progress
-                      ?.next_review_date ||
-                      ''
-                  ).slice(0, 10)
-
-                return (
-                  reviewDate &&
-                  reviewDate <= today
+          const reminderCandidates = []
+          normalizedStudents.forEach(student => {
+            if (!student.progress?.coach_comment) {
+              return
+            }
+            const actionPlans =
+              decodeActionPlans(
+                student.progress.coach_comment
+              )
+            const plans = [
+              {
+                type: 'Performance',
+                text: actionPlans.performance,
+                deadline:
+                  actionPlans.performanceDeadline,
+                completion:
+                  clamp(
+                    actionPlans.performanceCompletion
+                  ),
+              },
+              {
+                type: 'Fitness',
+                text: actionPlans.fitness,
+                deadline:
+                  actionPlans.fitnessDeadline,
+                completion:
+                  clamp(
+                    actionPlans.fitnessCompletion
+                  ),
+              },
+            ]
+            plans.forEach(plan => {
+              const hasPlan =
+                Boolean(
+                  String(plan.text || '').trim() ||
+                  String(plan.deadline || '').trim() ||
+                  plan.completion > 0
                 )
+              if (!hasPlan) {
+                return
               }
-            )
-
-          if (
-            dueStudents.length > 0
-          ) {
+              const deadline =
+                String(
+                  plan.deadline || ''
+                ).slice(0, 10)
+              const isCompleted =
+                plan.completion >= 100
+              const isDueToday =
+                Boolean(
+                  deadline &&
+                  deadline === today &&
+                  !isCompleted
+                )
+              const isOverdue =
+                Boolean(
+                  deadline &&
+                  deadline < today &&
+                  !isCompleted
+                )
+              if (
+                !isCompleted &&
+                !isDueToday &&
+                !isOverdue
+              ) {
+                return
+              }
+              let title = ''
+              let message = ''
+              let type = 'warning'
+              const planName =
+                `${plan.type.toLowerCase()} action plan`
+              if (isCompleted) {
+                title = 'Action Plan Completed'
+                type = 'success'
+                message = deadline
+                  ? `${student.name} completed the ${planName} with deadline ${formatDate(
+                      deadline
+                    )}.`
+                  : `${student.name} completed the ${planName}.`
+              } else if (isDueToday) {
+                title = 'Action Plan Due Today'
+                message =
+                  `${student.name}'s ${planName} is due today.`
+              } else {
+                title = 'Action Plan Overdue'
+                message =
+                  `${student.name}'s ${planName} was due on ${formatDate(
+                    deadline
+                  )} and is still ${plan.completion}% complete.`
+              }
+              reminderCandidates.push({
+                user_id: user.id,
+                title,
+                message,
+                type,
+                source_type:
+                  'coach_progress_reminder',
+                action_url:
+                  '/coach/progress',
+                is_read: false,
+              })
+            })
+          })
+          if (reminderCandidates.length > 0) {
             const {
-              data:
-                existingReminders,
-              error:
-                existingReminderError,
+              data: existingReminders,
+              error: existingReminderError,
             } = await supabase
               .from('notifications')
-              .select(
-                'id, message'
-              )
-              .eq(
-                'user_id',
-                user.id
-              )
+              .select('id, title, message')
+              .eq('user_id', user.id)
               .eq(
                 'source_type',
                 'coach_progress_reminder'
               )
-              .gte(
-                'created_at',
-                todayStart
-              )
-
-            if (
-              existingReminderError
-            ) {
+            if (existingReminderError) {
               console.error(
                 'Load existing progress reminders error:',
                 existingReminderError
               )
             } else {
-              const existingMessages =
+              const existingKeys =
                 new Set(
                   (
-                    existingReminders ||
-                    []
+                    existingReminders || []
                   ).map(item =>
-                    String(
-                      item.message ||
-                        ''
-                    )
+                    `${String(
+                      item.title || ''
+                    )}|${String(
+                      item.message || ''
+                    )}`
                   )
                 )
-
               const remindersToInsert =
-                dueStudents
-                  .map(student => {
-                    const reviewDate =
-                      String(
-                        student.progress
-                          ?.next_review_date ||
-                          ''
-                      ).slice(
-                        0,
-                        10
-                      )
-
-                    const message =
-                      reviewDate <
-                      today
-                        ? `${student.name}'s progress review was due on ${formatDate(
-                            reviewDate
-                          )}.`
-                        : `${student.name}'s progress review is due today.`
-
-                    return {
-                      user_id:
-                        user.id,
-                      title:
-                        'Player progress review reminder',
-                      message,
-                      type: 'warning',
-                      source_type:
-                        'coach_progress_reminder',
-                      action_url:
-                        '/coach/progress',
-                      is_read: false,
-                    }
-                  })
-                  .filter(
-                    reminder =>
-                      !existingMessages.has(
-                        reminder.message
-                      )
-                  )
-
+                reminderCandidates.filter(
+                  reminder => {
+                    const key =
+                      `${reminder.title}|${reminder.message}`
+                    return !existingKeys.has(key)
+                  }
+                )
               if (
-                remindersToInsert.length >
-                0
+                remindersToInsert.length > 0
               ) {
                 const {
-                  error:
-                    reminderInsertError,
-                } =
-                  await supabase
-                    .from(
-                      'notifications'
-                    )
-                    .insert(
-                      remindersToInsert
-                    )
-
-                if (
-                  reminderInsertError
-                ) {
+                  error: reminderInsertError,
+                } = await supabase
+                  .from('notifications')
+                  .insert(
+                    remindersToInsert
+                  )
+                if (reminderInsertError) {
                   console.error(
                     'Create progress reminders error:',
                     reminderInsertError
@@ -2308,7 +2202,6 @@ export default function CoachProgress() {
         'Coach progress load error:',
         loadError
       )
-
       setError(
         loadError.message ||
           'Unable to load student progress from the database.'
@@ -2321,7 +2214,6 @@ export default function CoachProgress() {
   useEffect(() => {
     loadProgress()
   }, [loadProgress])
-
   const selectedStudent = useMemo(
     () =>
       students.find(
@@ -2330,7 +2222,6 @@ export default function CoachProgress() {
       ) || null,
     [students, selectedId]
   )
-
   const selectedActionPlans =
     useMemo(
       () =>
@@ -2345,18 +2236,71 @@ export default function CoachProgress() {
           ?.coach_comment,
       ]
     )
-
+  const selectedHasCoachProgress =
+    useMemo(
+      () =>
+        hasCoachProgressRecord(
+          selectedStudent
+        ),
+      [selectedStudent]
+    )
+  const hasPerformanceFeedback =
+    Boolean(
+      String(
+        selectedStudent
+          ?.assessment
+          ?.performance_comment ||
+          ''
+      ).trim()
+    )
+  const hasPerformanceActionPlan =
+    Boolean(
+      String(
+        selectedActionPlans.performance ||
+          ''
+      ).trim() ||
+      String(
+        selectedActionPlans.performanceDeadline ||
+          ''
+      ).trim() ||
+      Number(
+        selectedActionPlans.performanceCompletion ||
+          0
+      ) > 0
+    )
+  const hasFitnessFeedback =
+    Boolean(
+      String(
+        selectedStudent
+          ?.assessment
+          ?.fitness_comment ||
+          ''
+      ).trim()
+    )
+  const hasFitnessActionPlan =
+    Boolean(
+      String(
+        selectedActionPlans.fitness ||
+          ''
+      ).trim() ||
+      String(
+        selectedActionPlans.fitnessDeadline ||
+          ''
+      ).trim() ||
+      Number(
+        selectedActionPlans.fitnessCompletion ||
+          0
+      ) > 0
+    )
   const getCoachFitnessValue = useCallback(
     fieldKey => {
       if (!selectedStudent) {
         return null
       }
-
       const indicatorLabel =
         FITNESS_FIELDS.find(
           field => field.key === fieldKey
         )?.label || fieldKey
-
       const latestCoachTest =
         (selectedStudent.fitnessTests || [])
           .filter(
@@ -2376,37 +2320,30 @@ export default function CoachProgress() {
                 a.created_at ||
                   `${a.test_date || ''}T00:00:00`
               ).getTime() || 0
-
             const bTime =
               new Date(
                 b.created_at ||
                   `${b.test_date || ''}T00:00:00`
               ).getTime() || 0
-
             return bTime - aTime
           })[0] || null
-
       const assessmentValue =
         selectedStudent.assessment?.[
           fieldKey
         ]
-
       const hasAssessmentValue =
         assessmentValue !== null &&
         assessmentValue !== undefined &&
         Number.isFinite(
           Number(assessmentValue)
         )
-
       if (!latestCoachTest) {
         return hasAssessmentValue
           ? Number(assessmentValue)
           : null
       }
-
       const coachTestValue =
         Number(latestCoachTest.score)
-
       if (
         !Number.isFinite(coachTestValue)
       ) {
@@ -2414,23 +2351,19 @@ export default function CoachProgress() {
           ? Number(assessmentValue)
           : null
       }
-
       if (!hasAssessmentValue) {
         return coachTestValue
       }
-
       const coachTestTime =
         new Date(
           latestCoachTest.created_at ||
             `${latestCoachTest.test_date || ''}T00:00:00`
         ).getTime() || 0
-
       const assessmentTime =
         new Date(
           selectedStudent.assessment
             ?.updated_at || 0
         ).getTime() || 0
-
       return coachTestTime >=
         assessmentTime
         ? coachTestValue
@@ -2438,19 +2371,16 @@ export default function CoachProgress() {
     },
     [selectedStudent]
   )
-
   const searchMatchPlayers =
     useCallback(
       async (keyword, setter) => {
         const term = String(
           keyword || ''
         ).trim()
-
         if (term.length < 2) {
           setter([])
           return
         }
-
         try {
           const [
             registeredRes,
@@ -2468,7 +2398,6 @@ export default function CoachProgress() {
                 `%${term}%`
               )
               .limit(6),
-
             supabase
               .from(
                 'public_players'
@@ -2480,7 +2409,6 @@ export default function CoachProgress() {
               )
               .limit(6),
           ])
-
           if (
             registeredRes.error
           ) {
@@ -2489,14 +2417,12 @@ export default function CoachProgress() {
               registeredRes.error
             )
           }
-
           if (publicRes.error) {
             console.error(
               'Public player search error:',
               publicRes.error
             )
           }
-
           const registeredPlayers =
             (
               registeredRes.data ||
@@ -2528,7 +2454,6 @@ export default function CoachProgress() {
                 source:
                   'Account',
               }))
-
           const publicPlayers =
             (
               publicRes.data || []
@@ -2545,9 +2470,7 @@ export default function CoachProgress() {
               source:
                 'Public player',
             }))
-
           const seen = new Set()
-
           const merged = [
             ...registeredPlayers,
             ...publicPlayers,
@@ -2559,19 +2482,16 @@ export default function CoachProgress() {
               )
                 .trim()
                 .toLowerCase()
-
               if (
                 !key ||
                 seen.has(key)
               ) {
                 return false
               }
-
               seen.add(key)
               return true
             })
             .slice(0, 8)
-
           setter(merged)
         } catch (searchError) {
           console.error(
@@ -2593,7 +2513,6 @@ export default function CoachProgress() {
         ),
       250
     )
-
     return () => clearTimeout(timer)
   }, [
     matchForm.partnerName,
@@ -2609,7 +2528,6 @@ export default function CoachProgress() {
         ),
       250
     )
-
     return () => clearTimeout(timer)
   }, [
     matchForm.opponent,
@@ -2625,13 +2543,11 @@ export default function CoachProgress() {
         ),
       250
     )
-
     return () => clearTimeout(timer)
   }, [
     matchForm.opponent2,
     searchMatchPlayers,
   ])
-
   const selectMatchPlayer = (
     field,
     player
@@ -2647,7 +2563,6 @@ export default function CoachProgress() {
       setPartnerSuggestions([])
       return
     }
-
     if (field === 'opponent1') {
       setMatchForm(current => ({
         ...current,
@@ -2659,7 +2574,6 @@ export default function CoachProgress() {
       setOpponent1Suggestions([])
       return
     }
-
     if (field === 'opponent2') {
       setMatchForm(current => ({
         ...current,
@@ -2671,7 +2585,6 @@ export default function CoachProgress() {
       setOpponent2Suggestions([])
     }
   }
-
   const totalNotes = useMemo(
     () =>
       students.filter(
@@ -2679,7 +2592,6 @@ export default function CoachProgress() {
       ).length,
     [students]
   )
-
   const resetMatchForm = () => {
     setMatchForm({
       date: new Date()
@@ -2698,20 +2610,22 @@ export default function CoachProgress() {
       result: 'Win',
       notes: '',
     })
-
     setPartnerSuggestions([])
     setOpponent1Suggestions([])
     setOpponent2Suggestions([])
   }
-
+  const handleFitnessTestChange = (key, value) => {
+    setFitnessTestForm(current => ({
+      ...current,
+      [key]: value,
+    }))
+  }
   const getPlayerFitnessTestScore = indicator => {
     if (!selectedStudent) return null
-
     const normalizedIndicator =
       String(indicator || '')
         .trim()
         .toLowerCase()
-
     const latestPlayerTest =
       (selectedStudent.fitnessTests || [])
         .filter(
@@ -2729,16 +2643,13 @@ export default function CoachProgress() {
               a.created_at ||
                 `${a.test_date || ''}T00:00:00`
             ).getTime() || 0
-
           const bTime =
             new Date(
               b.created_at ||
                 `${b.test_date || ''}T00:00:00`
             ).getTime() || 0
-
           return bTime - aTime
         })[0] || null
-
     if (
       !latestPlayerTest ||
       !Number.isFinite(
@@ -2747,10 +2658,8 @@ export default function CoachProgress() {
     ) {
       return null
     }
-
     return Number(latestPlayerTest.score)
   }
-
   const openEditFitnessTest = test => {
     if (
       !test?.added_by_coach ||
@@ -2758,23 +2667,23 @@ export default function CoachProgress() {
     ) {
       return
     }
-
     setEditingFitnessTest(test)
     setFitnessTestForm({
       date:
         String(test.test_date || '').slice(0, 10) ||
         new Date().toISOString().split('T')[0],
-      indicator: test.indicator || 'Endurance',
-      testName: test.test_name || '',
+      indicator: test.indicator || '',
+      test: test.test_name || '',
       result: test.result || '',
       score: clamp(test.score),
+      adjustmentSign: '+',
+      adjustmentAmount: 0,
     })
     setFitnessRecordsOpen(false)
     setFitnessTestEditOpen(true)
     setError('')
     setSuccess('')
   }
-
   const saveEditedFitnessTest = async () => {
     if (
       !user?.id ||
@@ -2784,7 +2693,6 @@ export default function CoachProgress() {
     ) {
       return
     }
-
     if (
       !editingFitnessTest.added_by_coach ||
       String(editingFitnessTest.coach_user_id || '') !== String(user.id)
@@ -2792,31 +2700,32 @@ export default function CoachProgress() {
       alert('You can only edit fitness tests that you added.')
       return
     }
-
-    if (!fitnessTestForm.testName.trim()) {
+    if (!fitnessTestForm.test.trim()) {
       alert('Please enter the test name.')
       return
     }
-
     if (!fitnessTestForm.result.trim()) {
       alert('Please enter the test result.')
       return
     }
-
     setSavingFitnessTest(true)
     setError('')
     setSuccess('')
-
     try {
       const payload = {
         test_date: fitnessTestForm.date,
         indicator: fitnessTestForm.indicator,
-        test_name: fitnessTestForm.testName.trim(),
+        test_name: fitnessTestForm.test.trim(),
         result: fitnessTestForm.result.trim(),
         score: clamp(fitnessTestForm.score),
+        change_note:
+          Number(fitnessTestForm.adjustmentAmount) > 0
+            ? `${fitnessTestForm.adjustmentSign === '-' ? '-' : '+'}${Number(
+                fitnessTestForm.adjustmentAmount
+              )} points`
+            : 'Updated',
         updated_at: new Date().toISOString(),
       }
-
       const {
         data,
         error: updateError,
@@ -2828,19 +2737,15 @@ export default function CoachProgress() {
         .eq('coach_user_id', user.id)
         .select('*')
         .single()
-
       if (updateError) {
         throw updateError
       }
-
       const indicatorKey =
         String(fitnessTestForm.indicator || '')
           .trim()
           .toLowerCase()
-
       const syncedCoachScore =
         clamp(fitnessTestForm.score)
-
       const {
         data: syncedAssessment,
         error: assessmentSyncError,
@@ -2860,11 +2765,9 @@ export default function CoachProgress() {
         )
         .select('*')
         .single()
-
       if (assessmentSyncError) {
         throw assessmentSyncError
       }
-
       setStudents(current =>
         current.map(student =>
           student.id === selectedStudent.id
@@ -2883,11 +2786,9 @@ export default function CoachProgress() {
                       String(b.test_date || '').localeCompare(
                         String(a.test_date || '')
                       )
-
                     if (dateCompare !== 0) {
                       return dateCompare
                     }
-
                     return String(
                       b.created_at || ''
                     ).localeCompare(
@@ -2904,11 +2805,9 @@ export default function CoachProgress() {
             : student
         )
       )
-
       setFitnessTestEditOpen(false)
       setEditingFitnessTest(null)
       setFitnessRecordsOpen(true)
-
       setSuccess(
         `Coach fitness test updated for ${selectedStudent.name}.`
       )
@@ -2917,7 +2816,6 @@ export default function CoachProgress() {
         'Update coach fitness test error:',
         saveError
       )
-
       setError(
         saveError.message ||
           'Unable to update the fitness test record.'
@@ -2926,57 +2824,25 @@ export default function CoachProgress() {
       setSavingFitnessTest(false)
     }
   }
-
-  const resetFitnessTestForm = (
-    indicator = 'Endurance'
-  ) => {
-    const indicatorKey =
-      String(indicator || '')
-        .trim()
-        .toLowerCase()
-
-    const displayedCoachScore =
-      getCoachFitnessValue(indicatorKey)
-
-    const savedAssessmentScore =
-      selectedStudent?.assessment?.[
-        indicatorKey
-      ]
-
-    const currentCoachScore =
-      displayedCoachScore !== null &&
-      displayedCoachScore !== undefined &&
-      Number.isFinite(
-        Number(displayedCoachScore)
-      )
-        ? Number(displayedCoachScore)
-        : savedAssessmentScore !== null &&
-            savedAssessmentScore !== undefined &&
-            Number.isFinite(
-              Number(savedAssessmentScore)
-            )
-          ? Number(savedAssessmentScore)
-          : 50
-
+  const resetFitnessTestForm = () => {
     setFitnessTestForm({
       date: new Date().toISOString().split('T')[0],
-      indicator,
-      testName: '',
+      indicator: '',
+      test: '',
       result: '',
-      score: clamp(currentCoachScore),
+      score: 0,
+      adjustmentSign: '+',
+      adjustmentAmount: 0,
     })
   }
-
   const openAddFitnessTest = () => {
     if (!selectedStudent) return
-
-    resetFitnessTestForm('Endurance')
+    resetFitnessTestForm()
     setFitnessRecordsOpen(false)
     setFitnessTestAddOpen(true)
     setError('')
     setSuccess('')
   }
-
   const saveCoachFitnessTest = async () => {
     if (
       !user?.id ||
@@ -2985,33 +2851,34 @@ export default function CoachProgress() {
     ) {
       return
     }
-
-    if (!fitnessTestForm.testName.trim()) {
+    if (!fitnessTestForm.test.trim()) {
       alert('Please enter the test name.')
       return
     }
-
     if (!fitnessTestForm.result.trim()) {
       alert('Please enter the test result.')
       return
     }
-
     setSavingFitnessTest(true)
     setError('')
     setSuccess('')
-
     try {
       const payload = {
         user_id: selectedStudent.id,
         test_date: fitnessTestForm.date,
         indicator: fitnessTestForm.indicator,
-        test_name: fitnessTestForm.testName.trim(),
+        test_name: fitnessTestForm.test.trim(),
         result: fitnessTestForm.result.trim(),
         score: clamp(fitnessTestForm.score),
         added_by_coach: true,
         coach_user_id: user.id,
+        change_note:
+          Number(fitnessTestForm.adjustmentAmount) > 0
+            ? `${fitnessTestForm.adjustmentSign === '-' ? '-' : '+'}${Number(
+                fitnessTestForm.adjustmentAmount
+              )} points`
+            : 'No score adjustment',
       }
-
       const {
         data,
         error: insertError,
@@ -3020,26 +2887,21 @@ export default function CoachProgress() {
         .insert(payload)
         .select('*')
         .single()
-
       if (insertError) {
         throw insertError
       }
-
       const indicatorKey =
         String(fitnessTestForm.indicator || '')
           .trim()
           .toLowerCase()
-
       const syncedCoachScore =
         clamp(fitnessTestForm.score)
-
       const assessmentPayload = {
         coach_user_id: user.id,
         player_user_id: selectedStudent.id,
         [indicatorKey]: syncedCoachScore,
         updated_at: new Date().toISOString(),
       }
-
       const {
         data: syncedAssessment,
         error: assessmentSyncError,
@@ -3054,11 +2916,9 @@ export default function CoachProgress() {
         )
         .select('*')
         .single()
-
       if (assessmentSyncError) {
         throw assessmentSyncError
       }
-
       setStudents(current =>
         current.map(student =>
           student.id === selectedStudent.id
@@ -3072,11 +2932,9 @@ export default function CoachProgress() {
                     String(b.test_date || '').localeCompare(
                       String(a.test_date || '')
                     )
-
                   if (dateCompare !== 0) {
                     return dateCompare
                   }
-
                   return String(
                     b.created_at || ''
                   ).localeCompare(
@@ -3093,10 +2951,9 @@ export default function CoachProgress() {
             : student
         )
       )
-
       setFitnessTestAddOpen(false)
       resetFitnessTestForm()
-
+      setFitnessRecordsOpen(true)
       setSuccess(
         `Fitness test added for ${selectedStudent.name}. Coach ${fitnessTestForm.indicator} rating updated to ${clamp(
           fitnessTestForm.score
@@ -3107,7 +2964,6 @@ export default function CoachProgress() {
         'Save coach fitness test error:',
         saveError
       )
-
       setError(
         saveError.message ||
           'Unable to add the fitness test record.'
@@ -3116,14 +2972,12 @@ export default function CoachProgress() {
       setSavingFitnessTest(false)
     }
   }
-
   const openAddMatch = () => {
     resetMatchForm()
     setMatchModalOpen(true)
     setError('')
     setSuccess('')
   }
-
   const saveMatch = async () => {
     if (
       !user?.id ||
@@ -3132,7 +2986,6 @@ export default function CoachProgress() {
     ) {
       return
     }
-
     if (
       !matchForm.opponent.trim()
     ) {
@@ -3141,7 +2994,6 @@ export default function CoachProgress() {
       )
       return
     }
-
     if (
       !matchForm.score1.trim()
     ) {
@@ -3150,10 +3002,8 @@ export default function CoachProgress() {
       )
       return
     }
-
     const isSingles =
       matchForm.type === 'Singles'
-
     if (
       !isSingles &&
       !matchForm.opponent2.trim()
@@ -3163,11 +3013,9 @@ export default function CoachProgress() {
       )
       return
     }
-
     setSavingMatch(true)
     setError('')
     setSuccess('')
-
     try {
       const payload = {
         player_id:
@@ -3211,7 +3059,6 @@ export default function CoachProgress() {
         updated_at:
           new Date().toISOString(),
       }
-
       const {
         data,
         error: saveError,
@@ -3220,14 +3067,11 @@ export default function CoachProgress() {
         .insert(payload)
         .select('*')
         .single()
-
       if (saveError) {
         throw saveError
       }
-
       const newMatch =
         mapPlayerMatch(data)
-
       setStudents(current =>
         current.map(student =>
           student.id ===
@@ -3243,10 +3087,8 @@ export default function CoachProgress() {
             : student
         )
       )
-
       setMatchModalOpen(false)
       resetMatchForm()
-
       setSuccess(
         `Match record added for ${selectedStudent.name}.`
       )
@@ -3255,7 +3097,6 @@ export default function CoachProgress() {
         'Save coach match error:',
         saveError
       )
-
       setError(
         saveError.message ||
           'Unable to add the match record.'
@@ -3264,14 +3105,12 @@ export default function CoachProgress() {
       setSavingMatch(false)
     }
   }
-
   const openMatchDetail = match => {
     setSelectedMatch(match)
     setMatchDetailOpen(true)
     setError('')
     setSuccess('')
   }
-
   const openInjuryDetail =
     injury => {
       setSelectedInjury(injury)
@@ -3279,17 +3118,14 @@ export default function CoachProgress() {
       setError('')
       setSuccess('')
     }
-
   const closeInjuryDetail = () => {
     setInjuryDetailOpen(false)
     setSelectedInjury(null)
   }
-
   const closeMatchDetail = () => {
     setMatchDetailOpen(false)
     setSelectedMatch(null)
   }
-
   const openMatchNote = match => {
     setSelectedMatch(match)
     setMatchNote(
@@ -3299,15 +3135,12 @@ export default function CoachProgress() {
     setError('')
     setSuccess('')
   }
-
   const closeMatchNote = () => {
     if (savingMatchNote) return
-
     setMatchNoteOpen(false)
     setSelectedMatch(null)
     setMatchNote('')
   }
-
   const saveMatchNote = async () => {
     if (
       !user?.id ||
@@ -3317,22 +3150,18 @@ export default function CoachProgress() {
     ) {
       return
     }
-
     if (!matchNote.trim()) {
       alert(
         'Please enter a coach note.'
       )
       return
     }
-
     setSavingMatchNote(true)
     setError('')
     setSuccess('')
-
     try {
       const now =
         new Date().toISOString()
-
       const {
         data,
         error: saveError,
@@ -3357,11 +3186,9 @@ export default function CoachProgress() {
         )
         .select('*')
         .single()
-
       if (saveError) {
         throw saveError
       }
-
       setStudents(current =>
         current.map(student =>
           student.id ===
@@ -3388,9 +3215,7 @@ export default function CoachProgress() {
             : student
         )
       )
-
       setMatchNoteOpen(false)
-
       setSelectedMatch(current =>
         current
           ? {
@@ -3402,9 +3227,7 @@ export default function CoachProgress() {
             }
           : current
       )
-
       setMatchNote('')
-
       setSuccess(
         `Coach match note saved for ${selectedStudent.name}.`
       )
@@ -3413,7 +3236,6 @@ export default function CoachProgress() {
         'Save coach match note error:',
         saveError
       )
-
       setError(
         saveError.message ||
           'Unable to save the coach match note.'
@@ -3422,152 +3244,130 @@ export default function CoachProgress() {
       setSavingMatchNote(false)
     }
   }
-
   const openEditor = student => {
     const actionPlans =
       decodeActionPlans(
         student.progress
           ?.coach_comment
       )
-
     setSelectedId(student.id)
-
     setForm({
       progress_status:
         student.progress
           ?.progress_status ||
         'On track',
-
       focus_area:
         student.progress
           ?.focus_area || '',
-
       performance_comment:
         student.assessment
           ?.performance_comment ||
         '',
-
       performance_action_plan:
         actionPlans.performance ||
         '',
-
       performance_action_deadline:
         actionPlans.performanceDeadline ||
         '',
-
       performance_action_completion:
         actionPlans.performanceCompletion ||
         0,
-
       fitness_comment:
         student.assessment
           ?.fitness_comment ||
         '',
-
       fitness_action_plan:
         actionPlans.fitness || '',
-
       fitness_action_deadline:
         actionPlans.fitnessDeadline ||
         '',
-
       fitness_action_completion:
         actionPlans.fitnessCompletion ||
         0,
-
-      next_review_date:
+      performance_review_date:
+        actionPlans.performanceReviewDate ||
         student.progress
           ?.next_review_date ||
         '',
-
+      fitness_review_date:
+        actionPlans.fitnessReviewDate ||
+        student.progress
+          ?.next_review_date ||
+        '',
       smash: Number(
         student.assessment?.smash ??
           student.performance.smash
       ),
-
       defense: Number(
         student.assessment
           ?.defense ??
           student.performance.defense
       ),
-
       footwork: Number(
         student.assessment
           ?.footwork ??
           student.performance
             .footwork
       ),
-
       drop_shot: Number(
         student.assessment
           ?.drop_shot ??
           student.performance
             .dropShot
       ),
-
       net_play: Number(
         student.assessment
           ?.net_play ??
           student.performance
             .netPlay
       ),
-
       serve: Number(
         student.assessment?.serve ??
           student.performance.serve
       ),
-
       endurance: Number(
         student.assessment
           ?.endurance ??
           student.fitness.endurance
       ),
-
       speed: Number(
         student.assessment?.speed ??
           student.fitness.speed
       ),
-
       strength: Number(
         student.assessment
           ?.strength ??
           student.fitness.strength
       ),
-
       agility: Number(
         student.assessment
           ?.agility ??
           student.fitness
             .agility
       ),
-
       recovery: Number(
         student.assessment
           ?.recovery ??
           student.fitness.recovery
       ),
     })
-
+    setProgressSection('performance')
     setEditOpen(true)
     setError('')
     setSuccess('')
   }
-
   const openRecommendationEditor =
     student => {
       setSelectedId(student.id)
-
       setInjuryRecommendation(
         student.progress
           ?.injury_recommendation ||
           ''
       )
-
       setRecommendationOpen(true)
       setError('')
       setSuccess('')
     }
-
   const saveInjuryRecommendation =
     async () => {
       if (
@@ -3577,15 +3377,12 @@ export default function CoachProgress() {
       ) {
         return
       }
-
       setSavingRecommendation(true)
       setError('')
       setSuccess('')
-
       try {
         const now =
           new Date().toISOString()
-
         const {
           data,
           error: saveError,
@@ -3611,11 +3408,9 @@ export default function CoachProgress() {
           )
           .select('*')
           .single()
-
         if (saveError) {
           throw saveError
         }
-
         setStudents(current =>
           current.map(student =>
             student.id ===
@@ -3631,11 +3426,9 @@ export default function CoachProgress() {
               : student
           )
         )
-
         setRecommendationOpen(
           false
         )
-
         setSuccess(
           injuryRecommendation.trim()
             ? `${selectedStudent.name}'s injury recommendation was saved.`
@@ -3646,7 +3439,6 @@ export default function CoachProgress() {
           'Save injury recommendation error:',
           saveError
         )
-
         setError(
           saveError.message ||
             'Unable to save the injury recommendation.'
@@ -3658,7 +3450,113 @@ export default function CoachProgress() {
       }
     }
 
-  const saveProgress = async () => {
+  const clearProgress = async () => {
+    if (
+      !user?.id ||
+      !selectedStudent ||
+      saving
+    ) {
+      return
+    }
+    const confirmed = window.confirm(
+      `Clear the current coach progress for ${selectedStudent.name}? Performance and fitness feedback, action plans, status, focus area and next review will be cleared. Coach skill ratings and injury recommendations will remain unchanged.`
+    )
+    if (!confirmed) {
+      return
+    }
+    setSaving(true)
+    setError('')
+    setSuccess('')
+    try {
+      const progressDelete = selectedStudent.progress
+        ? supabase
+            .from('coach_player_progress')
+            .delete()
+            .eq('coach_user_id', user.id)
+            .eq('player_user_id', selectedStudent.id)
+        : Promise.resolve({
+            error: null,
+          })
+      const assessmentUpdate = selectedStudent.assessment
+        ? supabase
+            .from('coach_player_assessments')
+            .update({
+              performance_comment: null,
+              fitness_comment: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('coach_user_id', user.id)
+            .eq('player_user_id', selectedStudent.id)
+            .select('*')
+            .single()
+        : Promise.resolve({
+            data: null,
+            error: null,
+          })
+      const [
+        progressResult,
+        assessmentResult,
+      ] = await Promise.all([
+        progressDelete,
+        assessmentUpdate,
+      ])
+      if (progressResult.error) {
+        throw progressResult.error
+      }
+      if (assessmentResult.error) {
+        throw assessmentResult.error
+      }
+      setStudents(current =>
+        current.map(student =>
+          student.id === selectedStudent.id
+            ? {
+                ...student,
+                progress: null,
+                assessment:
+                  assessmentResult.data ||
+                  (student.assessment
+                    ? {
+                        ...student.assessment,
+                        performance_comment: null,
+                        fitness_comment: null,
+                      }
+                    : null),
+              }
+            : student
+        )
+      )
+      setForm(current => ({
+        ...current,
+        progress_status: 'On track',
+        focus_area: '',
+        performance_comment: '',
+        performance_action_plan: '',
+        performance_action_deadline: '',
+        performance_action_completion: 0,
+        fitness_comment: '',
+        fitness_action_plan: '',
+        fitness_action_deadline: '',
+        fitness_action_completion: 0,
+        performance_review_date: '',
+        fitness_review_date: '',
+      }))
+      setSuccess(
+        `${selectedStudent.name}'s coach progress was cleared.`
+      )
+    } catch (clearError) {
+      console.error(
+        'Clear coach progress error:',
+        clearError
+      )
+      setError(
+        clearError.message ||
+          'Unable to clear coach progress.'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+  const saveProgressSection = async section => {
     if (
       !user?.id ||
       !selectedStudent ||
@@ -3667,11 +3565,44 @@ export default function CoachProgress() {
       return
     }
 
+    const isPerformance =
+      section === 'performance'
+
+    const isFitness =
+      section === 'fitness'
+
+    if (!isPerformance && !isFitness) {
+      return
+    }
+
     setSaving(true)
     setError('')
     setSuccess('')
 
     try {
+      const currentPlans =
+        decodeActionPlans(
+          selectedStudent.progress
+            ?.coach_comment
+        )
+
+      const nextPerformanceReviewDate =
+        isPerformance
+          ? form.performance_review_date
+          : currentPlans.performanceReviewDate
+
+      const nextFitnessReviewDate =
+        isFitness
+          ? form.fitness_review_date
+          : currentPlans.fitnessReviewDate
+
+      const legacyReviewDates = [
+        nextPerformanceReviewDate,
+        nextFitnessReviewDate,
+      ]
+        .filter(Boolean)
+        .sort()
+
       const progressPayload = {
         coach_user_id: user.id,
         player_user_id:
@@ -3684,71 +3615,98 @@ export default function CoachProgress() {
         coach_comment:
           encodeActionPlans({
             performance:
-              form.performance_action_plan,
+              isPerformance
+                ? form.performance_action_plan
+                : currentPlans.performance,
             performanceDeadline:
-              form.performance_action_deadline,
+              isPerformance
+                ? form.performance_action_deadline
+                : currentPlans.performanceDeadline,
             performanceCompletion:
-              form.performance_action_completion,
+              isPerformance
+                ? form.performance_action_completion
+                : currentPlans.performanceCompletion,
+            performanceReviewDate:
+              nextPerformanceReviewDate,
             fitness:
-              form.fitness_action_plan,
+              isFitness
+                ? form.fitness_action_plan
+                : currentPlans.fitness,
             fitnessDeadline:
-              form.fitness_action_deadline,
+              isFitness
+                ? form.fitness_action_deadline
+                : currentPlans.fitnessDeadline,
             fitnessCompletion:
-              form.fitness_action_completion,
+              isFitness
+                ? form.fitness_action_completion
+                : currentPlans.fitnessCompletion,
+            fitnessReviewDate:
+              nextFitnessReviewDate,
           }),
+        // Keep the old shared column populated for backward compatibility.
+        // The UI now uses the two separate review dates stored above.
         next_review_date:
-          form.next_review_date ||
+          legacyReviewDates[0] ||
           null,
         updated_at:
           new Date().toISOString(),
       }
 
-      const assessmentPayload = {
-        coach_user_id: user.id,
-        player_user_id:
-          selectedStudent.id,
-        smash: Number(
-          form.smash
-        ),
-        defense: Number(
-          form.defense
-        ),
-        footwork: Number(
-          form.footwork
-        ),
-        drop_shot: Number(
-          form.drop_shot
-        ),
-        net_play: Number(
-          form.net_play
-        ),
-        serve: Number(
-          form.serve
-        ),
-        endurance: Number(
-          form.endurance
-        ),
-        speed: Number(
-          form.speed
-        ),
-        strength: Number(
-          form.strength
-        ),
-        agility: Number(
-          form.agility
-        ),
-        recovery: Number(
-          form.recovery
-        ),
-        performance_comment:
-          form.performance_comment.trim() ||
-          null,
-        fitness_comment:
-          form.fitness_comment.trim() ||
-          null,
-        updated_at:
-          new Date().toISOString(),
-      }
+      const assessmentPayload =
+        isPerformance
+          ? {
+              coach_user_id: user.id,
+              player_user_id:
+                selectedStudent.id,
+              smash: Number(
+                form.smash
+              ),
+              defense: Number(
+                form.defense
+              ),
+              footwork: Number(
+                form.footwork
+              ),
+              drop_shot: Number(
+                form.drop_shot
+              ),
+              net_play: Number(
+                form.net_play
+              ),
+              serve: Number(
+                form.serve
+              ),
+              performance_comment:
+                form.performance_comment.trim() ||
+                null,
+              updated_at:
+                new Date().toISOString(),
+            }
+          : {
+              coach_user_id: user.id,
+              player_user_id:
+                selectedStudent.id,
+              endurance: Number(
+                form.endurance
+              ),
+              speed: Number(
+                form.speed
+              ),
+              strength: Number(
+                form.strength
+              ),
+              agility: Number(
+                form.agility
+              ),
+              recovery: Number(
+                form.recovery
+              ),
+              fitness_comment:
+                form.fitness_comment.trim() ||
+                null,
+              updated_at:
+                new Date().toISOString(),
+            }
 
       const [
         progressSave,
@@ -3799,32 +3757,35 @@ export default function CoachProgress() {
                 ...student,
                 progress:
                   progressSave.data,
-                assessment:
-                  assessmentSave.data,
+                assessment: {
+                  ...(student.assessment || {}),
+                  ...(assessmentSave.data || {}),
+                },
               }
             : student
         )
       )
 
-      setEditOpen(false)
-
       setSuccess(
-        `${selectedStudent.name}'s progress was updated.`
+        isPerformance
+          ? `${selectedStudent.name}'s performance progress was updated.`
+          : `${selectedStudent.name}'s fitness progress was updated.`
       )
     } catch (saveError) {
       console.error(
-        'Save coach progress error:',
+        `Save ${section} progress error:`,
         saveError
       )
 
       setError(
         saveError.message ||
-          'Unable to save progress.'
+          `Unable to save ${section} progress.`
       )
     } finally {
       setSaving(false)
     }
   }
+
 
   return (
     <div className={styles.progressPage}>
@@ -3922,7 +3883,6 @@ export default function CoachProgress() {
           </div>
         ))}
       </div>
-
       {error && (
         <div
           className={styles.card}
@@ -3937,7 +3897,6 @@ export default function CoachProgress() {
           {error}
         </div>
       )}
-
       {success && (
         <div
           className={styles.card}
@@ -3952,7 +3911,6 @@ export default function CoachProgress() {
           {success}
         </div>
       )}
-
       {loading ? (
         showLoader ? (
           <div className={styles.card}>
@@ -4054,13 +4012,11 @@ export default function CoachProgress() {
                     }}
                   >
                     <LevelBadge level={student.level} />
-
                     {student.progress?.progress_status && (
                       <span className={styles.badgeGreen}>
                         {student.progress.progress_status}
                       </span>
                     )}
-
                     {student.activeInjuryCount > 0 && (
                       <span className={styles.badgeRed}>
                         {student.activeInjuryCount}{' '}
@@ -4090,6 +4046,7 @@ export default function CoachProgress() {
                   >
                     Performance
                   </div>
+
                   <div
                     style={{
                       fontSize: progressCompact ? 14 : 16,
@@ -4104,7 +4061,6 @@ export default function CoachProgress() {
               </div>
             ))}
           </div>
-
           {selectedStudent && (
             <>
               <div
@@ -4173,7 +4129,6 @@ export default function CoachProgress() {
                         }}
                       >
                         <LevelBadge level={selectedStudent.level} />
-
                         <span
                           style={{
                             padding: '3px 8px',
@@ -4214,7 +4169,6 @@ export default function CoachProgress() {
                       Player self-assessment with coach comparison markers.
                     </div>
                   </div>
-
                   {PERFORMANCE_FIELDS.map(field => {
                     const dbKey =
                       field.key === 'dropShot'
@@ -4222,7 +4176,6 @@ export default function CoachProgress() {
                         : field.key === 'netPlay'
                           ? 'net_play'
                           : field.key
-
                     return (
                       <ComparisonSkillRow
                         key={field.key}
@@ -4235,7 +4188,6 @@ export default function CoachProgress() {
                       />
                     )
                   })}
-
                   <div
                     style={{
                       marginTop: 10,
@@ -4283,7 +4235,6 @@ export default function CoachProgress() {
                         Current player fitness values and coach assessment.
                       </div>
                     </div>
-
                     <button
                       type="button"
                       className={styles.btnOutline}
@@ -4297,7 +4248,6 @@ export default function CoachProgress() {
                       View records
                     </button>
                   </div>
-
                   {FITNESS_FIELDS.map(field => (
                     <ComparisonSkillRow
                       key={field.key}
@@ -4309,7 +4259,6 @@ export default function CoachProgress() {
                       }
                     />
                   ))}
-
                   <div
                     style={{
                       marginTop: 10,
@@ -4351,20 +4300,46 @@ export default function CoachProgress() {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      className={styles.btnPrimary}
-                      onClick={() => openEditor(selectedStudent)}
+                    <div
                       style={{
-                        fontSize: 11,
-                        padding: '7px 11px',
-                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                        justifyContent: 'flex-end',
                       }}
                     >
-                      {selectedStudent.progress || selectedStudent.assessment
-                        ? 'Update progress'
-                        : 'Add progress'}
-                    </button>
+                      {selectedHasCoachProgress ? (
+                        <button
+                          type="button"
+                          className={styles.btnOutline}
+                          onClick={clearProgress}
+                          disabled={saving}
+                          style={{
+                            fontSize: 11,
+                            padding: '7px 11px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={styles.btnPrimary}
+                        onClick={() => openEditor(selectedStudent)}
+                        disabled={saving}
+                        style={{
+                          fontSize: 11,
+                          padding: '7px 11px',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {selectedHasCoachProgress
+                          ? 'Update progress'
+                          : 'Add progress'}
+                      </button>
+                    </div>
                   </div>
 
                   <div
@@ -4378,188 +4353,215 @@ export default function CoachProgress() {
                     }}
                   >
                     <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Status</span>
+                      <span className={styles.statLabel}>
+                        Status
+                      </span>
                       <span className={styles.statVal}>
-                        {selectedStudent.progress?.progress_status || 'Not reviewed'}
+                        {selectedStudent.progress?.progress_status ||
+                          'Not reviewed'}
                       </span>
                     </div>
 
                     <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Focus area</span>
+                      <span className={styles.statLabel}>
+                        Focus area
+                      </span>
                       <span className={styles.statVal}>
-                        {selectedStudent.progress?.focus_area || 'Not set'}
+                        {selectedStudent.progress?.focus_area ||
+                          'Not set'}
                       </span>
                     </div>
 
                     <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Next review</span>
+                      <span className={styles.statLabel}>
+                        Performance next review
+                      </span>
                       <span className={styles.statVal}>
-                        {formatDate(selectedStudent.progress?.next_review_date)}
+                        {formatDate(
+                          selectedActionPlans.performanceReviewDate ||
+                            selectedStudent.progress?.next_review_date
+                        )}
+                      </span>
+                    </div>
+
+                    <div className={styles.statRow}>
+                      <span className={styles.statLabel}>
+                        Fitness next review
+                      </span>
+                      <span className={styles.statVal}>
+                        {formatDate(
+                          selectedActionPlans.fitnessReviewDate ||
+                            selectedStudent.progress?.next_review_date
+                        )}
                       </span>
                     </div>
                   </div>
+                  {hasPerformanceFeedback ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: 12,
+                        background: 'var(--soft, #F7F9FF)',
+                        borderRadius: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: '#1A5FFF',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.6,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Performance feedback
+                      </div>
 
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: 12,
-                      background: 'var(--soft, #F7F9FF)',
-                      borderRadius: 10,
-                    }}
-                  >
+                      <div
+                        className={styles.progressBodyText}
+                        style={{
+                          color: 'var(--text, #0D1B3E)',
+                          fontSize: 13,
+                          lineHeight: 1.65,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {selectedStudent.assessment?.performance_comment}
+                      </div>
+                    </div>
+                  ) : null}
+                  {hasPerformanceActionPlan ? (
                     <div
                       style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: '#1A5FFF',
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.6,
-                        marginBottom: 6,
+                        marginTop: 10,
+                        padding: 12,
+                        background:
+                          'color-mix(in srgb, #1A5FFF 7%, var(--soft, #F7F9FF))',
+                        borderRadius: 10,
+                        border:
+                          '1px solid color-mix(in srgb, #1A5FFF 16%, var(--line, #EEF1F8))',
                       }}
                     >
-                      Performance feedback
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: '#1A5FFF',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.6,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Performance action plan
+                      </div>
+                      {selectedActionPlans.performance ? (
+                        <div
+                          className={styles.progressBodyText}
+                          style={{
+                            color: 'var(--text, #0D1B3E)',
+                            fontSize: 13,
+                            lineHeight: 1.65,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {selectedActionPlans.performance}
+                        </div>
+                      ) : null}
+                      <ActionPlanProgress
+                        deadline={
+                          selectedActionPlans.performanceDeadline
+                        }
+                        completion={
+                          selectedActionPlans.performanceCompletion
+                        }
+                        accentColor="#1A5FFF"
+                      />
                     </div>
+                  ) : null}
+                  {hasFitnessFeedback ? (
                     <div
-                      className={styles.progressBodyText}
                       style={{
-                        color: 'var(--text, #0D1B3E)',
-                        fontSize: 13,
-                        lineHeight: 1.65,
-                        whiteSpace: 'pre-wrap',
+                        marginTop: 10,
+                        padding: 12,
+                        background: 'var(--soft, #F7F9FF)',
+                        borderRadius: 10,
                       }}
                     >
-                      {selectedStudent.assessment?.performance_comment ||
-                        'No performance feedback yet.'}
-                    </div>
-                  </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: '#7C3AED',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.6,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Fitness feedback
+                      </div>
 
-                  <div
-                    style={{
-                      marginTop: 10,
-                      padding: 12,
-                      background:
-                        'color-mix(in srgb, #1A5FFF 7%, var(--soft, #F7F9FF))',
-                      borderRadius: 10,
-                      border:
-                        '1px solid color-mix(in srgb, #1A5FFF 16%, var(--line, #EEF1F8))',
-                    }}
-                  >
+                      <div
+                        className={styles.progressBodyText}
+                        style={{
+                          color: 'var(--text, #0D1B3E)',
+                          fontSize: 13,
+                          lineHeight: 1.65,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {selectedStudent.assessment?.fitness_comment}
+                      </div>
+                    </div>
+                  ) : null}
+                  {hasFitnessActionPlan ? (
                     <div
                       style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: '#1A5FFF',
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.6,
-                        marginBottom: 6,
+                        marginTop: 10,
+                        padding: 12,
+                        background:
+                          'color-mix(in srgb, #7C3AED 7%, var(--soft, #F7F9FF))',
+                        borderRadius: 10,
+                        border:
+                          '1px solid color-mix(in srgb, #7C3AED 16%, var(--line, #EEF1F8))',
                       }}
                     >
-                      Performance action plan
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: '#7C3AED',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.6,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Fitness action plan
+                      </div>
+                      {selectedActionPlans.fitness ? (
+                        <div
+                          className={styles.progressBodyText}
+                          style={{
+                            color: 'var(--text, #0D1B3E)',
+                            fontSize: 13,
+                            lineHeight: 1.65,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {selectedActionPlans.fitness}
+                        </div>
+                      ) : null}
+                      <ActionPlanProgress
+                        deadline={
+                          selectedActionPlans.fitnessDeadline
+                        }
+                        completion={
+                          selectedActionPlans.fitnessCompletion
+                        }
+                        accentColor="#7C3AED"
+                      />
                     </div>
-                    <div
-                      className={styles.progressBodyText}
-                      style={{
-                        color: 'var(--text, #0D1B3E)',
-                        fontSize: 13,
-                        lineHeight: 1.65,
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {selectedActionPlans.performance ||
-                        'No performance action plan yet.'}
-                    </div>
-
-                    <ActionPlanProgress
-                      deadline={
-                        selectedActionPlans.performanceDeadline
-                      }
-                      completion={
-                        selectedActionPlans.performanceCompletion
-                      }
-                      accentColor="#1A5FFF"
-                    />
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: 10,
-                      padding: 12,
-                      background: 'var(--soft, #F7F9FF)',
-                      borderRadius: 10,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: '#7C3AED',
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.6,
-                        marginBottom: 6,
-                      }}
-                    >
-                      Fitness feedback
-                    </div>
-                    <div
-                      className={styles.progressBodyText}
-                      style={{
-                        color: 'var(--text, #0D1B3E)',
-                        fontSize: 13,
-                        lineHeight: 1.65,
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {selectedStudent.assessment?.fitness_comment ||
-                        'No fitness feedback yet.'}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: 10,
-                      padding: 12,
-                      background:
-                        'color-mix(in srgb, #7C3AED 7%, var(--soft, #F7F9FF))',
-                      borderRadius: 10,
-                      border:
-                        '1px solid color-mix(in srgb, #7C3AED 16%, var(--line, #EEF1F8))',
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: '#7C3AED',
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.6,
-                        marginBottom: 6,
-                      }}
-                    >
-                      Fitness action plan
-                    </div>
-                    <div
-                      className={styles.progressBodyText}
-                      style={{
-                        color: 'var(--text, #0D1B3E)',
-                        fontSize: 13,
-                        lineHeight: 1.65,
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {selectedActionPlans.fitness ||
-                        'No fitness action plan yet.'}
-                    </div>
-
-                    <ActionPlanProgress
-                      deadline={
-                        selectedActionPlans.fitnessDeadline
-                      }
-                      completion={
-                        selectedActionPlans.fitnessCompletion
-                      }
-                      accentColor="#7C3AED"
-                    />
-                  </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -4606,7 +4608,6 @@ export default function CoachProgress() {
                         {` ${selectedStudent.name} `}tags you as the coach.
                       </div>
                     </div>
-
                     {selectedStudent.upcomingMatches?.length > 0 && (
                       <span
                         style={{
@@ -4625,7 +4626,6 @@ export default function CoachProgress() {
                       </span>
                     )}
                   </div>
-
                   {!selectedStudent.upcomingMatches?.length ? (
                     <div
                       style={{
@@ -4694,7 +4694,6 @@ export default function CoachProgress() {
                                   >
                                     {match.title}
                                   </span>
-
                                   <span
                                     className={
                                       match.scheduleType ===
@@ -4705,7 +4704,6 @@ export default function CoachProgress() {
                                   >
                                     {match.scheduleType}
                                   </span>
-
                                   <span
                                     className={styles.badgeBlue}
                                   >
@@ -4738,7 +4736,6 @@ export default function CoachProgress() {
                                     ? ` • ${match.venue}`
                                     : ''}
                                 </div>
-
                                 {match.notes && (
                                   <div
                                     style={{
@@ -4760,7 +4757,6 @@ export default function CoachProgress() {
                                   </div>
                                 )}
                               </div>
-
                               <span
                                 style={{
                                   flexShrink: 0,
@@ -4801,6 +4797,7 @@ export default function CoachProgress() {
                       >
                         Match records
                       </div>
+
                       <div
                         style={{
                           fontSize: 11,
@@ -4834,7 +4831,6 @@ export default function CoachProgress() {
                           View all ({selectedStudent.matches.length})
                         </button>
                       )}
-
                       <button
                         type="button"
                         className={styles.btnPrimary}
@@ -4848,7 +4844,6 @@ export default function CoachProgress() {
                       </button>
                     </div>
                   </div>
-
                   {!selectedStudent.matches?.length ? (
                     <div
                       style={{
@@ -4909,7 +4904,6 @@ export default function CoachProgress() {
                                 >
                                   vs {match.opponent}
                                 </span>
-
                                 <span
                                   className={
                                     match.result === 'Win'
@@ -4933,7 +4927,6 @@ export default function CoachProgress() {
                                 {match.type}
                                 {match.score ? ` • ${match.score}` : ''}
                               </div>
-
                               {match.playerNotes && (
                                 <div
                                   style={{
@@ -4959,7 +4952,6 @@ export default function CoachProgress() {
                               View details
                             </div>
                           </div>
-
                           {match.coachNote && (
                             <div
                               style={{
@@ -4983,6 +4975,7 @@ export default function CoachProgress() {
                               >
                                 Coach match note
                               </div>
+
                               <div
                                 style={{
                                   fontSize: 11,
@@ -5019,6 +5012,7 @@ export default function CoachProgress() {
                       >
                         Injury & recovery status
                       </div>
+
                       <div
                         style={{
                           fontSize: 11,
@@ -5052,7 +5046,6 @@ export default function CoachProgress() {
                           View all ({selectedStudent.injuries.length})
                         </button>
                       )}
-
                       <button
                         type="button"
                         className={styles.btnOutline}
@@ -5070,7 +5063,6 @@ export default function CoachProgress() {
                       </button>
                     </div>
                   </div>
-
                   {selectedStudent.injuries.filter(injury => injury.isActive)
                     .length === 0 ? (
                     <div
@@ -5124,7 +5116,6 @@ export default function CoachProgress() {
                               getInjuryStatusColor(injury.status)
                             const severityColor =
                               getInjurySeverityColor(injury.severity)
-
                             return (
                               <div
                                 key={injury.id}
@@ -5217,7 +5208,6 @@ export default function CoachProgress() {
                                       </div>
                                     </div>
                                   </div>
-
                                   <span
                                     style={{
                                       flexShrink: 0,
@@ -5233,7 +5223,6 @@ export default function CoachProgress() {
                                     {injury.status}
                                   </span>
                                 </div>
-
                                 {injury.notes && (
                                   <div
                                     style={{
@@ -5299,7 +5288,6 @@ export default function CoachProgress() {
           )}
         </div>
       )}
-
       {fitnessRecordsOpen && selectedStudent && (
         <div
           className={styles.modalOverlay}
@@ -5331,10 +5319,9 @@ export default function CoachProgress() {
                     color: 'var(--text-muted, #8892A4)',
                   }}
                 >
-                  {selectedStudent.name} • Read-only player records
+                  {selectedStudent.name} • Player and coach fitness test records
                 </div>
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -5372,7 +5359,6 @@ export default function CoachProgress() {
                 Player records stay unchanged; coach-added tests are labelled
                 <strong> Added by Coach</strong>.
               </div>
-
               <button
                 type="button"
                 className={styles.btnPrimary}
@@ -5386,7 +5372,6 @@ export default function CoachProgress() {
                 + Add fitness test
               </button>
             </div>
-
             {!selectedStudent.fitnessTests?.length ? (
               <div
                 style={{
@@ -5431,20 +5416,17 @@ export default function CoachProgress() {
                   {viewportWidth > 650 && <span>Result</span>}
                   {viewportWidth > 650 && <span>Score</span>}
                 </div>
-
                 {selectedStudent.fitnessTests.map(test => {
                   const canEditCoachTest =
                     test.added_by_coach &&
                     String(test.coach_user_id || '') ===
                       String(user?.id || '')
-
                   const playerScore =
                     test.added_by_coach
                       ? getPlayerFitnessTestScore(
                           test.indicator
                         )
                       : null
-
                   const scoreDifference =
                     playerScore !== null &&
                     Number.isFinite(
@@ -5453,7 +5435,6 @@ export default function CoachProgress() {
                       ? Number(test.score) -
                         Number(playerScore)
                       : null
-
                   return (
                   <div
                     key={test.id}
@@ -5518,7 +5499,6 @@ export default function CoachProgress() {
                         }}
                       >
                         <span>{formatDate(test.test_date)}</span>
-
                         {test.added_by_coach && (
                           <span
                             style={{
@@ -5535,7 +5515,6 @@ export default function CoachProgress() {
                             Added by Coach
                           </span>
                         )}
-
                         {canEditCoachTest && (
                           <span
                             style={{
@@ -5548,7 +5527,6 @@ export default function CoachProgress() {
                           </span>
                         )}
                       </div>
-
                       {viewportWidth <= 650 && (
                         <div
                           style={{
@@ -5572,7 +5550,6 @@ export default function CoachProgress() {
                         </div>
                       )}
                     </div>
-
                     {viewportWidth > 650 && (
                       <>
                         <div
@@ -5609,7 +5586,6 @@ export default function CoachProgress() {
                           >
                             {clamp(test.score)}
                           </div>
-
                           {test.added_by_coach &&
                             scoreDifference !== null &&
                             scoreDifference !== 0 && (
@@ -5657,513 +5633,57 @@ export default function CoachProgress() {
           </div>
         </div>
       )}
-
       {fitnessTestEditOpen &&
         selectedStudent &&
         editingFitnessTest && (
-        <div
-          className={styles.modalOverlay}
-          onClick={event => {
-            if (
-              event.target === event.currentTarget &&
-              !savingFitnessTest
-            ) {
+          <TestModal
+            title="Edit Fitness Test"
+            form={fitnessTestForm}
+            onChange={handleFitnessTestChange}
+            onSave={saveEditedFitnessTest}
+            onClose={() => {
+              if (savingFitnessTest) return
               setFitnessTestEditOpen(false)
               setEditingFitnessTest(null)
-            }
-          }}
-        >
-          <div
-            className={styles.modal}
-            style={{
-              maxWidth: 720,
-              width: '92vw',
+              resetFitnessTestForm()
+              setFitnessRecordsOpen(true)
             }}
-          >
-            <div className={styles.modalHead}>
-              <div>
-                <div className={styles.modalTitle}>
-                  Edit Fitness Test
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 3,
-                    fontSize: 11,
-                    color: 'var(--text-muted, #8892A4)',
-                  }}
-                >
-                  Edit the coach-recorded test for {selectedStudent.name}.
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className={styles.modalClose}
-                onClick={() => {
-                  setFitnessTestEditOpen(false)
-                  setEditingFitnessTest(null)
-                }}
-                disabled={savingFitnessTest}
-              >
-                ×
-              </button>
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  viewportWidth <= 650
-                    ? 'minmax(0, 1fr)'
-                    : 'repeat(2, minmax(0, 1fr))',
-                gap: 12,
-              }}
-            >
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Date
-                </label>
-                <input
-                  className={styles.formInput}
-                  type="date"
-                  value={fitnessTestForm.date}
-                  onChange={event =>
-                    setFitnessTestForm(current => ({
-                      ...current,
-                      date: event.target.value,
-                    }))
-                  }
-                  disabled={savingFitnessTest}
-                />
-              </div>
-
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Indicator
-                </label>
-                <select
-                  className={styles.formSelect}
-                  value={fitnessTestForm.indicator}
-                  onChange={event => {
-                    const nextIndicator =
-                      event.target.value
-
-                    const nextIndicatorKey =
-                      String(nextIndicator)
-                        .trim()
-                        .toLowerCase()
-
-                    const displayedCoachScore =
-                      getCoachFitnessValue(
-                        nextIndicatorKey
-                      )
-
-                    const savedAssessmentScore =
-                      selectedStudent?.assessment?.[
-                        nextIndicatorKey
-                      ]
-
-                    const currentCoachScore =
-                      displayedCoachScore !== null &&
-                      displayedCoachScore !== undefined &&
-                      Number.isFinite(
-                        Number(displayedCoachScore)
-                      )
-                        ? Number(displayedCoachScore)
-                        : savedAssessmentScore !== null &&
-                            savedAssessmentScore !== undefined &&
-                            Number.isFinite(
-                              Number(savedAssessmentScore)
-                            )
-                          ? Number(savedAssessmentScore)
-                          : 50
-
-                    setFitnessTestForm(current => ({
-                      ...current,
-                      indicator: nextIndicator,
-                      score: clamp(currentCoachScore),
-                    }))
-                  }}
-                  disabled={savingFitnessTest}
-                >
-                  <option>Endurance</option>
-                  <option>Speed</option>
-                  <option>Strength</option>
-                  <option>Agility</option>
-                </select>
-              </div>
-            </div>
-
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>
-                Test name
-              </label>
-              <input
-                className={styles.formInput}
-                value={fitnessTestForm.testName}
-                onChange={event =>
-                  setFitnessTestForm(current => ({
-                    ...current,
-                    testName: event.target.value,
-                  }))
-                }
-                disabled={savingFitnessTest}
-              />
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  viewportWidth <= 650
-                    ? 'minmax(0, 1fr)'
-                    : 'repeat(2, minmax(0, 1fr))',
-                gap: 12,
-              }}
-            >
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Result
-                </label>
-                <input
-                  className={styles.formInput}
-                  value={fitnessTestForm.result}
-                  onChange={event =>
-                    setFitnessTestForm(current => ({
-                      ...current,
-                      result: event.target.value,
-                    }))
-                  }
-                  disabled={savingFitnessTest}
-                />
-              </div>
-
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Score /100
-                </label>
-                <input
-                  className={styles.formInput}
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={fitnessTestForm.score}
-                  onChange={event =>
-                    setFitnessTestForm(current => ({
-                      ...current,
-                      score: clamp(event.target.value),
-                    }))
-                  }
-                  disabled={savingFitnessTest}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                marginTop: 4,
-                padding: '10px 12px',
-                borderRadius: 10,
-                background:
-                  'color-mix(in srgb, #7C3AED 7%, var(--soft, #F7F9FF))',
-                color: 'var(--text-muted, #8892A4)',
-                fontSize: 11,
-                lineHeight: 1.55,
-              }}
-            >
-              Only coach-added fitness tests can be edited. Player-entered
-              records remain read-only.
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 10,
-                marginTop: 16,
-              }}
-            >
-              <button
-                type="button"
-                className={styles.btnOutline}
-                onClick={() => {
-                  setFitnessTestEditOpen(false)
-                  setEditingFitnessTest(null)
-                  setFitnessRecordsOpen(true)
-                }}
-                disabled={savingFitnessTest}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                className={styles.btnPrimary}
-                onClick={saveEditedFitnessTest}
-                disabled={savingFitnessTest}
-              >
-                {savingFitnessTest
-                  ? 'Saving...'
-                  : 'Save changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+            saving={savingFitnessTest}
+            currentScore={
+              fitnessTestForm.indicator
+                ? Number(
+                    getPlayerFitnessTestScore(
+                      fitnessTestForm.indicator
+                    )
+                  ) || 0
+                : 0
+            }
+          />
+        )}
       {fitnessTestAddOpen && selectedStudent && (
-        <div
-          className={styles.modalOverlay}
-          onClick={event => {
-            if (
-              event.target === event.currentTarget &&
-              !savingFitnessTest
-            ) {
-              setFitnessTestAddOpen(false)
-            }
+        <TestModal
+          title="Add Fitness Test"
+          form={fitnessTestForm}
+          onChange={handleFitnessTestChange}
+          onSave={saveCoachFitnessTest}
+          onClose={() => {
+            if (savingFitnessTest) return
+            setFitnessTestAddOpen(false)
+            resetFitnessTestForm()
+            setFitnessRecordsOpen(true)
           }}
-        >
-          <div
-            className={styles.modal}
-            style={{
-              maxWidth: 720,
-              width: '92vw',
-            }}
-          >
-            <div className={styles.modalHead}>
-              <div>
-                <div className={styles.modalTitle}>
-                  Add Fitness Test
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 3,
-                    fontSize: 11,
-                    color: 'var(--text-muted, #8892A4)',
-                  }}
-                >
-                  Add a coach-recorded test for {selectedStudent.name}.
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className={styles.modalClose}
-                onClick={() => setFitnessTestAddOpen(false)}
-                disabled={savingFitnessTest}
-              >
-                ×
-              </button>
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  viewportWidth <= 650
-                    ? 'minmax(0, 1fr)'
-                    : 'repeat(2, minmax(0, 1fr))',
-                gap: 12,
-              }}
-            >
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Date
-                </label>
-                <input
-                  className={styles.formInput}
-                  type="date"
-                  value={fitnessTestForm.date}
-                  onChange={event =>
-                    setFitnessTestForm(current => ({
-                      ...current,
-                      date: event.target.value,
-                    }))
-                  }
-                  disabled={savingFitnessTest}
-                />
-              </div>
-
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Indicator
-                </label>
-                <select
-                  className={styles.formSelect}
-                  value={fitnessTestForm.indicator}
-                  onChange={event => {
-                    const nextIndicator =
-                      event.target.value
-
-                    const nextIndicatorKey =
-                      String(nextIndicator)
-                        .trim()
-                        .toLowerCase()
-
-                    const displayedCoachScore =
-                      getCoachFitnessValue(
-                        nextIndicatorKey
-                      )
-
-                    const savedAssessmentScore =
-                      selectedStudent?.assessment?.[
-                        nextIndicatorKey
-                      ]
-
-                    const currentCoachScore =
-                      displayedCoachScore !== null &&
-                      displayedCoachScore !== undefined &&
-                      Number.isFinite(
-                        Number(displayedCoachScore)
-                      )
-                        ? Number(
-                            displayedCoachScore
-                          )
-                        : savedAssessmentScore !== null &&
-                            savedAssessmentScore !== undefined &&
-                            Number.isFinite(
-                              Number(savedAssessmentScore)
-                            )
-                          ? Number(
-                              savedAssessmentScore
-                            )
-                          : 50
-
-                    setFitnessTestForm(current => ({
-                      ...current,
-                      indicator: nextIndicator,
-                      score: clamp(
-                        currentCoachScore
-                      ),
-                    }))
-                  }}
-                  disabled={savingFitnessTest}
-                >
-                  <option>Endurance</option>
-                  <option>Speed</option>
-                  <option>Strength</option>
-                  <option>Agility</option>
-                </select>
-              </div>
-            </div>
-
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>
-                Test name
-              </label>
-              <input
-                className={styles.formInput}
-                placeholder="e.g. 5-10-5 Shuttle Run"
-                value={fitnessTestForm.testName}
-                onChange={event =>
-                  setFitnessTestForm(current => ({
-                    ...current,
-                    testName: event.target.value,
-                  }))
-                }
-                disabled={savingFitnessTest}
-              />
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  viewportWidth <= 650
-                    ? 'minmax(0, 1fr)'
-                    : 'repeat(2, minmax(0, 1fr))',
-                gap: 12,
-              }}
-            >
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Result
-                </label>
-                <input
-                  className={styles.formInput}
-                  placeholder="e.g. 5.8 s, 15 reps"
-                  value={fitnessTestForm.result}
-                  onChange={event =>
-                    setFitnessTestForm(current => ({
-                      ...current,
-                      result: event.target.value,
-                    }))
-                  }
-                  disabled={savingFitnessTest}
-                />
-              </div>
-
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Score /100
-                </label>
-                <input
-                  className={styles.formInput}
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={fitnessTestForm.score}
-                  onChange={event =>
-                    setFitnessTestForm(current => ({
-                      ...current,
-                      score: clamp(event.target.value),
-                    }))
-                  }
-                  disabled={savingFitnessTest}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                marginTop: 4,
-                padding: '10px 12px',
-                borderRadius: 10,
-                background:
-                  'color-mix(in srgb, #7C3AED 7%, var(--soft, #F7F9FF))',
-                color: 'var(--text-muted, #8892A4)',
-                fontSize: 11,
-                lineHeight: 1.55,
-              }}
-            >
-              This creates a new fitness test record. It does not overwrite a
-              test entered by the player.
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 10,
-                marginTop: 16,
-              }}
-            >
-              <button
-                type="button"
-                className={styles.btnOutline}
-                onClick={() => setFitnessTestAddOpen(false)}
-                disabled={savingFitnessTest}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                className={styles.btnPrimary}
-                onClick={saveCoachFitnessTest}
-                disabled={savingFitnessTest}
-              >
-                {savingFitnessTest
-                  ? 'Saving...'
-                  : 'Add fitness test'}
-              </button>
-            </div>
-          </div>
-        </div>
+          saving={savingFitnessTest}
+          currentScore={
+            fitnessTestForm.indicator
+              ? Number(
+                  getPlayerFitnessTestScore(
+                    fitnessTestForm.indicator
+                  )
+                ) || 0
+              : 0
+          }
+        />
       )}
-
       {allMatchesOpen && selectedStudent && (
         <div
           className={styles.modalOverlay}
@@ -6187,6 +5707,7 @@ export default function CoachProgress() {
                 <div className={styles.modalTitle}>
                   Match history
                 </div>
+
                 <div
                   style={{
                     marginTop: 3,
@@ -6198,7 +5719,6 @@ export default function CoachProgress() {
                   match{selectedStudent.matches.length === 1 ? '' : 'es'}
                 </div>
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -6277,7 +5797,6 @@ export default function CoachProgress() {
                         >
                           vs {match.opponent}
                         </span>
-
                         <span
                           className={
                             match.result === 'Win'
@@ -6301,7 +5820,6 @@ export default function CoachProgress() {
                         {match.type}
                         {match.score ? ` • ${match.score}` : ''}
                       </div>
-
                       {match.coachNote && (
                         <div
                           style={{
@@ -6333,7 +5851,6 @@ export default function CoachProgress() {
           </div>
         </div>
       )}
-
       {allInjuriesOpen && selectedStudent && (
         <div
           className={styles.modalOverlay}
@@ -6357,6 +5874,7 @@ export default function CoachProgress() {
                 <div className={styles.modalTitle}>
                   Injury history
                 </div>
+
                 <div
                   style={{
                     marginTop: 3,
@@ -6368,7 +5886,6 @@ export default function CoachProgress() {
                   record{selectedStudent.injuries.length === 1 ? '' : 's'}
                 </div>
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -6405,7 +5922,6 @@ export default function CoachProgress() {
                     getInjuryStatusColor(injury.status)
                   const severityColor =
                     getInjurySeverityColor(injury.severity)
-
                   return (
                     <div
                       key={injury.id}
@@ -6439,6 +5955,7 @@ export default function CoachProgress() {
                           >
                             {injury.name}
                           </div>
+
                           <div
                             style={{
                               marginTop: 3,
@@ -6448,6 +5965,7 @@ export default function CoachProgress() {
                           >
                             Logged {formatDate(injury.date)}
                           </div>
+
                           <div
                             style={{
                               marginTop: 4,
@@ -6459,7 +5977,6 @@ export default function CoachProgress() {
                             {injury.severity || 'Mild'} severity
                           </div>
                         </div>
-
                         <span
                           style={{
                             padding: '3px 8px',
@@ -6474,7 +5991,6 @@ export default function CoachProgress() {
                           {injury.status}
                         </span>
                       </div>
-
                       {injury.notes && (
                         <div
                           style={{
@@ -6499,7 +6015,6 @@ export default function CoachProgress() {
           </div>
         </div>
       )}
-
       {injuryDetailOpen && selectedStudent && selectedInjury && (
         <div
           className={styles.modalOverlay}
@@ -6523,6 +6038,7 @@ export default function CoachProgress() {
                 <div className={styles.modalTitle}>
                   Injury details
                 </div>
+
                 <div
                   style={{
                     marginTop: 3,
@@ -6533,7 +6049,6 @@ export default function CoachProgress() {
                   {selectedStudent.name}
                 </div>
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -6581,7 +6096,6 @@ export default function CoachProgress() {
                       preserveAspectRatio="xMidYMid meet"
                       pointerEvents="none"
                     />
-
                     {(() => {
                       const hasSavedPoint =
                         selectedInjury.bodyX !== null &&
@@ -6590,14 +6104,12 @@ export default function CoachProgress() {
                         selectedInjury.bodyY !== undefined &&
                         Number.isFinite(Number(selectedInjury.bodyX)) &&
                         Number.isFinite(Number(selectedInjury.bodyY))
-
                       const point = hasSavedPoint
                         ? {
                             cx: Number(selectedInjury.bodyX),
                             cy: Number(selectedInjury.bodyY),
                           }
                         : getFallbackInjuryPoint(selectedInjury.name)
-
                       return (
                         <>
                           <circle
@@ -6619,7 +6131,6 @@ export default function CoachProgress() {
                     })()}
                   </svg>
                 </div>
-
                 {selectedInjury.imageUrl && (
                   <img
                     src={selectedInjury.imageUrl}
@@ -6737,7 +6248,6 @@ export default function CoachProgress() {
           </div>
         </div>
       )}
-
       {matchDetailOpen && selectedStudent && selectedMatch && (
         <div
           className={styles.modalOverlay}
@@ -6759,7 +6269,6 @@ export default function CoachProgress() {
               <div className={styles.modalTitle}>
                 Match Details
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -6806,7 +6315,6 @@ export default function CoachProgress() {
                   {formatDate(selectedMatch.date)}
                 </div>
               </div>
-
               <span
                 className={
                   selectedMatch.result === 'Win'
@@ -6817,7 +6325,6 @@ export default function CoachProgress() {
                 {selectedMatch.result}
               </span>
             </div>
-
             {selectedMatch.type !== 'Singles' && (
               <div className={styles.statRow}>
                 <span className={styles.statLabel}>Player partner</span>
@@ -6826,7 +6333,6 @@ export default function CoachProgress() {
                 </span>
               </div>
             )}
-
             {[
               ['Opponent', selectedMatch.opponent],
               ['Match type', selectedMatch.type],
@@ -6840,7 +6346,6 @@ export default function CoachProgress() {
                 <span className={styles.statVal}>{value}</span>
               </div>
             ))}
-
             <div
               className={styles.statRow}
               style={{ alignItems: 'flex-start' }}
@@ -6865,7 +6370,6 @@ export default function CoachProgress() {
               >
                 Match video
               </div>
-
               {selectedMatch.videoUrl ? (
                 <video
                   src={selectedMatch.videoUrl}
@@ -6947,7 +6451,6 @@ export default function CoachProgress() {
               >
                 Close
               </button>
-
               <button
                 type="button"
                 className={styles.btnPrimary}
@@ -6964,7 +6467,6 @@ export default function CoachProgress() {
           </div>
         </div>
       )}
-
       {matchModalOpen && selectedStudent && (
         <div
           className={styles.modalOverlay}
@@ -6989,7 +6491,6 @@ export default function CoachProgress() {
               <div className={styles.modalTitle}>
                 Add match for {selectedStudent.name}
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -7062,7 +6563,6 @@ export default function CoachProgress() {
                 </select>
               </div>
             </div>
-
             {matchForm.type !== 'Singles' && (
               <div className={styles.formRow}>
                 <label className={styles.formLabel}>
@@ -7126,7 +6626,6 @@ export default function CoachProgress() {
                   }
                 />
               </div>
-
               {matchForm.type !== 'Singles' && (
                 <div className={styles.formRow}>
                   <label className={styles.formLabel}>
@@ -7157,7 +6656,6 @@ export default function CoachProgress() {
 
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Game score</label>
-
               <div
                 style={{
                   display: 'grid',
@@ -7251,7 +6749,6 @@ export default function CoachProgress() {
               >
                 Cancel
               </button>
-
               <button
                 type="button"
                 className={styles.btnPrimary}
@@ -7264,7 +6761,6 @@ export default function CoachProgress() {
           </div>
         </div>
       )}
-
       {matchNoteOpen && selectedStudent && selectedMatch && (
         <div
           className={styles.modalOverlay}
@@ -7285,7 +6781,6 @@ export default function CoachProgress() {
               <div className={styles.modalTitle}>
                 Coach match note
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -7330,7 +6825,6 @@ export default function CoachProgress() {
 
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Coach note</label>
-
               <textarea
                 className={styles.formTextarea}
                 rows={6}
@@ -7369,7 +6863,6 @@ export default function CoachProgress() {
               >
                 Cancel
               </button>
-
               <button
                 type="button"
                 className={styles.btnPrimary}
@@ -7382,7 +6875,6 @@ export default function CoachProgress() {
           </div>
         </div>
       )}
-
       {recommendationOpen && selectedStudent && (
         <div
           className={styles.modalOverlay}
@@ -7403,7 +6895,6 @@ export default function CoachProgress() {
               <div className={styles.modalTitle}>
                 Injury training recommendation
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
@@ -7432,7 +6923,6 @@ export default function CoachProgress() {
               <label className={styles.formLabel}>
                 Recommendation
               </label>
-
               <textarea
                 className={styles.formTextarea}
                 rows={6}
@@ -7473,7 +6963,6 @@ export default function CoachProgress() {
               >
                 Cancel
               </button>
-
               <button
                 type="button"
                 className={styles.btnPrimary}
@@ -7488,7 +6977,6 @@ export default function CoachProgress() {
           </div>
         </div>
       )}
-
       {editOpen && selectedStudent && (
         <div
           className={styles.modalOverlay}
@@ -7505,8 +6993,8 @@ export default function CoachProgress() {
           <div
             className={styles.modal}
             style={{
-              width: 'min(1180px, 96vw)',
-              maxWidth: 1180,
+              width: 'min(860px, 90vw)',
+              maxWidth: 860,
               maxHeight: '92vh',
               overflowY: 'auto',
               padding: 0,
@@ -7541,11 +7029,9 @@ export default function CoachProgress() {
                       color: 'var(--text-muted, #8892A4)',
                     }}
                   >
-                    Performance and fitness are placed side by side so the
-                    form does not become one long narrow column.
+                    Select Performance or Fitness to update one section at a time.
                   </div>
                 </div>
-
                 <button
                   type="button"
                   className={styles.modalClose}
@@ -7610,40 +7096,85 @@ export default function CoachProgress() {
                     }
                   />
                 </div>
+              </div>
 
-                <div
-                  className={styles.formRow}
-                  style={{ marginBottom: 0 }}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  marginBottom: 16,
+                  padding: 4,
+                  borderRadius: 12,
+                  background:
+                    'var(--soft, #F7F9FF)',
+                  border:
+                    '1px solid var(--line, #EEF1F8)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setProgressSection('performance')
+                  }
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: 9,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    background:
+                      progressSection === 'performance'
+                        ? '#1A5FFF'
+                        : 'transparent',
+                    color:
+                      progressSection === 'performance'
+                        ? '#FFFFFF'
+                        : 'var(--text, #0D1B3E)',
+                  }}
                 >
-                  <label className={styles.formLabel}>
-                    Next review date
-                  </label>
-                  <input
-                    className={styles.formInput}
-                    type="date"
-                    value={form.next_review_date}
-                    onChange={event =>
-                      setForm(current => ({
-                        ...current,
-                        next_review_date: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
+                  Performance
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setProgressSection('fitness')
+                  }
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: 9,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    background:
+                      progressSection === 'fitness'
+                        ? '#7C3AED'
+                        : 'transparent',
+                    color:
+                      progressSection === 'fitness'
+                        ? '#FFFFFF'
+                        : 'var(--text, #0D1B3E)',
+                  }}
+                >
+                  Fitness
+                </button>
               </div>
 
               <div
                 style={{
                   display: 'grid',
                   gridTemplateColumns:
-                    viewportWidth <= 1050
-                      ? 'minmax(0, 1fr)'
-                      : 'repeat(2, minmax(0, 1fr))',
+                    'minmax(0, 1fr)',
                   gap: 18,
                   alignItems: 'start',
                   minWidth: 0,
                 }}
               >
+                {progressSection === 'performance' && (
                 <div
                   style={{
                     padding: 18,
@@ -7660,9 +7191,8 @@ export default function CoachProgress() {
                       color: '#00A878',
                     }}
                   >
-                    Coach performance assessment
+                    Performance progress
                   </div>
-
                   {[
                     ['smash', 'Smash'],
                     ['defense', 'Defense'],
@@ -7684,7 +7214,6 @@ export default function CoachProgress() {
                       }
                     />
                   ))}
-
                   <div
                     style={{
                       marginTop: 14,
@@ -7728,6 +7257,7 @@ export default function CoachProgress() {
                           }))
                         }
                       />
+
                       <div
                         style={{
                           marginTop: 5,
@@ -7786,7 +7316,6 @@ export default function CoachProgress() {
                           >
                             Completion rate
                           </label>
-
                           <span
                             style={{
                               fontSize: 13,
@@ -7832,9 +7361,59 @@ export default function CoachProgress() {
                         </div>
                       </div>
                     </div>
+
+                    <div
+                      className={styles.formRow}
+                      style={{ marginTop: 14 }}
+                    >
+                      <label className={styles.formLabel}>
+                        Performance next review date
+                      </label>
+                      <input
+                        className={styles.formInput}
+                        type="date"
+                        value={
+                          form.performance_review_date
+                        }
+                        onChange={event =>
+                          setForm(current => ({
+                            ...current,
+                            performance_review_date:
+                              event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        marginTop: 16,
+                        paddingTop: 14,
+                        borderTop:
+                          '1px solid var(--line, #EEF1F8)',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className={styles.btnPrimary}
+                        onClick={() =>
+                          saveProgressSection('performance')
+                        }
+                        disabled={saving}
+                      >
+                        {saving
+                          ? 'Saving...'
+                          : 'Update Performance'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
+                )}
+
+                {progressSection === 'fitness' && (
                 <div
                   style={{
                     padding: 18,
@@ -7851,9 +7430,8 @@ export default function CoachProgress() {
                       color: '#7C3AED',
                     }}
                   >
-                    Coach fitness assessment
+                    Fitness progress
                   </div>
-
                   {[
                     ['endurance', 'Endurance'],
                     ['speed', 'Speed'],
@@ -7874,7 +7452,6 @@ export default function CoachProgress() {
                       }
                     />
                   ))}
-
                   <div
                     style={{
                       marginTop: 14,
@@ -7918,6 +7495,7 @@ export default function CoachProgress() {
                           }))
                         }
                       />
+
                       <div
                         style={{
                           marginTop: 5,
@@ -7976,7 +7554,6 @@ export default function CoachProgress() {
                           >
                             Completion rate
                           </label>
-
                           <span
                             style={{
                               fontSize: 13,
@@ -8022,8 +7599,57 @@ export default function CoachProgress() {
                         </div>
                       </div>
                     </div>
+
+                    <div
+                      className={styles.formRow}
+                      style={{ marginTop: 14 }}
+                    >
+                      <label className={styles.formLabel}>
+                        Fitness next review date
+                      </label>
+                      <input
+                        className={styles.formInput}
+                        type="date"
+                        value={
+                          form.fitness_review_date
+                        }
+                        onChange={event =>
+                          setForm(current => ({
+                            ...current,
+                            fitness_review_date:
+                              event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        marginTop: 16,
+                        paddingTop: 14,
+                        borderTop:
+                          '1px solid var(--line, #EEF1F8)',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className={styles.btnPrimary}
+                        onClick={() =>
+                          saveProgressSection('fitness')
+                        }
+                        disabled={saving}
+                      >
+                        {saving
+                          ? 'Saving...'
+                          : 'Update Fitness'}
+                      </button>
+                    </div>
                   </div>
                 </div>
+                )}
+
               </div>
 
               <div
@@ -8049,18 +7675,6 @@ export default function CoachProgress() {
                   Cancel
                 </button>
 
-                <button
-                  type="button"
-                  className={styles.btnPrimary}
-                  onClick={saveProgress}
-                  disabled={saving}
-                >
-                  {saving
-                    ? 'Saving...'
-                    : selectedStudent.progress || selectedStudent.assessment
-                      ? 'Update progress'
-                      : 'Add progress'}
-                </button>
               </div>
             </div>
           </div>

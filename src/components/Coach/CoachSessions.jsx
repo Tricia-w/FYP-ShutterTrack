@@ -439,6 +439,8 @@ export default function CoachSessions() {
   })
   const [selectedDate, setSelectedDate] = useState('')
   const [studentSearch, setStudentSearch] = useState('')
+  const [sessionSearch, setSessionSearch] = useState('')
+  const [sessionFilter, setSessionFilter] = useState('All')
   const [
     googleSyncEnabled,
     setGoogleSyncEnabled,
@@ -1829,6 +1831,103 @@ export default function CoachSessions() {
     [upcomingSessions, upcomingTaggedSchedules]
   )
 
+  const matchesSessionSearch = useCallback(
+    session => {
+      const query = sessionSearch.trim().toLowerCase()
+
+      if (!query) return true
+
+      const playerNames = session.is_player_tagged
+        ? [
+            studentMap.get(
+              String(session.player_user_id || '')
+            )?.name || '',
+          ]
+        : (
+            session.coach_training_session_players || []
+          ).map(
+            assignment =>
+              studentMap.get(
+                String(
+                  assignment.player_user_id || ''
+                )
+              )?.name || ''
+          )
+
+      const searchableValues = [
+        session.session_type,
+        session.schedule_type,
+        session.venue,
+        session.group_notes,
+        session.session_date,
+        ...playerNames,
+      ]
+
+      return searchableValues.some(value =>
+        String(value || '')
+          .toLowerCase()
+          .includes(query)
+      )
+    },
+    [sessionSearch, studentMap]
+  )
+
+  const filteredUpcomingSessions = useMemo(
+    () =>
+      sessionFilter === 'All' ||
+      sessionFilter === 'Upcoming'
+        ? upcomingCalendarItems.filter(
+            matchesSessionSearch
+          )
+        : [],
+    [
+      sessionFilter,
+      upcomingCalendarItems,
+      matchesSessionSearch,
+    ]
+  )
+
+  const filteredPastSessions = useMemo(
+    () =>
+      sessionFilter === 'All' ||
+      sessionFilter === 'Awaiting'
+        ? pastSessions.filter(
+            matchesSessionSearch
+          )
+        : [],
+    [
+      sessionFilter,
+      pastSessions,
+      matchesSessionSearch,
+    ]
+  )
+
+  const filteredCompletedSessions = useMemo(
+    () =>
+      sessionFilter === 'All' ||
+      sessionFilter === 'Completed'
+        ? completedSessions.filter(
+            matchesSessionSearch
+          )
+        : [],
+    [
+      sessionFilter,
+      completedSessions,
+      matchesSessionSearch,
+    ]
+  )
+
+  const filteredCalendarEntries = useMemo(
+    () =>
+      calendarEntries.filter(
+        matchesSessionSearch
+      ),
+    [
+      calendarEntries,
+      matchesSessionSearch,
+    ]
+  )
+
   const calendarCells = useMemo(() => {
     const year = calendarMonth.getFullYear()
     const month = calendarMonth.getMonth()
@@ -1852,7 +1951,7 @@ export default function CoachSessions() {
       cells.push({
         day,
         value,
-        sessions: calendarEntries.filter(
+        sessions: filteredCalendarEntries.filter(
           session => session.session_date === value
         ),
       })
@@ -1863,17 +1962,17 @@ export default function CoachSessions() {
     }
 
     return cells
-  }, [calendarMonth, calendarEntries])
+  }, [calendarMonth, filteredCalendarEntries])
 
   const selectedDaySessions = useMemo(
     () =>
       selectedDate
-        ? calendarEntries.filter(
+        ? filteredCalendarEntries.filter(
             session =>
               session.session_date === selectedDate
           )
         : [],
-    [selectedDate, calendarEntries]
+    [selectedDate, filteredCalendarEntries]
   )
 
   const moveMonth = amount => {
@@ -2465,7 +2564,8 @@ export default function CoachSessions() {
 
       
       
-<div className={styles.g4} style={{ marginBottom: 16 }}>
+
+      <div className={styles.g4} style={{ marginBottom: 16 }}>
         {[
           {
             label: 'My students',
@@ -2933,7 +3033,7 @@ export default function CoachSessions() {
             >
               Upcoming sessions
             </div>
-            {upcomingCalendarItems.length === 0 ? (
+            {filteredUpcomingSessions.length === 0 ? (
               <div
                 style={{
                   fontSize: 13,
@@ -2942,7 +3042,9 @@ export default function CoachSessions() {
                   padding: '20px 0',
                 }}
               >
-                No upcoming sessions.
+                {sessionSearch.trim() || sessionFilter !== 'All'
+                  ? 'No sessions match the current search or filter.'
+                  : 'No upcoming sessions.'}
               </div>
             ) : (
               <div
@@ -2952,7 +3054,7 @@ export default function CoachSessions() {
                   paddingRight: 4,
                 }}
               >
-                {upcomingCalendarItems.map(session =>
+                {filteredUpcomingSessions.map(session =>
                   renderSession(session, 'Upcoming')
                 )}
               </div>
@@ -2960,7 +3062,24 @@ export default function CoachSessions() {
           </div>
           </div>
 
-          {pastSessions.length > 0 && (
+          {sessionFilter === 'Awaiting' &&
+            filteredPastSessions.length === 0 && (
+              <div className={styles.card}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color:
+                      'var(--text-muted, #8892A4)',
+                    textAlign: 'center',
+                    padding: '20px 0',
+                  }}
+                >
+                  No awaiting sessions match the current search.
+                </div>
+              </div>
+            )}
+
+          {filteredPastSessions.length > 0 && (
             <div className={styles.card}>
               <div
                 className={styles.cardTitle}
@@ -2980,7 +3099,7 @@ export default function CoachSessions() {
                 Mark each assigned player as completed or absent.
               </div>
 
-              {pastSessions.map(session =>
+              {filteredPastSessions.map(session =>
                 renderSession(
                   session,
                   'Awaiting completion'
@@ -2989,7 +3108,120 @@ export default function CoachSessions() {
             </div>
           )}
 
-          {completedSessions.length > 0 && (
+          <div
+        className={styles.card}
+        style={{
+          marginTop: 0,
+          marginBottom: 0,
+          padding: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+        }}
+          >
+        <div
+          style={{
+            flex: '1 1 300px',
+            minWidth: 220,
+          }}
+        >
+          <input
+            type="search"
+            value={sessionSearch}
+            onChange={event =>
+              setSessionSearch(
+                event.target.value
+              )
+            }
+            placeholder="Search player, session or venue"
+            aria-label="Search training sessions"
+            style={{
+              width: '100%',
+              minHeight: 42,
+              boxSizing: 'border-box',
+              border:
+                '1px solid var(--line, #DDE3EF)',
+              borderRadius: 10,
+              padding: '9px 12px',
+              background:
+                'var(--card, #FFFFFF)',
+              color:
+                'var(--text, #0D1B3E)',
+              fontSize: 14,
+              outline: 'none',
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            flexWrap: 'wrap',
+          }}
+        >
+          {[
+            'All',
+            'Upcoming',
+            'Awaiting',
+            'Completed',
+          ].map(option => {
+            const active =
+              sessionFilter === option
+
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() =>
+                  setSessionFilter(option)
+                }
+                style={{
+                  border: active
+                    ? '1px solid #1A5FFF'
+                    : '1px solid var(--line, #DDE3EF)',
+                  borderRadius: 9,
+                  background: active
+                    ? '#1A5FFF'
+                    : 'var(--card, #FFFFFF)',
+                  color: active
+                    ? '#FFFFFF'
+                    : 'var(--text-muted, #6B7280)',
+                  padding: '9px 12px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {option}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+
+          {sessionFilter === 'Completed' &&
+            filteredCompletedSessions.length === 0 && (
+              <div className={styles.card}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color:
+                      'var(--text-muted, #8892A4)',
+                    textAlign: 'center',
+                    padding: '20px 0',
+                  }}
+                >
+                  No completed sessions match the current search.
+                </div>
+              </div>
+            )}
+
+          {filteredCompletedSessions.length > 0 && (
             <div className={styles.card}>
               <div
                 className={styles.cardTitle}
@@ -2998,7 +3230,7 @@ export default function CoachSessions() {
                 Completed sessions
               </div>
 
-              {completedSessions.map(session =>
+              {filteredCompletedSessions.map(session =>
                 renderSession(
                   session,
                   'Completed'

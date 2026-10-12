@@ -937,6 +937,12 @@ export default function CoachPlayers() {
   const [reportPlayer, setReportPlayer] = useState(null)
   const [submittingReport, setSubmittingReport] = useState(false)
 
+  const [privatePlayerNote, setPrivatePlayerNote] = useState('')
+  const [privatePlayerNoteId, setPrivatePlayerNoteId] = useState(null)
+  const [loadingPrivatePlayerNote, setLoadingPrivatePlayerNote] = useState(false)
+  const [savingPrivatePlayerNote, setSavingPrivatePlayerNote] = useState(false)
+  const [privatePlayerNoteMessage, setPrivatePlayerNoteMessage] = useState('')
+
   const [showMyQr, setShowMyQr] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [scannerStarting, setScannerStarting] = useState(false)
@@ -1628,6 +1634,74 @@ export default function CoachPlayers() {
     [players, profilePlayerId]
   )
 
+
+  useEffect(() => {
+    let active = true
+
+    async function loadPrivatePlayerNote() {
+      setPrivatePlayerNoteMessage('')
+
+      const notePlayer =
+        profilePlayer?.assigned
+          ? profilePlayer
+          : selectedPlayer?.assigned
+            ? selectedPlayer
+            : null
+
+      if (!user?.id || !notePlayer?.id) {
+        setPrivatePlayerNote('')
+        setPrivatePlayerNoteId(null)
+        setLoadingPrivatePlayerNote(false)
+        return
+      }
+
+      setLoadingPrivatePlayerNote(true)
+
+      try {
+        const { data, error: noteError } = await supabase
+          .from('coach_player_notes')
+          .select('id, note, updated_at')
+          .eq('coach_id', user.id)
+          .eq('player_user_id', notePlayer.id)
+          .maybeSingle()
+
+        if (noteError) throw noteError
+        if (!active) return
+
+        setPrivatePlayerNoteId(data?.id || null)
+        setPrivatePlayerNote(data?.note || '')
+      } catch (noteError) {
+        if (!active) return
+
+        console.error(
+          'Load private coach note error:',
+          noteError
+        )
+
+        setPrivatePlayerNote('')
+        setPrivatePlayerNoteId(null)
+        setPrivatePlayerNoteMessage(
+          noteError?.message ||
+            'Unable to load the private coach note.'
+        )
+      } finally {
+        if (active) {
+          setLoadingPrivatePlayerNote(false)
+        }
+      }
+    }
+
+    loadPrivatePlayerNote()
+
+    return () => {
+      active = false
+    }
+  }, [
+    profilePlayer,
+    selectedPlayer,
+    user?.id,
+  ])
+
   const availablePlayers = useMemo(
     () =>
       players.filter(
@@ -1944,6 +2018,130 @@ export default function CoachPlayers() {
       )
     } finally {
       setSavingId(null)
+    }
+  }
+
+  const savePrivatePlayerNote = async () => {
+    if (
+      !user?.id ||
+      !profilePlayer?.id ||
+      !profilePlayer.assigned ||
+      savingPrivatePlayerNote
+    ) {
+      return
+    }
+
+    setSavingPrivatePlayerNote(true)
+    setPrivatePlayerNoteMessage('')
+
+    try {
+      const noteText =
+        privatePlayerNote.trim()
+
+      if (!noteText) {
+        if (privatePlayerNoteId) {
+          const { error: deleteNoteError } =
+            await supabase
+              .from('coach_player_notes')
+              .delete()
+              .eq('id', privatePlayerNoteId)
+              .eq('coach_id', user.id)
+              .eq(
+                'player_user_id',
+                profilePlayer.id
+              )
+
+          if (deleteNoteError) {
+            throw deleteNoteError
+          }
+        }
+
+        setPrivatePlayerNote('')
+        setPrivatePlayerNoteId(null)
+        setPrivatePlayerNoteMessage(
+          'Private note cleared.'
+        )
+        return
+      }
+
+      let savedNote = null
+
+      if (privatePlayerNoteId) {
+        const {
+          data,
+          error: updateNoteError,
+        } = await supabase
+          .from('coach_player_notes')
+          .update({
+            note: noteText,
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq('id', privatePlayerNoteId)
+          .eq('coach_id', user.id)
+          .eq(
+            'player_user_id',
+            profilePlayer.id
+          )
+          .select(
+            'id, note, updated_at'
+          )
+          .single()
+
+        if (updateNoteError) {
+          throw updateNoteError
+        }
+
+        savedNote = data
+      } else {
+        const {
+          data,
+          error: insertNoteError,
+        } = await supabase
+          .from('coach_player_notes')
+          .insert({
+            coach_id: user.id,
+            player_user_id:
+              profilePlayer.id,
+            note: noteText,
+            updated_at:
+              new Date().toISOString(),
+          })
+          .select(
+            'id, note, updated_at'
+          )
+          .single()
+
+        if (insertNoteError) {
+          throw insertNoteError
+        }
+
+        savedNote = data
+      }
+
+      const data = savedNote
+
+      setPrivatePlayerNoteId(
+        data?.id || null
+      )
+      setPrivatePlayerNote(
+        data?.note || noteText
+      )
+      setPrivatePlayerNoteMessage(
+        'Private note saved.'
+      )
+    } catch (saveNoteError) {
+      console.error(
+        'Save private coach note error:',
+        saveNoteError
+      )
+
+      setPrivatePlayerNoteMessage(
+        saveNoteError?.message ||
+          'Unable to save the private coach note.'
+      )
+    } finally {
+      setSavingPrivatePlayerNote(false)
     }
   }
 
@@ -3215,7 +3413,8 @@ export default function CoachPlayers() {
                   Select a player
                 </div>
               ) : (
-                <div className={styles.card}>
+                <>
+                  <div className={styles.card}>
                   <div
                     style={{
                       display: 'flex',
@@ -3256,6 +3455,91 @@ export default function CoachPlayers() {
                   <div className={styles.cardTitle}>Skill profile</div>
                   <PlayerRadarChart player={selectedPlayer} />
                 </div>
+
+                <div
+                  className={styles.card}
+                  style={{ marginTop: 12 }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 10,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div>
+                      <div className={styles.cardTitle}>
+                        Private coach note
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 3,
+                          fontSize: 10,
+                          color: '#8892A4',
+                        }}
+                      >
+                        Only visible to this coach.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      onClick={() =>
+                        setProfilePlayerId(selectedPlayer.id)
+                      }
+                      style={{ fontSize: 10 }}
+                    >
+                      {privatePlayerNote.trim()
+                        ? 'Edit note'
+                        : '+ Add note'}
+                    </button>
+                  </div>
+
+                  {loadingPrivatePlayerNote ? (
+                    <div
+                      style={{
+                        padding: '12px 0',
+                        fontSize: 12,
+                        color: '#8892A4',
+                      }}
+                    >
+                      Loading private note...
+                    </div>
+                  ) : privatePlayerNote.trim() ? (
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        background: 'var(--soft, #F7F9FF)',
+                        border: '1px solid var(--line, #EEF1F8)',
+                        color: 'var(--text, #0D1B3E)',
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {privatePlayerNote}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        background: 'var(--soft, #F7F9FF)',
+                        border: '1px dashed var(--line, #D8DEEA)',
+                        color: '#8892A4',
+                        fontSize: 12,
+                      }}
+                    >
+                      No private note added yet.
+                    </div>
+                  )}
+                </div>
+                </>
               )}
             </div>
           </div>
@@ -3835,6 +4119,174 @@ export default function CoachPlayers() {
                   />
                 </div>
               </div>
+
+              {profilePlayer.assigned && (
+                <div
+                  className={styles.card}
+                  style={{ padding: 18 }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      justifyContent:
+                        'space-between',
+                      gap: 12,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div>
+                      <div
+                        className={styles.cardTitle}
+                      >
+                        Private coach note
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 11,
+                          lineHeight: 1.5,
+                          color: '#8892A4',
+                        }}
+                      >
+                        Only visible to this coach.
+                        The player cannot see this
+                        note.
+                      </div>
+                    </div>
+
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        background: '#F5F3FF',
+                        border:
+                          '1px solid #DDD6FE',
+                        color: '#6D28D9',
+                        fontSize: 10,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Private
+                    </span>
+                  </div>
+
+                  {loadingPrivatePlayerNote ? (
+                    <div
+                      style={{
+                        padding: '14px 0',
+                        color: '#8892A4',
+                        fontSize: 12,
+                      }}
+                    >
+                      Loading private note...
+                    </div>
+                  ) : (
+                    <>
+                      <textarea
+                        className={
+                          styles.formInput
+                        }
+                        rows={5}
+                        maxLength={1000}
+                        value={privatePlayerNote}
+                        onChange={event => {
+                          setPrivatePlayerNote(
+                            event.target.value
+                          )
+                          setPrivatePlayerNoteMessage(
+                            ''
+                          )
+                        }}
+                        placeholder="Write a private reminder about this player..."
+                        disabled={
+                          savingPrivatePlayerNote
+                        }
+                        style={{
+                          width: '100%',
+                          minHeight: 110,
+                          resize: 'vertical',
+                        }}
+                      />
+
+                      <div
+                        style={{
+                          marginTop: 9,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent:
+                            'space-between',
+                          gap: 10,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: '#8892A4',
+                            }}
+                          >
+                            {
+                              privatePlayerNote
+                                .length
+                            }
+                            /1000
+                          </span>
+
+                          {privatePlayerNoteMessage && (
+                            <span
+                              style={{
+                                marginLeft: 10,
+                                fontSize: 11,
+                                color:
+                                  privatePlayerNoteMessage.includes(
+                                    'Unable'
+                                  ) ||
+                                  privatePlayerNoteMessage
+                                    .toLowerCase()
+                                    .includes('error')
+                                    ? '#B91C1C'
+                                    : '#047857',
+                              }}
+                            >
+                              {
+                                privatePlayerNoteMessage
+                              }
+                            </span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          className={
+                            styles.btnPrimary
+                          }
+                          onClick={
+                            savePrivatePlayerNote
+                          }
+                          disabled={
+                            savingPrivatePlayerNote
+                          }
+                          style={{
+                            fontSize: 11,
+                          }}
+                        >
+                          {savingPrivatePlayerNote
+                            ? 'Saving...'
+                            : privatePlayerNote.trim()
+                              ? 'Save Note'
+                              : privatePlayerNoteId
+                                ? 'Clear Note'
+                                : 'Save Note'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               <div
                 style={{

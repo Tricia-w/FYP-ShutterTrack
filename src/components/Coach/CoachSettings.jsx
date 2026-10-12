@@ -272,7 +272,6 @@ export default function CoachSettings() {
       }
     }
   }, [getAuthUser, loadApprovedDeletionRequest])
-
   const handleConfirmApprovedDeletion = async () => {
     if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
     setDeletionDecisionBusy(true)
@@ -301,7 +300,6 @@ export default function CoachSettings() {
       setDeletionDecisionBusy(false)
     }
   }
-
   const handleCancelApprovedDeletion = async () => {
     if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
     setDeletionDecisionBusy(true)
@@ -330,7 +328,6 @@ export default function CoachSettings() {
       setDeletionDecisionBusy(false)
     }
   }
-
   const saveAccountSettings = useCallback(
     async currentForm => {
       const authUser = await getAuthUser()
@@ -567,20 +564,17 @@ export default function CoachSettings() {
       setAutoSaveStatus('Could not save')
     }
   }
-
   const openEmailChangeModal = () => {
     setNewEmail('')
     setEmailChangeError('')
     setShowEmailModal(true)
   }
-
   const closeEmailChangeModal = () => {
     if (changingEmail) return
     setShowEmailModal(false)
     setNewEmail('')
     setEmailChangeError('')
   }
-
   const handleRequestEmailChange = async () => {
     if (changingEmail) return
     const cleanEmail = newEmail.trim().toLowerCase()
@@ -635,7 +629,6 @@ export default function CoachSettings() {
       setChangingEmail(false)
     }
   }
-
   const handleLogout = async () => {
     if (logout) {
       await logout()
@@ -646,7 +639,6 @@ export default function CoachSettings() {
     }
     navigate('/')
   }
-
   const handleLogoutOtherDevices = async () => {
     if (loggingOutOtherDevices) return
     const confirmed = window.confirm(
@@ -675,7 +667,6 @@ export default function CoachSettings() {
       setLoggingOutOtherDevices(false)
     }
   }
-
   const handleRequestDeleteAccount = async () => {
     if (requestingDelete) return
     const cleanReason = deletionReason.trim()
@@ -718,6 +709,7 @@ export default function CoachSettings() {
       setRequestingDelete(false)
     }
   }
+
   const ToggleSwitch = ({ checked, onChange }) => (
     <button
       type="button"
@@ -752,6 +744,7 @@ export default function CoachSettings() {
       />
     </button>
   )
+
   const SmallButton = ({
     children,
     onClick,
@@ -791,6 +784,7 @@ export default function CoachSettings() {
       {children}
     </button>
   )
+
   const SettingLine = ({
     label,
     checked,
@@ -843,6 +837,7 @@ export default function CoachSettings() {
         subtitle="Manage account, notifications and privacy settings"
         showActions={false}
       />
+
       <div className={styles.g2}>
         <div>
           <div
@@ -893,6 +888,7 @@ export default function CoachSettings() {
                 {accountSaveError}
               </div>
             )}
+
             <div className={styles.formRow}>
               <label className={styles.formLabel}>
                 Full Name
@@ -903,6 +899,7 @@ export default function CoachSettings() {
                 onChange={set('name')}
               />
             </div>
+
             <div className={styles.formRow}>
               <label className={styles.formLabel}>
                 Email Address
@@ -926,10 +923,12 @@ export default function CoachSettings() {
                     cursor: 'not-allowed',
                   }}
                 />
+
                 <SmallButton onClick={openEmailChangeModal}>
                   Change Email
                 </SmallButton>
               </div>
+
               <div
                 style={{
                   marginTop: 5,
@@ -958,6 +957,7 @@ export default function CoachSettings() {
                 </div>
               )}
             </div>
+
             <div className={styles.formRow}>
               <label className={styles.formLabel}>
                 Phone Number
@@ -975,6 +975,7 @@ export default function CoachSettings() {
                 autoComplete="tel"
                 placeholder="01xxxxxxxx"
               />
+
               <div
                 style={{
                   marginTop: 5,
@@ -985,6 +986,7 @@ export default function CoachSettings() {
                 Numbers only, maximum 11 digits.
               </div>
             </div>
+
             <div className={styles.statRow}>
               <span className={styles.statLabel}>
                 Last updated
@@ -994,6 +996,7 @@ export default function CoachSettings() {
               </span>
             </div>
           </div>
+
           <div className={styles.card}>
             <div
               style={{
@@ -1017,12 +1020,14 @@ export default function CoachSettings() {
                 Auto-saved
               </span>
             </div>
+
             <SettingLine
               label="Dark mode"
               value={settings.darkMode ? 'On' : 'Off'}
               checked={settings.darkMode}
               onChange={() => toggle('darkMode')}
             />
+
             <div style={{ marginTop: 12 }}>
               <span className={styles.badgeBlue}>
                 Current mode:{' '}
@@ -1031,6 +1036,7 @@ export default function CoachSettings() {
             </div>
           </div>
         </div>
+
         <div>
           <div
             className={styles.card}
@@ -1062,6 +1068,7 @@ export default function CoachSettings() {
                   'Changes save automatically'}
               </span>
             </div>
+
             <SettingLine
               label="New player request notifications"
               checked={settings.playerRequestReminder}
@@ -1069,6 +1076,7 @@ export default function CoachSettings() {
                 toggle('playerRequestReminder')
               }
             />
+
             <SettingLine
               label="Training session reminders"
               checked={settings.sessionReminder}
@@ -1076,13 +1084,16 @@ export default function CoachSettings() {
                 toggle('sessionReminder')
               }
             />
+
             <SettingLine
               label="Player progress reminders"
+              value="Completed, due & overdue"
               checked={settings.progressReminder}
               onChange={() =>
                 toggle('progressReminder')
               }
             />
+
             <SettingLine
               label="Notification sound"
               checked={settings.soundEnabled}
@@ -1090,11 +1101,13 @@ export default function CoachSettings() {
                 toggle('soundEnabled')
               }
             />
+
             <SettingLine
               label="Coach profile visible to players"
               checked={settings.profilePublic}
               onChange={() => toggle('profilePublic')}
             />
+
             <SettingLine
               label="Accepting new players"
               checked={settings.acceptingPlayers}
@@ -1103,10 +1116,12 @@ export default function CoachSettings() {
               }
             />
           </div>
+
           <div className={styles.card}>
             <div className={styles.cardTitle}>
               Data & Security
             </div>
+
             <div
               style={{
                 marginTop: 12,
@@ -1125,6 +1140,7 @@ export default function CoachSettings() {
               >
                 Active login sessions
               </div>
+
               <div
                 style={{
                   marginTop: 4,
@@ -1136,6 +1152,7 @@ export default function CoachSettings() {
                 Log out your account from other browsers and devices while
                 keeping this browser logged in.
               </div>
+
               <div style={{ marginTop: 10 }}>
                 <SmallButton
                   onClick={handleLogoutOtherDevices}
@@ -1147,6 +1164,7 @@ export default function CoachSettings() {
                 </SmallButton>
               </div>
             </div>
+
             <div
               style={{
                 display: 'flex',
@@ -1260,6 +1278,7 @@ export default function CoachSettings() {
                 {emailChangeError}
               </div>
             )}
+
             <div
               style={{
                 marginTop: 12,
@@ -1277,6 +1296,7 @@ export default function CoachSettings() {
               Your account will continue using this email until verification is
               completed.
             </div>
+
             <div
               style={{
                 display: 'flex',
@@ -1356,6 +1376,7 @@ export default function CoachSettings() {
               keep your account, the deletion request will be
               cancelled.
             </div>
+
             <div
               style={{
                 display: 'flex',
@@ -1463,6 +1484,7 @@ export default function CoachSettings() {
                   lineHeight: 1.5,
                 }}
               />
+
               <div
                 style={{
                   marginTop: 5,
@@ -1474,6 +1496,7 @@ export default function CoachSettings() {
                 {deletionReason.length}/500
               </div>
             </div>
+
             <div
               style={{
                 display: 'flex',
