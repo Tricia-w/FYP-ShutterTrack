@@ -8,7 +8,7 @@ import React, {
 import { supabase } from "../../lib/supabase";
 
 const ADMIN_NOTIFICATION_TYPES = [
-  "admin_coach_verification",
+  "coach_verification_request",
   "admin_user_report",
   "admin_deletion_request",
   "admin_club_issue",
@@ -26,7 +26,6 @@ function formatTime(value) {
   if (!value) return "";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return "";
   }
@@ -42,22 +41,18 @@ function formatTime(value) {
 
 function getAdminPage(item) {
   const type = normalise(item?.source_type || item?.type);
-
-  if (type === "admin_coach_verification") {
+  if (type === "coach_verification_request") {
     return "coaches";
   }
-
   if (
     type === "admin_user_report" ||
     type === "admin_deletion_request"
   ) {
     return "reports";
   }
-
   if (type === "admin_club_issue") {
     return "clubs";
   }
-
   if (type === "admin_account_security") {
     return "users";
   }
@@ -72,8 +67,11 @@ export default function AdminNotificationBell({
   const wrapperRef = useRef(null);
 
   const adminUserIdRef = useRef(null);
+
   const [open, setOpen] = useState(false);
+
   const [items, setItems] = useState([]);
+
   const [loading, setLoading] = useState(true);
 
   const resolveAdminUser = useCallback(async () => {
@@ -85,31 +83,27 @@ export default function AdminNotificationBell({
       data: { user },
       error,
     } = await supabase.auth.getUser();
-
     if (error) {
       console.error("Unable to get admin user:", error);
+
       return null;
     }
-
     if (!user?.id) {
       return null;
     }
-
     adminUserIdRef.current = user.id;
+
     return user.id;
   }, []);
 
   const loadNotifications = useCallback(async () => {
     const uid = await resolveAdminUser();
-
     if (!uid) {
       setItems([]);
       setLoading(false);
       return;
     }
-
     setLoading(true);
-
     try {
       const { data, error } = await supabase
         .from("notifications")
@@ -118,7 +112,6 @@ export default function AdminNotificationBell({
         .in("source_type", ADMIN_NOTIFICATION_TYPES)
         .order("created_at", { ascending: false })
         .limit(limit);
-
       if (error) {
         console.error(
           "Unable to load admin notifications:",
@@ -126,28 +119,23 @@ export default function AdminNotificationBell({
         );
         return;
       }
-
       setItems(data || []);
     } finally {
       setLoading(false);
     }
   }, [limit, resolveAdminUser]);
-
   useEffect(() => {
     loadNotifications();
   }, [loadNotifications]);
-
   useEffect(() => {
     let cancelled = false;
     let channel = null;
 
     const subscribe = async () => {
       const uid = await resolveAdminUser();
-
       if (!uid || cancelled) {
         return;
       }
-
       channel = supabase
         .channel(
           `admin-notifications-${uid}`
@@ -166,18 +154,15 @@ export default function AdminNotificationBell({
         )
         .subscribe();
     };
-
     subscribe();
 
     return () => {
       cancelled = true;
-
       if (channel) {
         supabase.removeChannel(channel);
       }
     };
   }, [loadNotifications, resolveAdminUser]);
-
   useEffect(() => {
     const handleOutsideClick = (event) => {
       if (
@@ -187,7 +172,6 @@ export default function AdminNotificationBell({
         setOpen(false);
       }
     };
-
     document.addEventListener(
       "mousedown",
       handleOutsideClick
@@ -210,7 +194,6 @@ export default function AdminNotificationBell({
     event.stopPropagation();
 
     const uid = await resolveAdminUser();
-
     if (!uid) {
       return;
     }
@@ -218,11 +201,9 @@ export default function AdminNotificationBell({
     const unreadIds = items
       .filter((item) => !item.is_read)
       .map((item) => item.id);
-
     if (unreadIds.length === 0) {
       return;
     }
-
     setItems((current) =>
       current.map((item) => ({
         ...item,
@@ -237,13 +218,11 @@ export default function AdminNotificationBell({
       })
       .eq("user_id", uid)
       .in("id", unreadIds);
-
     if (error) {
       console.error(
         "Unable to mark admin notifications read:",
         error
       );
-
       loadNotifications();
     }
   };
@@ -252,13 +231,11 @@ export default function AdminNotificationBell({
     event.stopPropagation();
 
     const uid = await resolveAdminUser();
-
     if (!uid || items.length === 0) {
       return;
     }
 
     const ids = items.map((item) => item.id);
-
     setItems([]);
 
     const { error } = await supabase
@@ -266,20 +243,17 @@ export default function AdminNotificationBell({
       .delete()
       .eq("user_id", uid)
       .in("id", ids);
-
     if (error) {
       console.error(
         "Unable to clear admin notifications:",
         error
       );
-
       loadNotifications();
     }
   };
 
   const deleteOne = async (event, notificationId) => {
     event.stopPropagation();
-
     setItems((current) =>
       current.filter(
         (item) => item.id !== notificationId
@@ -290,24 +264,20 @@ export default function AdminNotificationBell({
       .from("notifications")
       .delete()
       .eq("id", notificationId);
-
     if (error) {
       console.error(
         "Unable to delete admin notification:",
         error
       );
-
       loadNotifications();
     }
   };
 
   const openNotification = async (item) => {
     const uid = await resolveAdminUser();
-
     if (!uid) {
       return;
     }
-
     if (!item.is_read) {
       setItems((current) =>
         current.map((row) =>
@@ -327,7 +297,6 @@ export default function AdminNotificationBell({
         })
         .eq("id", item.id)
         .eq("user_id", uid);
-
       if (error) {
         console.error(
           "Unable to mark admin notification read:",
@@ -335,11 +304,9 @@ export default function AdminNotificationBell({
         );
       }
     }
-
     setOpen(false);
 
     const page = getAdminPage(item);
-
     if (page) {
       setActivePage?.(page);
     }
@@ -378,7 +345,6 @@ export default function AdminNotificationBell({
         }}
       >
         🔔
-
         {unreadCount > 0 && (
           <span
             style={{
@@ -406,7 +372,6 @@ export default function AdminNotificationBell({
           </span>
         )}
       </button>
-
       {open && (
         <div
           onClick={(event) =>
@@ -452,7 +417,6 @@ export default function AdminNotificationBell({
             >
               Notifications
             </div>
-
             {items.length > 0 && (
               <div
                 style={{
@@ -477,7 +441,6 @@ export default function AdminNotificationBell({
                 >
                   Mark read
                 </button>
-
                 <button
                   type="button"
                   onClick={clearAll}
@@ -497,7 +460,6 @@ export default function AdminNotificationBell({
               </div>
             )}
           </div>
-
           {loading ? (
             <div
               style={{
@@ -594,7 +556,6 @@ export default function AdminNotificationBell({
                   >
                     ×
                   </button>
-
                   <div
                     style={{
                       display: "flex",
@@ -615,7 +576,6 @@ export default function AdminNotificationBell({
                       {item.title ||
                         "Admin notification"}
                     </div>
-
                     {!item.is_read && (
                       <span
                         style={{
@@ -629,7 +589,6 @@ export default function AdminNotificationBell({
                       />
                     )}
                   </div>
-
                   <div
                     style={{
                       marginTop: 7,
@@ -640,7 +599,6 @@ export default function AdminNotificationBell({
                   >
                     {item.message || ""}
                   </div>
-
                   <div
                     style={{
                       marginTop: 10,

@@ -175,9 +175,11 @@ function decodeActionPlans(value) {
     performance: '',
     performanceDeadline: '',
     performanceCompletion: 0,
+    performanceReviewDate: '',
     fitness: '',
     fitnessDeadline: '',
     fitnessCompletion: 0,
+    fitnessReviewDate: '',
   }
 
   if (!raw.startsWith(ACTION_PLAN_META_PREFIX)) {
@@ -223,6 +225,11 @@ function decodeActionPlans(value) {
             )
           : 0,
 
+      performanceReviewDate:
+        performanceIsObject
+          ? performanceValue.reviewDate || ''
+          : '',
+
       fitness:
         fitnessIsObject
           ? fitnessValue.text || ''
@@ -239,6 +246,11 @@ function decodeActionPlans(value) {
               fitnessValue.completionRate
             )
           : 0,
+
+      fitnessReviewDate:
+        fitnessIsObject
+          ? fitnessValue.reviewDate || ''
+          : '',
     }
   } catch {
     return empty
@@ -249,9 +261,11 @@ function encodeActionPlans({
   performance = '',
   performanceDeadline = '',
   performanceCompletion = 0,
+  performanceReviewDate = '',
   fitness = '',
   fitnessDeadline = '',
   fitnessCompletion = 0,
+  fitnessReviewDate = '',
 }) {
   return `${ACTION_PLAN_META_PREFIX}${JSON.stringify({
     performance: {
@@ -267,6 +281,10 @@ function encodeActionPlans({
         clamp(
           performanceCompletion
         ),
+      reviewDate:
+        String(
+          performanceReviewDate || ''
+        ).trim(),
     },
     fitness: {
       text:
@@ -281,9 +299,61 @@ function encodeActionPlans({
         clamp(
           fitnessCompletion
         ),
+      reviewDate:
+        String(
+          fitnessReviewDate || ''
+        ).trim(),
     },
   })}`
 }
+
+const PERSONAL_ACTION_PLAN_META_PREFIX =
+  '__SHUTTLETRACK_PERSONAL_FITNESS_ACTION_PLAN__:'
+
+function decodePersonalActionPlan(value) {
+  const raw = String(value || '')
+
+  if (!raw.startsWith(PERSONAL_ACTION_PLAN_META_PREFIX)) {
+    return {
+      text: raw,
+      deadline: '',
+      completion: 0,
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(
+      raw.slice(
+        PERSONAL_ACTION_PLAN_META_PREFIX.length
+      )
+    )
+
+    return {
+      text: String(parsed?.text || ''),
+      deadline: String(parsed?.deadline || ''),
+      completion: clamp(parsed?.completion),
+    }
+  } catch {
+    return {
+      text: raw,
+      deadline: '',
+      completion: 0,
+    }
+  }
+}
+
+function encodePersonalActionPlan({
+  text = '',
+  deadline = '',
+  completion = 0,
+}) {
+  return `${PERSONAL_ACTION_PLAN_META_PREFIX}${JSON.stringify({
+    text: String(text || '').trim(),
+    deadline: String(deadline || '').trim(),
+    completion: clamp(completion),
+  })}`
+}
+
 
 const INJURY_META_PREFIX = '__SHUTTLETRACK_INJURY__:'
 
@@ -638,14 +708,23 @@ const emptyRecovery = (date = todayISO()) => ({
 
 const INJURY_IMAGE_BUCKET = 'injury-images'
 
-const getInjuryImageUrl = imagePath => {
+const getInjuryImageUrl = async imagePath => {
   if (!imagePath) return ''
 
-  const { data } = supabase.storage
+  const { data, error } = await supabase.storage
     .from(INJURY_IMAGE_BUCKET)
-    .getPublicUrl(imagePath)
+    .createSignedUrl(imagePath, 60 * 60)
 
-  return data?.publicUrl || ''
+  if (error) {
+    console.error(
+      'Failed to create injury image URL:',
+      error
+    )
+
+    return ''
+  }
+
+  return data?.signedUrl || ''
 }
 
 const emptyInjury = (date = todayISO()) => ({
@@ -660,6 +739,13 @@ const emptyInjury = (date = todayISO()) => ({
   imageUrl: '',
   imageFile: null,
   imageRemoved: false,
+})
+
+const emptyFitnessGoal = () => ({
+  title: '',
+  indicator: 'Endurance',
+  targetScore: 80,
+  deadline: '',
 })
 
 function rowToTraining(row) {
@@ -806,8 +892,24 @@ function rowToInjury(row) {
     bodyX: meta.bodyX,
     bodyY: meta.bodyY,
     imagePath,
-    imageUrl: getInjuryImageUrl(imagePath),
+    imageUrl: '',
     color: status === 'Recovered' ? 'green' : 'amber',
+  }
+}
+
+async function rowToInjuryWithImage(row) {
+  const injury = rowToInjury(row)
+
+  if (!injury.imagePath) {
+    return injury
+  }
+
+  return {
+    ...injury,
+    imageUrl:
+      await getInjuryImageUrl(
+        injury.imagePath
+      ),
   }
 }
 
@@ -2573,6 +2675,26 @@ export default function Fitness() {
   const [draftPersonalNote, setDraftPersonalNote] = useState('')
   const [personalActionPlan, setPersonalActionPlan] = useState('')
   const [draftPersonalActionPlan, setDraftPersonalActionPlan] = useState('')
+  const [
+    personalActionPlanDeadline,
+    setPersonalActionPlanDeadline,
+  ] = useState('')
+  const [
+    draftPersonalActionPlanDeadline,
+    setDraftPersonalActionPlanDeadline,
+  ] = useState('')
+  const [
+    personalActionPlanCompletion,
+    setPersonalActionPlanCompletion,
+  ] = useState(0)
+  const [
+    draftPersonalActionPlanCompletion,
+    setDraftPersonalActionPlanCompletion,
+  ] = useState(0)
+  const [
+    editingPersonalActionPlan,
+    setEditingPersonalActionPlan,
+  ] = useState(false)
 
   const [selectedDate, setSelectedDate] = useState(null)
   const [
@@ -2581,6 +2703,7 @@ export default function Fitness() {
   ] = useState(null)
   const [filter, setFilter] = useState({
     status: 'All',
+    source: 'All',
     search: '',
   })
 
@@ -2603,11 +2726,25 @@ export default function Fitness() {
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false)
   const [showFitnessInfo, setShowFitnessInfo] = useState(false)
   const [showFitnessScoreInfo, setShowFitnessScoreInfo] = useState(false)
+  const [fitnessGoal, setFitnessGoal] = useState(null)
+  const [showFitnessGoal, setShowFitnessGoal] = useState(false)
+  const [fitnessGoalForm, setFitnessGoalForm] = useState(
+    emptyFitnessGoal()
+  )
   const trainingTableRef = useRef(null)
   const trainingCardRef = useRef(null)
   const rightFitnessStackRef = useRef(null)
   const injuryLogCardRef = useRef(null)
   const [trainingSectionHeight, setTrainingSectionHeight] = useState(null)
+
+  useEffect(() => {
+    if (!hasCoach && filter.source !== 'All') {
+      setFilter(current => ({
+        ...current,
+        source: 'All',
+      }))
+    }
+  }, [hasCoach, filter.source])
 
   const [scheduleForm, setScheduleForm] = useState(emptySchedule())
   const [scheduleAvailabilityError, setScheduleAvailabilityError] = useState('')
@@ -2652,6 +2789,7 @@ export default function Fitness() {
           coachAssignmentRes,
           coachRelationshipRes,
           googleCalendarSettingRes,
+          fitnessGoalRes,
         ] = await Promise.all([
           supabase.from('player_schedule').select('*').eq('user_id', user.id).order('event_date', { ascending: true }).order('event_time', { ascending: true }),
           supabase.from('fitness_training_logs').select('*').eq('user_id', user.id).order('training_date', { ascending: true }),
@@ -2702,6 +2840,12 @@ export default function Fitness() {
             .select('enabled')
             .eq('user_id', user.id)
             .maybeSingle(),
+
+          supabase
+            .from('fitness_goals')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle(),
         ])
 
         const error = [
@@ -2714,6 +2858,7 @@ export default function Fitness() {
           coachAssignmentRes.error,
           coachRelationshipRes.error,
           googleCalendarSettingRes.error,
+          fitnessGoalRes.error,
         ].find(Boolean)
 
         if (error) throw error
@@ -2738,6 +2883,26 @@ export default function Fitness() {
           Boolean(
             googleCalendarSettingRes.data?.enabled
           )
+        )
+
+        setFitnessGoal(
+          fitnessGoalRes.data
+            ? {
+                id: fitnessGoalRes.data.id,
+                title:
+                  fitnessGoalRes.data.goal_note || '',
+                indicator:
+                  fitnessGoalRes.data.target_focus ||
+                  'Endurance',
+                targetScore:
+                  Number(
+                    fitnessGoalRes.data.target_score
+                  ) || 0,
+                deadline:
+                  fitnessGoalRes.data.deadline || '',
+                status: 'active',
+              }
+            : null
         )
 
         const acceptedCoachIds = (
@@ -2880,7 +3045,13 @@ export default function Fitness() {
         setSessions((trainingRes.data || []).map(rowToTraining))
         setTests((testsRes.data || []).map(rowToTest))
         setRecoveryLogs((recoveryRes.data || []).map(rowToRecovery))
-        setInjuries((injuryRes.data || []).map(rowToInjury))
+        setInjuries(
+          await Promise.all(
+            (injuryRes.data || []).map(
+              rowToInjuryWithImage
+            )
+          )
+        )
 
         if (assessmentRes.error) {
           console.error(
@@ -2904,8 +3075,33 @@ export default function Fitness() {
 
         setPersonalNote(noteRes.data?.note || '')
         setDraftPersonalNote(noteRes.data?.note || '')
-        setPersonalActionPlan(noteRes.data?.action_plan || '')
-        setDraftPersonalActionPlan(noteRes.data?.action_plan || '')
+
+        const loadedPersonalActionPlan =
+          decodePersonalActionPlan(
+            noteRes.data?.action_plan || ''
+          )
+
+        setPersonalActionPlan(
+          loadedPersonalActionPlan.text
+        )
+        setDraftPersonalActionPlan(
+          loadedPersonalActionPlan.text
+        )
+        setPersonalActionPlanDeadline(
+          loadedPersonalActionPlan.deadline
+        )
+        setDraftPersonalActionPlanDeadline(
+          loadedPersonalActionPlan.deadline
+        )
+        setPersonalActionPlanCompletion(
+          loadedPersonalActionPlan.completion
+        )
+        setDraftPersonalActionPlanCompletion(
+          loadedPersonalActionPlan.completion
+        )
+        setEditingPersonalActionPlan(
+          !loadedPersonalActionPlan.text
+        )
       } catch (err) {
         if (alive) setLoadError(err.message || 'Failed to load fitness records.')
       } finally {
@@ -2944,6 +3140,7 @@ export default function Fitness() {
   }, [
     refreshKey,
     filter.status,
+    filter.source,
     filter.search,
   ])
 
@@ -3407,6 +3604,40 @@ export default function Fitness() {
     recoveryScore,
   ])
 
+  const fitnessGoalCurrentScore = useMemo(() => {
+    if (!fitnessGoal?.indicator) return 0
+
+    const item = indicators.find(
+      indicator =>
+        String(indicator.name).toLowerCase() ===
+        String(fitnessGoal.indicator).toLowerCase()
+    )
+
+    return item?.hasData
+      ? Math.round(Number(item.val) || 0)
+      : 0
+  }, [fitnessGoal, indicators])
+
+  const fitnessGoalProgress = useMemo(() => {
+    const target =
+      Number(fitnessGoal?.targetScore) || 0
+
+    if (target <= 0) return 0
+
+    return Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          (fitnessGoalCurrentScore / target) * 100
+        )
+      )
+    )
+  }, [
+    fitnessGoal?.targetScore,
+    fitnessGoalCurrentScore,
+  ])
+
   const testIndicatorNames = [
     'Endurance',
     'Speed',
@@ -3575,6 +3806,12 @@ export default function Fitness() {
       venue: item.venue || '',
       createdAt:
         item.createdAt || '',
+      addedBy:
+        item.isCoachCreated ||
+        item.coachSessionId ||
+        item.coach_session_id
+          ? 'coach'
+          : 'player',
       status: (() => {
         const scheduleStatus = String(
           item.scheduleStatus || 'scheduled'
@@ -3636,6 +3873,11 @@ export default function Fitness() {
       venue: item.venue || '',
       createdAt:
         item.createdAt || '',
+      addedBy:
+        item.coachSessionId ||
+        item.coach_session_id
+          ? 'coach'
+          : 'player',
       status: 'Completed',
       original: item,
     }))
@@ -3674,6 +3916,10 @@ export default function Fitness() {
         filter.status === 'All' ||
         status === filter.status.toLowerCase()
 
+      const matchesSource =
+        filter.source === 'All' ||
+        item.addedBy === filter.source.toLowerCase()
+
       const itemDate = item.date
         ? new Date(`${item.date}T00:00:00`)
         : null
@@ -3710,12 +3956,14 @@ export default function Fitness() {
 
       return (
         matchesStatus &&
+        matchesSource &&
         matchesSearch
       )
     })
   }, [
     trainingLogItems,
     filter.status,
+    filter.source,
     filter.search,
   ])
 
@@ -5120,6 +5368,119 @@ export default function Fitness() {
     })
   }
 
+  const openFitnessGoal = () => {
+    setFitnessGoalForm(
+      fitnessGoal
+        ? {
+            title: fitnessGoal.title || '',
+            indicator:
+              fitnessGoal.indicator ||
+              'Endurance',
+            targetScore:
+              Number(fitnessGoal.targetScore) || 80,
+            deadline:
+              fitnessGoal.deadline || '',
+          }
+        : emptyFitnessGoal()
+    )
+
+    setShowFitnessGoal(true)
+  }
+
+  const saveFitnessGoal = async () => {
+    if (saving) return
+
+    const goalTitle =
+      fitnessGoalForm.title.trim()
+
+    const targetScore =
+      Number(fitnessGoalForm.targetScore)
+
+    if (!goalTitle) {
+      setLoadError(
+        'Please enter a fitness goal.'
+      )
+      return
+    }
+
+    if (
+      !Number.isFinite(targetScore) ||
+      targetScore < 1 ||
+      targetScore > 100
+    ) {
+      setLoadError(
+        'Target score must be between 1 and 100.'
+      )
+      return
+    }
+
+    if (!fitnessGoalForm.deadline) {
+      setLoadError(
+        'Please select a goal deadline.'
+      )
+      return
+    }
+
+    setSaving(true)
+    setLoadError('')
+
+    try {
+      const uid = await getUserId()
+
+      const payload = {
+        user_id: uid,
+        goal_note: goalTitle,
+        target_focus:
+          fitnessGoalForm.indicator ||
+          'Endurance',
+        target_score: targetScore,
+        deadline: fitnessGoalForm.deadline,
+        updated_at:
+          new Date().toISOString(),
+      }
+
+      const { data, error } = await supabase
+        .from('fitness_goals')
+        .upsert(
+          payload,
+          {
+            onConflict: 'user_id',
+          }
+        )
+        .select('*')
+        .single()
+
+      if (error) throw error
+
+      setFitnessGoal({
+        id: data.id,
+        title: data.goal_note || '',
+        indicator:
+          data.target_focus || 'Endurance',
+        targetScore:
+          Number(data.target_score) || 0,
+        deadline: data.deadline || '',
+        status: 'active',
+      })
+
+      setShowFitnessGoal(false)
+    } catch (error) {
+      const message =
+        error?.message ||
+        'Failed to save fitness goal.'
+
+      console.error(
+        'Save fitness goal error:',
+        error
+      )
+
+      setLoadError(message)
+      alert(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const saveTraining = async () => {
     if (saving) return
 
@@ -5623,7 +5984,7 @@ export default function Fitness() {
       }
 
       const item =
-        rowToInjury(data)
+        await rowToInjuryWithImage(data)
 
       setInjuries(prev => [
         item,
@@ -5651,10 +6012,17 @@ export default function Fitness() {
         }
       }
 
-      setLoadError(
+      const message =
         err.message ||
-          'Failed to save injury.'
+        'Failed to save injury.'
+
+      console.error(
+        'Save injury error:',
+        err
       )
+
+      setLoadError(message)
+      alert(message)
     } finally {
       setSaving(false)
     }
@@ -5806,12 +6174,16 @@ export default function Fitness() {
             currentPlans.performanceDeadline,
           performanceCompletion:
             currentPlans.performanceCompletion,
+          performanceReviewDate:
+            currentPlans.performanceReviewDate,
           fitness:
             currentPlans.fitness,
           fitnessDeadline:
             currentPlans.fitnessDeadline,
           fitnessCompletion:
             nextCompletion,
+          fitnessReviewDate:
+            currentPlans.fitnessReviewDate,
         })
 
       setSavingCoachActionPlan(true)
@@ -5894,7 +6266,16 @@ export default function Fitness() {
           {
             user_id: uid,
             note: draftPersonalNote.trim(),
-            action_plan: draftPersonalActionPlan.trim() || null,
+            action_plan:
+              draftPersonalActionPlan.trim()
+                ? encodePersonalActionPlan({
+                    text: draftPersonalActionPlan,
+                    deadline:
+                      draftPersonalActionPlanDeadline,
+                    completion:
+                      draftPersonalActionPlanCompletion,
+                  })
+                : null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id' }
@@ -5906,8 +6287,31 @@ export default function Fitness() {
 
       setPersonalNote(data.note || '')
       setDraftPersonalNote(data.note || '')
-      setPersonalActionPlan(data.action_plan || '')
-      setDraftPersonalActionPlan(data.action_plan || '')
+
+      const savedPersonalActionPlan =
+        decodePersonalActionPlan(
+          data.action_plan || ''
+        )
+
+      setPersonalActionPlan(
+        savedPersonalActionPlan.text
+      )
+      setDraftPersonalActionPlan(
+        savedPersonalActionPlan.text
+      )
+      setPersonalActionPlanDeadline(
+        savedPersonalActionPlan.deadline
+      )
+      setDraftPersonalActionPlanDeadline(
+        savedPersonalActionPlan.deadline
+      )
+      setPersonalActionPlanCompletion(
+        savedPersonalActionPlan.completion
+      )
+      setDraftPersonalActionPlanCompletion(
+        savedPersonalActionPlan.completion
+      )
+      setEditingPersonalActionPlan(false)
     } catch (err) {
       setLoadError(err.message || 'Failed to save note.')
     } finally {
@@ -5916,21 +6320,52 @@ export default function Fitness() {
   }
 
   const savePersonalActionPlan = async () => {
+    if (saving) return
+
+    const planText =
+      draftPersonalActionPlan.trim()
+
+    if (!planText) {
+      setLoadError(
+        'Please enter a fitness action plan.'
+      )
+      return
+    }
+
+    if (!draftPersonalActionPlanDeadline) {
+      setLoadError(
+        'Please select an action plan deadline.'
+      )
+      return
+    }
+
     setSaving(true)
     setLoadError('')
 
     try {
       const uid = await getUserId()
 
+      const encodedActionPlan =
+        encodePersonalActionPlan({
+          text: planText,
+          deadline:
+            draftPersonalActionPlanDeadline,
+          completion:
+            draftPersonalActionPlanCompletion,
+        })
+
       const { data, error } = await supabase
         .from('fitness_coach_notes')
         .upsert(
           {
             user_id: uid,
-            note: draftPersonalNote.trim() || null,
+            note:
+              draftPersonalNote.trim() ||
+              null,
             action_plan:
-              draftPersonalActionPlan.trim() || null,
-            updated_at: new Date().toISOString(),
+              encodedActionPlan,
+            updated_at:
+              new Date().toISOString(),
           },
           { onConflict: 'user_id' }
         )
@@ -5941,8 +6376,30 @@ export default function Fitness() {
 
       setPersonalNote(data.note || '')
       setDraftPersonalNote(data.note || '')
-      setPersonalActionPlan(data.action_plan || '')
-      setDraftPersonalActionPlan(data.action_plan || '')
+
+      const savedPersonalActionPlan =
+        decodePersonalActionPlan(
+          data.action_plan || ''
+        )
+
+      setPersonalActionPlan(
+        savedPersonalActionPlan.text
+      )
+      setDraftPersonalActionPlan(
+        savedPersonalActionPlan.text
+      )
+      setPersonalActionPlanDeadline(
+        savedPersonalActionPlan.deadline
+      )
+      setDraftPersonalActionPlanDeadline(
+        savedPersonalActionPlan.deadline
+      )
+      setPersonalActionPlanCompletion(
+        savedPersonalActionPlan.completion
+      )
+      setDraftPersonalActionPlanCompletion(
+        savedPersonalActionPlan.completion
+      )
     } catch (err) {
       setLoadError(
         err.message ||
@@ -5952,6 +6409,12 @@ export default function Fitness() {
       setSaving(false)
     }
   }
+
+  const personalActionPlanStatus =
+    getFitnessActionPlanDeadlineStatus(
+      draftPersonalActionPlanDeadline,
+      draftPersonalActionPlanCompletion
+    )
 
   const exportReport = () => {
     const text = [
@@ -5978,6 +6441,14 @@ export default function Fitness() {
       '',
       'My Fitness Action Plan:',
       personalActionPlan || draftPersonalActionPlan || '-',
+      `Deadline: ${
+        personalActionPlanDeadline
+          ? fmtDate(
+              personalActionPlanDeadline
+            )
+          : '-'
+      }`,
+      `Completion: ${personalActionPlanCompletion}%`,
       '',
       'Coach Fitness Feedback:',
       latestCoachAssessment?.fitness_comment || '-',
@@ -5992,6 +6463,13 @@ export default function Fitness() {
           : '-'
       }`,
       `Completion: ${coachActionPlans.fitnessCompletion}%`,
+      `Next review: ${
+        coachActionPlans.fitnessReviewDate
+          ? fmtDate(
+              coachActionPlans.fitnessReviewDate
+            )
+          : '-'
+      }`,
     ].join('\n')
 
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
@@ -6122,7 +6600,7 @@ export default function Fitness() {
         className="fitness-mobile-metrics"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+          gridTemplateColumns: '1.05fr 1fr 1fr 1.65fr',
           gap: 16,
           marginBottom: 16,
         }}
@@ -6271,77 +6749,10 @@ export default function Fitness() {
                 width: 40,
                 height: 40,
                 borderRadius: 10,
-                background: '#DDF8EF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                marginBottom: 10,
-              }}
-            >
-              <FitnessIcon type="training" color="#10B981" size={18} />
-            </div>
-
-            <div
-              className={styles.metricVal}
-              style={{
-                color: '#10B981',
-                WebkitTextFillColor: '#10B981',
-              }}
-            >
-              {completedTrainingThisMonth}
-            </div>
-
-            <div className={styles.metricLbl}>Completed training</div>
-            <div style={{ marginTop: 5, fontSize: 13, color: '#8892A4' }}>
-              this month
-            </div>
-          </div>
-        </div>
-
-        <div className={styles.metric}>
-          <div>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                background: '#F3E8FF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                marginBottom: 10,
-              }}
-            >
-              <FitnessIcon type="fitness" color="#7C3AED" size={18} />
-            </div>
-
-            <div
-              className={styles.metricVal}
-              style={{
-                color: '#7C3AED',
-                WebkitTextFillColor: '#7C3AED',
-              }}
-            >
-              {tests.length}
-            </div>
-
-            <div className={styles.metricLbl}>Fitness tests</div>
-            <div style={{ marginTop: 5, fontSize: 13, color: '#8892A4' }}>
-              recorded test results
-            </div>
-          </div>
-        </div>
-
-        <div className={styles.metric}>
-          <div>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                background: activeInjuries > 0 ? '#FEF2F2' : '#DDF8EF',
+                background:
+                  activeInjuries > 0
+                    ? '#FEF2F2'
+                    : '#DDF8EF',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -6351,7 +6762,11 @@ export default function Fitness() {
             >
               <FitnessIcon
                 type="recovery"
-                color={activeInjuries > 0 ? '#EF4444' : '#10B981'}
+                color={
+                  activeInjuries > 0
+                    ? '#EF4444'
+                    : '#10B981'
+                }
                 size={18}
               />
             </div>
@@ -6359,17 +6774,219 @@ export default function Fitness() {
             <div
               className={styles.metricVal}
               style={{
-                color: activeInjuries > 0 ? '#EF4444' : '#10B981',
-                WebkitTextFillColor: activeInjuries > 0 ? '#EF4444' : '#10B981',
+                color:
+                  activeInjuries > 0
+                    ? '#EF4444'
+                    : '#10B981',
+                WebkitTextFillColor:
+                  activeInjuries > 0
+                    ? '#EF4444'
+                    : '#10B981',
               }}
             >
               {activeInjuries}
             </div>
 
-            <div className={styles.metricLbl}>Active injuries</div>
-            <div style={{ marginTop: 5, fontSize: 13, color: '#8892A4' }}>
-              {activeInjuries > 0 ? 'currently monitored' : 'no active injury'}
+            <div className={styles.metricLbl}>
+              Active injuries
             </div>
+
+            <div
+              style={{
+                marginTop: 5,
+                fontSize: 13,
+                color: '#8892A4',
+              }}
+            >
+              {activeInjuries > 0
+                ? 'currently monitored'
+                : 'no active injury'}
+            </div>
+          </div>
+        </div>
+
+        <div
+          className={`${styles.metric} fitness-goal-card`}
+          style={{
+            padding: 18,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              minWidth: 0,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  'space-between',
+                gap: 10,
+                marginBottom: 10,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  minWidth: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    background: '#F3E8FF',
+                    display: 'grid',
+                    placeItems: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FitnessIcon
+                    type="fitness"
+                    color="#7C3AED"
+                    size={18}
+                  />
+                </div>
+
+                <div
+                  className={styles.metricLbl}
+                  style={{
+                    fontWeight: 700,
+                    color:
+                      'var(--text, #0D1B3E)',
+                  }}
+                >
+                  Fitness Goal
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.btnOutline}
+                onClick={openFitnessGoal}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {fitnessGoal
+                  ? 'Edit Goal'
+                  : 'Set Goal'}
+              </button>
+            </div>
+
+            {fitnessGoal ? (
+              <>
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color:
+                      'var(--text, #0D1B3E)',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {fitnessGoal.title}
+                </div>
+
+                <div
+                  style={{
+                    height: 8,
+                    marginTop: 12,
+                    borderRadius: 999,
+                    background:
+                      'var(--line, #E8EEF8)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      width:
+                        `${fitnessGoalProgress}%`,
+                      height: '100%',
+                      borderRadius: 999,
+                      background: '#7C3AED',
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent:
+                      'space-between',
+                    gap: 12,
+                    marginTop: 7,
+                    fontSize: 12,
+                    color: '#8892A4',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span>
+                    {fitnessGoal.indicator}:{' '}
+                    <strong
+                      style={{
+                        color: '#7C3AED',
+                      }}
+                    >
+                      {fitnessGoalCurrentScore}
+                    </strong>
+                    {' '}→{' '}
+                    <strong
+                      style={{
+                        color:
+                          'var(--text, #0D1B3E)',
+                      }}
+                    >
+                      {fitnessGoal.targetScore}
+                    </strong>
+                    /100
+                  </span>
+
+                  <strong
+                    style={{
+                      color: '#7C3AED',
+                    }}
+                  >
+                    {fitnessGoalProgress}%
+                  </strong>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 5,
+                    fontSize: 12,
+                    color: '#8892A4',
+                  }}
+                >
+                  Deadline:{' '}
+                  {fitnessGoal.deadline
+                    ? fmtDate(
+                        fitnessGoal.deadline
+                      )
+                    : '-'}
+                </div>
+              </>
+            ) : (
+              <div
+                style={{
+                  paddingTop: 8,
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  color: '#8892A4',
+                }}
+              >
+                No fitness goal set yet. Set a target
+                score and deadline to track progress.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -6785,7 +7402,14 @@ export default function Fitness() {
               </div>
 
               {latestCoachUpdate && (
-                <div style={{ fontSize: 13, color: 'var(--text-muted, #8892A4)' }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color:
+                      'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  Updated:{' '}
                   {new Date(
                     latestCoachUpdate
                   ).toLocaleDateString('en-MY', {
@@ -6892,15 +7516,48 @@ export default function Fitness() {
               )}
               <div
                 style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: '#1A5FFF',
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.6,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
                   marginBottom: 7,
+                  flexWrap: 'wrap',
                 }}
               >
-                Fitness action plan
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: '#1A5FFF',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                  }}
+                >
+                  Fitness action plan
+                </div>
+
+                {coachActionPlans.fitnessReviewDate && (
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color:
+                        'var(--text-muted, #8892A4)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Next review:{' '}
+                    <strong
+                      style={{
+                        color:
+                          'var(--text, #0D1B3E)',
+                      }}
+                    >
+                      {fmtDate(
+                        coachActionPlans.fitnessReviewDate
+                      )}
+                    </strong>
+                  </div>
+                )}
               </div>
 
               <div
@@ -7013,12 +7670,16 @@ export default function Fitness() {
                                         plans.performanceDeadline,
                                       performanceCompletion:
                                         plans.performanceCompletion,
+                                      performanceReviewDate:
+                                        plans.performanceReviewDate,
                                       fitness:
                                         plans.fitness,
                                       fitnessDeadline:
                                         plans.fitnessDeadline,
                                       fitnessCompletion:
                                         nextValue,
+                                      fitnessReviewDate:
+                                        plans.fitnessReviewDate,
                                     }
                                   ),
                               }
@@ -7143,47 +7804,310 @@ export default function Fitness() {
               your next review.
             </div>
 
-            <textarea
-              className={styles.formTextarea}
-              rows={6}
-              maxLength={1000}
-              placeholder="Example: Complete interval running 3 times this week for 20 minutes, do 2 strength sessions, and record a recovery check-in after each training day."
-              value={draftPersonalActionPlan}
-              onChange={event =>
-                setDraftPersonalActionPlan(
-                  event.target.value
-                )
-              }
+            <div
               style={{
-                minHeight: 120,
+                position: 'relative',
               }}
-            />
+            >
+              <textarea
+                className={styles.formTextarea}
+                rows={6}
+                maxLength={1000}
+                placeholder="Example: Complete interval running 3 times this week for 20 minutes, do 2 strength sessions, and record a recovery check-in after each training day."
+                value={draftPersonalActionPlan}
+                readOnly={
+                  Boolean(personalActionPlan) &&
+                  !editingPersonalActionPlan
+                }
+                onChange={event =>
+                  setDraftPersonalActionPlan(
+                    event.target.value
+                  )
+                }
+                style={{
+                  minHeight: 120,
+                  background:
+                    Boolean(personalActionPlan) &&
+                    !editingPersonalActionPlan
+                      ? 'var(--soft, #F8FAFC)'
+                      : undefined,
+                  cursor:
+                    Boolean(personalActionPlan) &&
+                    !editingPersonalActionPlan
+                      ? 'default'
+                      : 'text',
+                }}
+              />
+
+              {personalActionPlanStatus && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 14,
+                    right: 16,
+                    transform:
+                      'rotate(-8deg)',
+                    border:
+                      `3px solid ${personalActionPlanStatus.border}`,
+                    color:
+                      personalActionPlanStatus.color,
+                    borderRadius: 10,
+                    padding: '7px 14px',
+                    fontSize: 17,
+                    fontWeight: 900,
+                    letterSpacing: 1.4,
+                    opacity: 0.52,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {personalActionPlanStatus.label}
+                </div>
+              )}
+            </div>
+
+            <div
+              className="fitness-personal-action-plan-controls"
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  'minmax(180px, 0.7fr) minmax(260px, 1.3fr)',
+                gap: 16,
+                marginTop: 14,
+                alignItems: 'end',
+              }}
+            >
+              <div>
+                <label
+                  className={styles.formLabel}
+                  style={{
+                    display: 'block',
+                    marginBottom: 7,
+                  }}
+                >
+                  Action plan deadline
+                </label>
+
+                {Boolean(personalActionPlan) &&
+                !editingPersonalActionPlan ? (
+                  <div
+                    className={styles.formInput}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      minHeight: 42,
+                      background:
+                        'var(--soft, #F8FAFC)',
+                      color:
+                        'var(--text, #0D1B3E)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {draftPersonalActionPlanDeadline
+                      ? fmtDate(
+                          draftPersonalActionPlanDeadline
+                        )
+                      : '-'}
+                  </div>
+                ) : (
+                  <input
+                    type="date"
+                    className={styles.formInput}
+                    min={todayISO()}
+                    value={
+                      draftPersonalActionPlanDeadline
+                    }
+                    onChange={event =>
+                      setDraftPersonalActionPlanDeadline(
+                        event.target.value
+                      )
+                    }
+                  />
+                )}
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent:
+                      'space-between',
+                    gap: 12,
+                    marginBottom: 7,
+                  }}
+                >
+                  <label
+                    className={styles.formLabel}
+                    style={{ marginBottom: 0 }}
+                  >
+                    Completion rate
+                  </label>
+
+                  <strong
+                    style={{
+                      color:
+                        draftPersonalActionPlanCompletion >= 100
+                          ? '#10B981'
+                          : '#1A5FFF',
+                      fontSize: 14,
+                    }}
+                  >
+                    {draftPersonalActionPlanCompletion}%
+                  </strong>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={
+                    draftPersonalActionPlanCompletion
+                  }
+                  onChange={event =>
+                    setDraftPersonalActionPlanCompletion(
+                      clamp(
+                        event.target.value
+                      )
+                    )
+                  }
+                  style={{
+                    width: '100%',
+                    accentColor: '#1A5FFF',
+                    cursor: 'pointer',
+                  }}
+                />
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent:
+                      'space-between',
+                    marginTop: 4,
+                    color: '#8892A4',
+                    fontSize: 11,
+                  }}
+                >
+                  <span>0%</span>
+                  <span>50%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+            </div>
 
             <div
               style={{
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent:
+                  'space-between',
                 alignItems: 'center',
                 gap: 10,
-                marginTop: 10,
+                marginTop: 14,
+                flexWrap: 'wrap',
               }}
             >
               <div
                 style={{
-                  fontSize: 13,
-                  color: '#8892A4',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  flexWrap: 'wrap',
                 }}
               >
-                {draftPersonalActionPlan.length}/1000
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: '#8892A4',
+                  }}
+                >
+                  {draftPersonalActionPlan.length}/1000
+                </span>
+
+                {draftPersonalActionPlanDeadline && (
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: '#8892A4',
+                    }}
+                  >
+                    Deadline:{' '}
+                    <strong
+                      style={{
+                        color:
+                          'var(--text, #0D1B3E)',
+                      }}
+                    >
+                      {fmtDate(
+                        draftPersonalActionPlanDeadline
+                      )}
+                    </strong>
+                  </span>
+                )}
               </div>
 
-              <button
-                className={styles.btnPrimary}
-                onClick={savePersonalActionPlan}
-                disabled={saving}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                  justifyContent: 'flex-end',
+                }}
               >
-                {saving ? 'Saving...' : 'Save Action Plan'}
-              </button>
+                {Boolean(personalActionPlan) &&
+                  !editingPersonalActionPlan && (
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      onClick={() =>
+                        setEditingPersonalActionPlan(
+                          true
+                        )
+                      }
+                      disabled={saving}
+                    >
+                      Edit Plan
+                    </button>
+                  )}
+
+                {Boolean(personalActionPlan) &&
+                  editingPersonalActionPlan && (
+                    <button
+                      type="button"
+                      className={styles.btnOutline}
+                      onClick={() => {
+                        setDraftPersonalActionPlan(
+                          personalActionPlan
+                        )
+                        setDraftPersonalActionPlanDeadline(
+                          personalActionPlanDeadline
+                        )
+                        setDraftPersonalActionPlanCompletion(
+                          personalActionPlanCompletion
+                        )
+                        setEditingPersonalActionPlan(
+                          false
+                        )
+                      }}
+                      disabled={saving}
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  onClick={savePersonalActionPlan}
+                  disabled={saving}
+                >
+                  {saving
+                    ? 'Saving...'
+                    : Boolean(personalActionPlan) &&
+                        !editingPersonalActionPlan
+                      ? 'Save Progress'
+                      : 'Save Action Plan'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -7250,8 +8174,9 @@ export default function Fitness() {
             className="fitness-training-filters"
             style={{
               display: 'grid',
-              gridTemplateColumns:
-                'minmax(260px, 1fr) minmax(140px, 180px) auto',
+              gridTemplateColumns: hasCoach
+                ? 'minmax(240px, 1fr) minmax(130px, 165px) minmax(130px, 165px) auto'
+                : 'minmax(260px, 1fr) minmax(140px, 180px) auto',
               gap: 8,
               marginBottom: 10,
               alignItems: 'center',
@@ -7288,13 +8213,32 @@ export default function Fitness() {
               <option value="absent">Absent</option>
             </select>
 
+            {hasCoach && (
+              <select
+                className={styles.formSelect}
+                value={filter.source}
+                onChange={event =>
+                  setFilter(current => ({
+                    ...current,
+                    source: event.target.value,
+                  }))
+                }
+              >
+                <option value="All">All sources</option>
+                <option value="player">Added by player</option>
+                <option value="coach">Added by coach</option>
+              </select>
+            )}
+
             {(filter.search ||
-              filter.status !== 'All') && (
+              filter.status !== 'All' ||
+              filter.source !== 'All') && (
               <button
                 type="button"
                 onClick={() =>
                   setFilter({
                     status: 'All',
+                    source: 'All',
                     search: '',
                   })
                 }
@@ -7820,9 +8764,7 @@ export default function Fitness() {
                       style={{
                         display: 'grid',
                         gridTemplateColumns:
-                          injury.imageUrl
-                            ? '42px minmax(0, 1fr) 112px'
-                            : 'minmax(0, 1fr) 112px',
+                          'minmax(0, 1fr) 112px',
                         gap: 10,
                         alignItems: 'center',
                         minHeight: 68,
@@ -7832,20 +8774,6 @@ export default function Fitness() {
                           '1px solid var(--line, #E8EEF8)',
                       }}
                     >
-                      {injury.imageUrl && (
-                        <img
-                          src={injury.imageUrl}
-                          alt=""
-                          style={{
-                            width: 42,
-                            height: 42,
-                            borderRadius: 8,
-                            objectFit: 'cover',
-                            background: '#F7F9FF',
-                          }}
-                        />
-                      )}
-
                       <div
                         style={{
                           minWidth: 0,
@@ -8031,6 +8959,15 @@ export default function Fitness() {
               padding: 16px !important;
               border-radius: 16px !important;
               box-sizing: border-box;
+            }
+
+            .fitness-goal-card {
+              grid-column: 1 / -1 !important;
+              min-height: auto !important;
+            }
+
+            .fitness-personal-action-plan-controls {
+              grid-template-columns: 1fr !important;
             }
 
             .fitness-mobile-metrics > * > div {
@@ -8588,6 +9525,219 @@ export default function Fitness() {
                 onClick={saveInitialFitness}
               >
                 {saving ? 'Saving...' : 'Save initial levels'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFitnessGoal && (
+        <div
+          className={styles.modalOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="fitness-goal-title"
+          onClick={event => {
+            if (
+              event.target ===
+                event.currentTarget &&
+              !saving
+            ) {
+              setShowFitnessGoal(false)
+            }
+          }}
+        >
+          <div
+            className={`${styles.modal} fitness-mobile-modal`}
+            style={{
+              width: 'min(92vw, 100%)',
+              maxWidth: 520,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div className={styles.modalHead}>
+              <div>
+                <div
+                  id="fitness-goal-title"
+                  className={styles.modalTitle}
+                >
+                  {fitnessGoal
+                    ? 'Edit Fitness Goal'
+                    : 'Set Fitness Goal'}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 5,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    color:
+                      'var(--text-muted, #8892A4)',
+                  }}
+                >
+                  Set one personal fitness target and
+                  track progress from the latest
+                  fitness indicator score.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() =>
+                  setShowFitnessGoal(false)
+                }
+                disabled={saving}
+                aria-label="Close fitness goal"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>
+                Goal
+              </label>
+
+              <input
+                className={styles.formInput}
+                type="text"
+                value={fitnessGoalForm.title}
+                placeholder="e.g. Improve Endurance"
+                onChange={event =>
+                  setFitnessGoalForm(
+                    current => ({
+                      ...current,
+                      title:
+                        event.target.value,
+                    })
+                  )
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  'repeat(2, minmax(0, 1fr))',
+                gap: 12,
+              }}
+            >
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Fitness indicator
+                </label>
+
+                <select
+                  className={styles.formInput}
+                  value={
+                    fitnessGoalForm.indicator
+                  }
+                  onChange={event =>
+                    setFitnessGoalForm(
+                      current => ({
+                        ...current,
+                        indicator:
+                          event.target.value,
+                      })
+                    )
+                  }
+                >
+                  {[
+                    'Endurance',
+                    'Speed',
+                    'Strength',
+                    'Agility',
+                    'Recovery',
+                  ].map(option => (
+                    <option
+                      key={option}
+                      value={option}
+                    >
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>
+                  Target score
+                </label>
+
+                <input
+                  className={styles.formInput}
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={
+                    fitnessGoalForm.targetScore
+                  }
+                  onChange={event =>
+                    setFitnessGoalForm(
+                      current => ({
+                        ...current,
+                        targetScore:
+                          event.target.value,
+                      })
+                    )
+                  }
+                />
+              </div>
+            </div>
+
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>
+                Deadline
+              </label>
+
+              <input
+                className={styles.formInput}
+                type="date"
+                value={fitnessGoalForm.deadline}
+                min={todayISO()}
+                onChange={event =>
+                  setFitnessGoalForm(
+                    current => ({
+                      ...current,
+                      deadline:
+                        event.target.value,
+                    })
+                  )
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 10,
+                marginTop: 18,
+              }}
+            >
+              <button
+                type="button"
+                className={styles.btnOutline}
+                disabled={saving}
+                onClick={() =>
+                  setShowFitnessGoal(false)
+                }
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                disabled={saving}
+                onClick={saveFitnessGoal}
+              >
+                {saving
+                  ? 'Saving...'
+                  : 'Save Goal'}
               </button>
             </div>
           </div>

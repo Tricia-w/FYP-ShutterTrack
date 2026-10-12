@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import styles from '../../../Layout/Pages.module.css'
 
-
 function ModalShell({
   title,
   children,
@@ -20,6 +19,9 @@ function ModalShell({
         style={{
           width: 'min(92vw, 100%)',
           maxWidth,
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
         }}
       >
         <div className={styles.modalHead}>
@@ -32,13 +34,11 @@ function ModalShell({
             ×
           </button>
         </div>
-
         {children}
       </div>
     </div>
   )
 }
-
 
 function FormActions({
   onSave,
@@ -75,7 +75,6 @@ function FormActions({
       ) : (
         <div />
       )}
-
       <div style={{ display: 'flex', gap: 10 }}>
         <button
           type="button"
@@ -85,7 +84,6 @@ function FormActions({
         >
           Cancel
         </button>
-
         <button
           type="button"
           className={styles.btnPrimary}
@@ -103,19 +101,15 @@ function getBodyPointFromName(name = '') {
   const lower = String(name || '')
     .toLowerCase()
     .trim()
-
   if (!lower) return null
-
   const isLeft = /\bleft\b/.test(lower)
   const isRight = /\bright\b/.test(lower)
-
   const sideX = isLeft ? 50 : isRight ? 70 : 60
   const sideLabel = isLeft
     ? 'Left'
     : isRight
       ? 'Right'
       : ''
-
   if (
     lower.includes('head') ||
     lower.includes('forehead')
@@ -126,7 +120,6 @@ function getBodyPointFromName(name = '') {
       label: 'Head',
     }
   }
-
   if (lower.includes('neck')) {
     return {
       x: sideX,
@@ -136,7 +129,6 @@ function getBodyPointFromName(name = '') {
         : 'Neck',
     }
   }
-
   if (lower.includes('shoulder')) {
     return {
       x: isLeft ? 42 : isRight ? 78 : 60,
@@ -146,7 +138,6 @@ function getBodyPointFromName(name = '') {
         : 'Shoulder',
     }
   }
-
   if (
     lower.includes('upper chest') ||
     lower.includes('chest') ||
@@ -160,7 +151,6 @@ function getBodyPointFromName(name = '') {
         : 'Upper chest',
     }
   }
-
   if (
     lower.includes('upper arm') ||
     lower.includes('bicep') ||
@@ -178,7 +168,6 @@ function getBodyPointFromName(name = '') {
         : 'Upper arm',
     }
   }
-
   if (
     lower.includes('elbow')
   ) {
@@ -190,7 +179,6 @@ function getBodyPointFromName(name = '') {
         : 'Elbow',
     }
   }
-
   if (
     lower.includes('forearm')
   ) {
@@ -202,7 +190,6 @@ function getBodyPointFromName(name = '') {
         : 'Forearm',
     }
   }
-
   if (
     lower.includes('wrist') ||
     lower.includes('hand') ||
@@ -217,7 +204,6 @@ function getBodyPointFromName(name = '') {
         : 'Wrist',
     }
   }
-
   if (
     lower.includes('ribs') ||
     lower.includes('rib')
@@ -230,7 +216,6 @@ function getBodyPointFromName(name = '') {
         : 'Ribs',
     }
   }
-
   if (
     lower.includes('waist') ||
     lower.includes('abdomen') ||
@@ -244,7 +229,6 @@ function getBodyPointFromName(name = '') {
         : 'Waist',
     }
   }
-
   if (
     lower.includes('back')
   ) {
@@ -258,7 +242,6 @@ function getBodyPointFromName(name = '') {
           : 'Back',
     }
   }
-
   if (
     lower.includes('hip') ||
     lower.includes('groin')
@@ -271,7 +254,6 @@ function getBodyPointFromName(name = '') {
         : 'Hip',
     }
   }
-
   if (
     lower.includes('thigh') ||
     lower.includes('hamstring') ||
@@ -286,7 +268,6 @@ function getBodyPointFromName(name = '') {
         : 'Thigh',
     }
   }
-
   if (lower.includes('knee')) {
     return {
       x: sideX,
@@ -296,7 +277,6 @@ function getBodyPointFromName(name = '') {
         : 'Knee',
     }
   }
-
   if (
     lower.includes('calf') ||
     lower.includes('shin') ||
@@ -310,7 +290,6 @@ function getBodyPointFromName(name = '') {
         : 'Calf',
     }
   }
-
   if (
     lower.includes('ankle')
   ) {
@@ -322,7 +301,6 @@ function getBodyPointFromName(name = '') {
         : 'Ankle',
     }
   }
-
   if (
     lower.includes('foot') ||
     lower.includes('heel') ||
@@ -336,28 +314,23 @@ function getBodyPointFromName(name = '') {
         : 'Foot',
     }
   }
-
   return null
 }
 
 function getTappedBodyLabel(x, y) {
   const px = Number(x)
   const py = Number(y)
-
   if (!Number.isFinite(px) || !Number.isFinite(py)) {
     return ''
   }
-
   const side =
     px < 55
       ? 'Left'
       : px > 65
         ? 'Right'
         : ''
-
   if (py <= 25) return 'Head'
   if (py <= 34) return side ? `${side} neck` : 'Neck'
-
   if (py <= 48) {
     if (px < 48) return 'Left shoulder'
     if (px > 72) return 'Right shoulder'
@@ -365,37 +338,30 @@ function getTappedBodyLabel(x, y) {
     if (px > 60) return 'Right upper chest'
     return 'Upper chest'
   }
-
   if (py <= 68) {
     if (px < 38) return 'Left upper arm'
     if (px > 82) return 'Right upper arm'
     return side ? `${side} ribs` : 'Chest'
   }
-
   if (py <= 88) {
     if (px < 32) return 'Left elbow'
     if (px > 88) return 'Right elbow'
     return side ? `${side} waist` : 'Waist'
   }
-
   if (py <= 98) {
     if (px < 32) return 'Left wrist'
     if (px > 88) return 'Right wrist'
     return side ? `${side} hip` : 'Hip'
   }
-
   if (py <= 114) {
     return side ? `${side} thigh` : 'Thigh'
   }
-
   if (py <= 130) {
     return side ? `${side} knee` : 'Knee'
   }
-
   if (py <= 150) {
     return side ? `${side} calf` : 'Calf'
   }
-
   return side ? `${side} ankle` : 'Ankle'
 }
 
@@ -409,69 +375,54 @@ export default function InjuryModal({
   saving,
 }) {
   const injuryImageInputRef = useRef(null)
-
   const handleBodyTap = event => {
     const svg = event.currentTarget
     const rect = svg.getBoundingClientRect()
-
     const x = ((event.clientX - rect.left) / rect.width) * 120
     const y = ((event.clientY - rect.top) / rect.height) * 170
-
     const roundedX = Math.round(x)
     const roundedY = Math.round(y)
     const suggestedLabel = getTappedBodyLabel(
       roundedX,
       roundedY
     )
-
     onChange('bodyX', roundedX)
     onChange('bodyY', roundedY)
-
     const currentName = String(form.name || '').trim()
-
     const isAutoGeneratedName =
       !currentName ||
       /^[a-z ]+\s+(pain|injury|strain|sprain)$/i.test(
         currentName
       )
-
     if (isAutoGeneratedName && suggestedLabel) {
       onChange('name', `${suggestedLabel} pain`)
     }
   }
-
   const handleInjuryImage = event => {
     const file = event.target.files?.[0]
-
     if (!file) return
-
     if (!file.type.startsWith('image/')) {
       return
     }
-
     if (file.size > 10 * 1024 * 1024) {
       alert(
         'Image is too large. Please upload a photo smaller than 10 MB.'
       )
       return
     }
-
     if (
       form.imageUrl &&
       form.imageUrl.startsWith('blob:')
     ) {
       URL.revokeObjectURL(form.imageUrl)
     }
-
     onChange('imageFile', file)
     onChange('imageUrl', URL.createObjectURL(file))
     onChange('imageRemoved', false)
-
     if (event.target) {
       event.target.value = ''
     }
   }
-
   const clearInjuryImage = () => {
     if (
       form.imageUrl &&
@@ -479,13 +430,11 @@ export default function InjuryModal({
     ) {
       URL.revokeObjectURL(form.imageUrl)
     }
-
     onChange('imageFile', null)
     onChange('imageUrl', '')
     onChange('imagePath', '')
     onChange('imageRemoved', true)
   }
-
   const hasBodyPoint =
     form.bodyX !== null &&
     form.bodyX !== undefined &&
@@ -493,16 +442,15 @@ export default function InjuryModal({
     form.bodyY !== undefined &&
     Number.isFinite(Number(form.bodyX)) &&
     Number.isFinite(Number(form.bodyY))
-
   const severityColor =
     form.severity === 'Severe'
       ? '#EF4444'
       : form.severity === 'Moderate'
         ? '#F59E0B'
         : '#10B981'
-
   return (
     <ModalShell title={title} onClose={onClose}>
+
       <div className={styles.formRow}>
         <label className={styles.formLabel}>
           Injury description
@@ -515,9 +463,7 @@ export default function InjuryModal({
             const value = event.target.value
             const detectedPoint =
               getBodyPointFromName(value)
-
             onChange('name', value)
-
             if (detectedPoint) {
               onChange('bodyX', detectedPoint.x)
               onChange('bodyY', detectedPoint.y)
@@ -537,7 +483,6 @@ export default function InjuryModal({
           Type a recognised body part to place the dot automatically,
           tap the body diagram, or use both.</div>
       </div>
-
       <div
         className="fitness-injury-meta-grid"
         style={{
@@ -546,6 +491,7 @@ export default function InjuryModal({
           gap: 14,
         }}
       >
+
         <div className={styles.formRow}>
           <label className={styles.formLabel}>Date</label>
           <input
@@ -609,7 +555,6 @@ export default function InjuryModal({
           >
             Tap injury location optional
           </label>
-
           {hasBodyPoint && (
             <button
               type="button"
@@ -627,7 +572,6 @@ export default function InjuryModal({
             </button>
           )}
         </div>
-
         <div
           style={{
             display: 'flex',
@@ -661,7 +605,6 @@ export default function InjuryModal({
                 userSelect: 'none',
               }}
             />
-
             <svg
               viewBox="0 0 120 170"
               width="180"
@@ -701,7 +644,6 @@ export default function InjuryModal({
                 <path d="M66 100 C69 116, 72 132, 75 152" />
                 <path d="M75 152 L84 154" />
               </g>
-
               {hasBodyPoint && (
                 <>
                   <circle
@@ -721,7 +663,6 @@ export default function InjuryModal({
             </svg>
           </div>
         </div>
-
         <div
           style={{
             marginTop: 6,
@@ -743,7 +684,6 @@ export default function InjuryModal({
         <label className={styles.formLabel}>
           Injury photo optional
         </label>
-
         <input
           ref={injuryImageInputRef}
           type="file"
@@ -751,7 +691,6 @@ export default function InjuryModal({
           onChange={handleInjuryImage}
           style={{ display: 'none' }}
         />
-
         {!form.imageUrl ? (
           <button
             type="button"
@@ -795,7 +734,6 @@ export default function InjuryModal({
               >
                 Injury photo
               </span>
-
               <button
                 type="button"
                 onClick={clearInjuryImage}
@@ -812,7 +750,6 @@ export default function InjuryModal({
                 Remove
               </button>
             </div>
-
             <img
               src={form.imageUrl}
               alt="Injury preview"
@@ -826,7 +763,6 @@ export default function InjuryModal({
             />
           </div>
         )}
-
         <div
           style={{
             marginTop: 5,

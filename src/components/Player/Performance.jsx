@@ -680,6 +680,7 @@ function PerformanceComparisonRow({
 }
 
 const PERFORMANCE_NOTIFICATION_TYPES = [
+  'skill_verification_received',
   'coach_performance_assessment',
   'coach_performance_feedback',
   'coach_progress',
@@ -2170,7 +2171,7 @@ export default function Performance() {
           .performanceMatchResultGrid {
             grid-template-columns: minmax(0, 1fr) !important;
           }
-
+            
           .performanceMatchScoreGrid {
             grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
           }
@@ -4743,7 +4744,6 @@ export default function Performance() {
           </div>
         </div>
       )}
-
 
       {showVerificationDetailsModal && (
         <div

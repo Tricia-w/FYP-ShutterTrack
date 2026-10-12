@@ -17,7 +17,7 @@ const skillColumns = [
 
 const defaultSkills = skillColumns.map(skill => ({
   ...skill,
-  val: 50,
+  val: 0,
   low: true,
   source: 'Self-reported',
   updatedBy: 'Player',

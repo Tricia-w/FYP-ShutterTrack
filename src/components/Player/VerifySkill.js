@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
 import { supabase } from "../../lib/supabase";
 import styles from "../Layout/Pages.module.css";
 import Loader from "../Loader/Loader";
@@ -60,7 +59,6 @@ function SkillAssessmentRow({
       >
         {label}
       </div>
-
       <input
         type="range"
         min="1"
@@ -75,7 +73,6 @@ function SkillAssessmentRow({
           margin: 0,
         }}
       />
-
       <div
         style={{
           textAlign: "center",
@@ -90,7 +87,6 @@ function SkillAssessmentRow({
       >
         {playerScore}
       </div>
-
       <div
         style={{
           height: 30,
@@ -124,13 +120,21 @@ export default function VerifySkill() {
   const showLoader = useLoadingDelay(loading, 350);
 
   const [request, setRequest] = useState(null);
+
   const [playerName, setPlayerName] = useState("Player");
 
   const [currentUserId, setCurrentUserId] = useState("");
+
   const [verifierRole, setVerifierRole] = useState("player");
 
+  const [canVerifyAsPlayer, setCanVerifyAsPlayer] = useState(false);
+
+  const [canVerifyAsCoach, setCanVerifyAsCoach] = useState(false);
+
   const [alreadyVerified, setAlreadyVerified] = useState(false);
+
   const [existingVerification, setExistingVerification] = useState(null);
+
   const [verifiedSuccessfully, setVerifiedSuccessfully] = useState(false);
 
   const [ratings, setRatings] = useState({
@@ -141,11 +145,12 @@ export default function VerifySkill() {
     net_play: 50,
     serve: 50,
   });
+
   const [feedback, setFeedback] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
 
+  const [error, setError] = useState("");
   const isOwner = useMemo(() => {
     return Boolean(
       currentUserId &&
@@ -157,29 +162,23 @@ export default function VerifySkill() {
   const loadVerificationRequest = useCallback(async () => {
     setLoading(true);
     setError("");
-
     try {
       if (!token) {
         throw new Error("Verification token is missing.");
       }
-
       const {
         data: { user },
         error: authError,
       } = await supabase.auth.getUser();
-
       if (authError) {
         throw authError;
       }
-
       if (!user) {
         throw new Error(
           "Please log in to ShuttleTrack before reviewing this assessment."
         );
       }
-
       setCurrentUserId(user.id);
-
       const {
         data: requestRow,
         error: requestError,
@@ -189,25 +188,20 @@ export default function VerifySkill() {
         .eq("token", token)
         .eq("is_active", true)
         .maybeSingle();
-
       if (requestError) {
         throw requestError;
       }
-
       if (!requestRow) {
         throw new Error(
           "This verification request is invalid, expired, or has been replaced by a newer assessment."
         );
       }
-
       setRequest(requestRow);
-
       const initialRatings = {};
       SKILLS.forEach(skill => {
         initialRatings[skill.key] = clampScore(requestRow[skill.key]);
       });
       setRatings(initialRatings);
-
       if (requestRow.player_profile_id) {
         const {
           data: profileRow,
@@ -217,37 +211,85 @@ export default function VerifySkill() {
           .select("display_name")
           .eq("id", requestRow.player_profile_id)
           .maybeSingle();
-
         if (profileError) {
           console.warn(
             "Could not load player name for skill verification:",
             profileError
           );
         }
-
         if (profileRow?.display_name) {
           setPlayerName(profileRow.display_name);
         }
       }
-
-      const {
-        data: coachProfile,
-        error: coachError,
-      } = await supabase
-        .from("coach_profiles")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (coachError) {
+      const [
+        appUserResult,
+        playerProfileResult,
+        coachProfileResult,
+      ] = await Promise.all([
+        supabase
+          .from("app_users")
+          .select("role, has_player_access, has_coach_access")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("player_profiles")
+          .select("id")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("coach_profiles")
+          .select("id")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ]);
+      if (appUserResult.error) {
         console.warn(
-          "Could not determine coach role for verification:",
-          coachError
+          "Could not load account roles for verification:",
+          appUserResult.error
         );
       }
-
-      setVerifierRole(coachProfile ? "coach" : "player");
-
+      if (playerProfileResult.error) {
+        console.warn(
+          "Could not determine player role for verification:",
+          playerProfileResult.error
+        );
+      }
+      if (coachProfileResult.error) {
+        console.warn(
+          "Could not determine coach role for verification:",
+          coachProfileResult.error
+        );
+      }
+      const accountRole = String(
+        appUserResult.data?.role || ""
+      ).toLowerCase();
+      const playerAvailable =
+        appUserResult.data?.has_player_access === true ||
+        accountRole === "player" ||
+        Boolean(playerProfileResult.data);
+      const coachAvailable =
+        appUserResult.data?.has_coach_access === true ||
+        accountRole === "coach" ||
+        Boolean(coachProfileResult.data);
+      setCanVerifyAsPlayer(playerAvailable);
+      setCanVerifyAsCoach(coachAvailable);
+      const activeRole = String(
+        localStorage.getItem("activeRole") || ""
+      ).toLowerCase();
+      let defaultVerifierRole = "player";
+      if (activeRole === "coach" && coachAvailable) {
+        defaultVerifierRole = "coach";
+      } else if (
+        activeRole === "player" &&
+        playerAvailable
+      ) {
+        defaultVerifierRole = "player";
+      } else if (playerAvailable) {
+        defaultVerifierRole = "player";
+      } else if (coachAvailable) {
+        defaultVerifierRole = "coach";
+      }
+      setVerifierRole(defaultVerifierRole);
       const {
         data: existingRow,
         error: existingError,
@@ -259,15 +301,18 @@ export default function VerifySkill() {
         .eq("request_id", requestRow.id)
         .eq("verifier_user_id", user.id)
         .maybeSingle();
-
       if (existingError) {
         throw existingError;
       }
-
       if (existingRow) {
         setAlreadyVerified(true);
         setExistingVerification(existingRow);
-
+        if (
+          existingRow.verifier_role === "player" ||
+          existingRow.verifier_role === "coach"
+        ) {
+          setVerifierRole(existingRow.verifier_role);
+        }
         const savedRatings = {};
         SKILLS.forEach(skill => {
           savedRatings[skill.key] = clampScore(
@@ -280,7 +325,6 @@ export default function VerifySkill() {
         setAlreadyVerified(false);
         setExistingVerification(null);
       }
-
     } catch (loadError) {
       console.error("Verify skill load error:", loadError);
       setError(
@@ -309,7 +353,6 @@ export default function VerifySkill() {
       navigate("/coach");
       return;
     }
-
     navigate("/performance");
   };
 
@@ -317,20 +360,30 @@ export default function VerifySkill() {
     if (!request?.id || !currentUserId) {
       return;
     }
-
     if (isOwner) {
       setError("You cannot review your own skill assessment.");
       return;
     }
-
     if (alreadyVerified) {
       setError("You have already submitted your assessment for this request.");
       return;
     }
-
+    if (
+      verifierRole === "player" &&
+      !canVerifyAsPlayer
+    ) {
+      setError("This account does not have Player access.");
+      return;
+    }
+    if (
+      verifierRole === "coach" &&
+      !canVerifyAsCoach
+    ) {
+      setError("This account does not have Coach access.");
+      return;
+    }
     setSubmitting(true);
     setError("");
-
     try {
       const {
         data: freshRequest,
@@ -340,24 +393,20 @@ export default function VerifySkill() {
         .select("id, is_active, player_user_id")
         .eq("id", request.id)
         .maybeSingle();
-
       if (freshRequestError) {
         throw freshRequestError;
       }
-
       if (!freshRequest?.is_active) {
         throw new Error(
           "This assessment is no longer active. The player may have updated their skill ratings."
         );
       }
-
       if (
         String(freshRequest.player_user_id) ===
         String(currentUserId)
       ) {
         throw new Error("You cannot review your own skill assessment.");
       }
-
       const payload = {
         request_id: request.id,
         verifier_user_id: currentUserId,
@@ -371,7 +420,6 @@ export default function VerifySkill() {
         feedback: feedback.trim() || null,
         verified_at: new Date().toISOString(),
       };
-
       const {
         data: insertedRow,
         error: insertError,
@@ -382,7 +430,6 @@ export default function VerifySkill() {
           "id, verifier_role, verified_at, smash, defense, footwork, drop_shot, net_play, serve, feedback"
         )
         .single();
-
       if (insertError) {
         if (
           insertError.code === "23505" ||
@@ -395,10 +442,59 @@ export default function VerifySkill() {
             "You have already submitted an assessment for this request."
           );
         }
-
         throw insertError;
       }
-
+      let verifierName = verifierRole === "coach" ? "A coach" : "A player";
+      try {
+        const [
+          { data: accountRow },
+          { data: playerProfileRow },
+          { data: coachProfileRow },
+        ] = await Promise.all([
+          supabase
+            .from("app_users")
+            .select("full_name")
+            .eq("user_id", currentUserId)
+            .maybeSingle(),
+          supabase
+            .from("player_profiles")
+            .select("display_name")
+            .eq("user_id", currentUserId)
+            .maybeSingle(),
+          supabase
+            .from("coach_profiles")
+            .select("display_name")
+            .eq("user_id", currentUserId)
+            .maybeSingle(),
+        ]);
+        verifierName =
+          coachProfileRow?.display_name?.trim() ||
+          playerProfileRow?.display_name?.trim() ||
+          accountRow?.full_name?.trim() ||
+          verifierName;
+      } catch (nameError) {
+        console.warn(
+          "Could not load verifier name for notification:",
+          nameError
+        );
+      }
+      const { error: notificationError } = await supabase
+        .from("notifications")
+        .insert({
+          user_id: freshRequest.player_user_id,
+          title: "Skill Assessment Verified",
+          message: `${verifierName} submitted a skill assessment for you.`,
+          type: "info",
+          source_type: "skill_verification_received",
+          action_url: "/performance",
+          is_read: false,
+        });
+      if (notificationError) {
+        console.error(
+          "Create skill verification notification error:",
+          notificationError
+        );
+      }
       setExistingVerification(insertedRow);
       setAlreadyVerified(true);
       setVerifiedSuccessfully(true);
@@ -461,7 +557,6 @@ export default function VerifySkill() {
           >
             !
           </div>
-
           <div
             style={{
               fontSize: 20,
@@ -471,7 +566,6 @@ export default function VerifySkill() {
           >
             Assessment unavailable
           </div>
-
           <div
             style={{
               marginTop: 8,
@@ -483,7 +577,6 @@ export default function VerifySkill() {
             {error ||
               "This skill assessment request could not be loaded."}
           </div>
-
           <button
             className={styles.btnPrimary}
             style={{ marginTop: 18 }}
@@ -504,7 +597,6 @@ export default function VerifySkill() {
           Give your own rating for each skill and submit it as verification
         </div>
       </div>
-
       <div
         style={{
           maxWidth: 820,
@@ -539,7 +631,6 @@ export default function VerifySkill() {
                 .slice(0, 2)
                 .toUpperCase()}
             </div>
-
             <div style={{ minWidth: 0, flex: 1 }}>
               <div
                 style={{
@@ -550,7 +641,6 @@ export default function VerifySkill() {
               >
                 {playerName}&apos;s Assessment
               </div>
-
               <div
                 style={{
                   marginTop: 3,
@@ -565,7 +655,6 @@ export default function VerifySkill() {
                 .
               </div>
             </div>
-
             <span
               className={
                 alreadyVerified
@@ -576,7 +665,117 @@ export default function VerifySkill() {
               {alreadyVerified ? "Submitted" : "Pending"}
             </span>
           </div>
-
+          {!isOwner && (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: `1px solid ${C.line}`,
+                background: C.card,
+              }}
+            >
+              <div
+                style={{
+                  marginBottom: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: C.text,
+                }}
+              >
+                Verify this assessment as
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                {canVerifyAsPlayer && (
+                  <button
+                    type="button"
+                    onClick={() => setVerifierRole("player")}
+                    disabled={alreadyVerified || submitting}
+                    style={{
+                      border:
+                        verifierRole === "player"
+                          ? "1px solid #1A5FFF"
+                          : `1px solid ${C.line}`,
+                      background:
+                        verifierRole === "player"
+                          ? "#EEF4FF"
+                          : C.card,
+                      color:
+                        verifierRole === "player"
+                          ? "#1A5FFF"
+                          : C.text,
+                      borderRadius: 9,
+                      padding: "8px 14px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor:
+                        alreadyVerified || submitting
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity:
+                        alreadyVerified || submitting
+                          ? 0.65
+                          : 1,
+                    }}
+                  >
+                    Player
+                  </button>
+                )}
+                {canVerifyAsCoach && (
+                  <button
+                    type="button"
+                    onClick={() => setVerifierRole("coach")}
+                    disabled={alreadyVerified || submitting}
+                    style={{
+                      border:
+                        verifierRole === "coach"
+                          ? "1px solid #7C3AED"
+                          : `1px solid ${C.line}`,
+                      background:
+                        verifierRole === "coach"
+                          ? "#F5F3FF"
+                          : C.card,
+                      color:
+                        verifierRole === "coach"
+                          ? "#7C3AED"
+                          : C.text,
+                      borderRadius: 9,
+                      padding: "8px 14px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor:
+                        alreadyVerified || submitting
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity:
+                        alreadyVerified || submitting
+                          ? 0.65
+                          : 1,
+                    }}
+                  >
+                    Coach
+                  </button>
+                )}
+              </div>
+              {alreadyVerified && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 11,
+                    color: C.muted,
+                  }}
+                >
+                  This account has already submitted this assessment. The verifier role is locked.
+                </div>
+              )}
+            </div>
+          )}
           {isOwner ? (
             <div
               style={{
@@ -611,9 +810,7 @@ export default function VerifySkill() {
               >
                 Blue shows the player&apos;s score. Drag each slider to give your own 1–100 rating. Your rating is stored separately.
               </div>
-
               <div className={styles.formLabel}>Your skill assessment</div>
-
               <div
                 style={{
                   display: "flex",
@@ -632,7 +829,6 @@ export default function VerifySkill() {
                   />
                 ))}
               </div>
-
               <div
                 className={styles.formRow}
                 style={{ marginTop: 12 }}
@@ -640,7 +836,6 @@ export default function VerifySkill() {
                 <label className={styles.formLabel}>
                   Feedback <span style={{ color: C.muted }}>(optional)</span>
                 </label>
-
                 <textarea
                   className={styles.formTextarea}
                   value={feedback}
@@ -652,7 +847,6 @@ export default function VerifySkill() {
                     resize: "vertical",
                   }}
                 />
-
                 <div
                   style={{
                     marginTop: 5,
@@ -667,7 +861,6 @@ export default function VerifySkill() {
               </div>
             </>
           )}
-
           {verifiedSuccessfully && (
             <div
               style={{
@@ -685,7 +878,6 @@ export default function VerifySkill() {
               ✓ Your skill assessment was submitted successfully.
             </div>
           )}
-
           {!verifiedSuccessfully && alreadyVerified && !isOwner && (
             <div
               style={{
@@ -700,7 +892,7 @@ export default function VerifySkill() {
                 lineHeight: 1.5,
               }}
             >
-              ✓ You already submitted your assessment for this player.
+              ✓ This account already submitted an assessment for this player.
               {existingVerification?.verified_at
                 ? ` Submitted on ${new Date(
                     existingVerification.verified_at
@@ -712,7 +904,6 @@ export default function VerifySkill() {
                 : ""}
             </div>
           )}
-
           {error && (
             <div
               style={{
@@ -729,7 +920,6 @@ export default function VerifySkill() {
               {error}
             </div>
           )}
-
           <div
             style={{
               display: "flex",
@@ -749,7 +939,6 @@ export default function VerifySkill() {
             >
               Back
             </button>
-
             {!isOwner && (
               <div
                 style={{

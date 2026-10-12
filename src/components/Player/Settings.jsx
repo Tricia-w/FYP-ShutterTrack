@@ -5,7 +5,6 @@ import { useAuth } from '../../context/AuthContext'
 import styles from '../Layout/Pages.module.css'
 import Loader from '../Loader/Loader'
 import useLoadingDelay from '../Loader/LoadingDelay'
-
 const MONTH_NAMES_LONG = [
   'January',
   'February',
@@ -20,18 +19,15 @@ const MONTH_NAMES_LONG = [
   'November',
   'December',
 ]
-
 const readBool = (value, fallback = false) => {
   if (value === null || value === undefined) return fallback
   return Boolean(value)
 }
-
 const sanitizePhone = value => {
   return String(value || '')
     .replace(/\D/g, '')
     .slice(0, 11)
 }
-
 const getSavedTheme = () => {
   if (typeof window === 'undefined') return null
   const savedTheme = localStorage.getItem('shuttleTheme')
@@ -39,21 +35,17 @@ const getSavedTheme = () => {
   if (savedTheme === 'light') return false
   return null
 }
-
 const getInitialDarkMode = () => {
   return getSavedTheme() ?? false
 }
-
 const getDateKey = value => {
   if (!value) return ''
   return String(value).slice(0, 10)
 }
-
 const getCurrentMonthKey = () => {
   const now = new Date()
   return `${MONTH_NAMES_LONG[now.getMonth()]} ${now.getFullYear()}`
 }
-
 const getCurrentMonthDateRange = () => {
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -67,20 +59,17 @@ const getCurrentMonthDateRange = () => {
     end: toISODate(end),
   }
 }
-
 const getScheduleStart = row => {
   if (!row?.event_date) return null
   const time = row.event_time ? String(row.event_time).slice(0, 5) : '00:00'
   const parsed = new Date(`${row.event_date}T${time}`)
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
-
 const getScheduleEnd = row => {
   const start = getScheduleStart(row)
   if (!start) return null
   return new Date(start.getTime() + 2 * 60 * 60 * 1000)
 }
-
 const formatReminderDateTime = value => {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
@@ -91,25 +80,28 @@ const formatReminderDateTime = value => {
     minute: '2-digit',
   })
 }
-
 const formatRM = value => {
   return `RM ${Number(value || 0).toFixed(2)}`
 }
-
 const isMatchSchedule = row => {
   const type = row?.schedule_type || row?.title || ''
   return type === 'Competition' || type === 'Friendly Match'
 }
-
 const isTrainingSchedule = row => {
   const type = row?.schedule_type || row?.title || ''
   return type === 'Training'
 }
-
+const getFeedbackHash = value => {
+  const text = String(value || '')
+  let hash = 0
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) | 0
+  }
+  return Math.abs(hash).toString(36)
+}
 const isValidEmail = value => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
 }
-
 export default function Settings() {
   const navigate = useNavigate()
   const { refreshProfile, logout } = useAuth()
@@ -123,7 +115,7 @@ export default function Settings() {
     matchReminder: true,
     fitnessReminder: true,
     expenseReminder: true,
-    coachNoteReminder: true,
+    coachFeedbackReminder: true,
     matchBeforeReminder: true,
     matchLogResultReminder: true,
     fitnessBeforeReminder: true,
@@ -165,22 +157,18 @@ export default function Settings() {
     phone: '',
   })
   const fetchSettingsRef = useRef(null)
-
   useEffect(() => {
     fetchSettingsRef.current = fetchSettings
   })
-
   useEffect(() => {
     fetchSettingsRef.current?.()
   }, [])
-
   useEffect(() => {
     const theme = settings.darkMode ? 'dark' : 'light'
     document.documentElement.setAttribute('data-theme', theme)
     document.body.setAttribute('data-theme', theme)
     localStorage.setItem('shuttleTheme', theme)
   }, [settings.darkMode])
-
   const getAuthUser = useCallback(async () => {
     const { data, error } = await supabase.auth.getUser()
     if (error || !data?.user) {
@@ -188,7 +176,6 @@ export default function Settings() {
     }
     return data.user
   }, [])
-
   const loadApprovedDeletionRequest = useCallback(async () => {
     try {
       const authUser = await getAuthUser()
@@ -211,7 +198,6 @@ export default function Settings() {
       )
     }
   }, [getAuthUser])
-
   useEffect(() => {
     let active = true
     let channel = null
@@ -248,7 +234,6 @@ export default function Settings() {
       }
     }
   }, [getAuthUser, loadApprovedDeletionRequest])
-
   const handleConfirmApprovedDeletion = async () => {
     if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
     setDeletionDecisionBusy(true)
@@ -277,7 +262,6 @@ export default function Settings() {
       setDeletionDecisionBusy(false)
     }
   }
-
   const handleCancelApprovedDeletion = async () => {
     if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
     setDeletionDecisionBusy(true)
@@ -306,7 +290,6 @@ export default function Settings() {
       setDeletionDecisionBusy(false)
     }
   }
-
   const getPlayerProfileId = async userId => {
     const { data, error } = await supabase
       .from('player_profiles')
@@ -319,7 +302,6 @@ export default function Settings() {
     }
     return data?.id || null
   }
-
   const fetchCurrentBudget = async userId => {
     const currentMonthKey = getCurrentMonthKey()
     const { data, error } = await supabase
@@ -337,7 +319,6 @@ export default function Settings() {
     setCurrentBudget(budget)
     return budget
   }
-
   const fetchSettings = async () => {
     setLoading(true)
     const { data: userData } = await supabase.auth.getUser()
@@ -402,7 +383,7 @@ export default function Settings() {
       matchReminder: readBool(userSettings?.match_reminders, true),
       fitnessReminder: readBool(userSettings?.fitness_reminders, true),
       expenseReminder: readBool(userSettings?.expense_reminders, true),
-      coachNoteReminder: readBool(userSettings?.coach_note_reminder, true),
+      coachFeedbackReminder: readBool(userSettings?.coach_note_reminder, true),
       matchBeforeReminder: readBool(userSettings?.match_before_reminder, true),
       matchLogResultReminder: readBool(
         userSettings?.match_log_result_reminder,
@@ -446,7 +427,6 @@ export default function Settings() {
     setLoading(false)
     await runReminderChecks(loadedSettings)
   }
-
   const createNotification = async ({
     title,
     message,
@@ -469,7 +449,6 @@ export default function Settings() {
       console.log(error)
     }
   }
-
   const checkMatchReminders = async currentSettings => {
     if (!currentSettings.matchReminder) return
     const user = await getAuthUser()
@@ -534,7 +513,6 @@ export default function Settings() {
       }
     }
   }
-
   const checkFitnessReminders = async currentSettings => {
     if (!currentSettings.fitnessReminder) return
     const user = await getAuthUser()
@@ -595,7 +573,6 @@ export default function Settings() {
       }
     }
   }
-
   const checkExpenseReminders = async currentSettings => {
     if (!currentSettings.expenseReminder) return
     const user = await getAuthUser()
@@ -688,45 +665,67 @@ export default function Settings() {
       }
     }
   }
-
-  const checkCoachNoteReminders = async currentSettings => {
-    if (!currentSettings.coachNoteReminder) return
+  const checkCoachFeedbackReminders = async currentSettings => {
+    if (!currentSettings.coachFeedbackReminder) return
     const user = await getAuthUser()
     const { data, error } = await supabase
-      .from('coach_player_notes')
-      .select('*')
+      .from('coach_player_assessments')
+      .select(
+        'id, performance_comment, fitness_comment, updated_at'
+      )
       .eq('player_user_id', user.id)
-      .eq('is_read', false)
-      .order('created_at', { ascending: false })
-      .limit(5)
+      .order('updated_at', { ascending: false })
+      .limit(10)
     if (error) {
       console.log(error)
       return
     }
-    for (const note of data || []) {
+    for (const assessment of data || []) {
+      const performanceFeedback = String(
+        assessment.performance_comment || ''
+      ).trim()
+      const fitnessFeedback = String(
+        assessment.fitness_comment || ''
+      ).trim()
+      if (!performanceFeedback && !fitnessFeedback) {
+        continue
+      }
+      const feedbackHash = getFeedbackHash(
+        `${performanceFeedback}|${fitnessFeedback}`
+      )
+      let message = 'Your coach updated your feedback.'
+      if (performanceFeedback && fitnessFeedback) {
+        message =
+          'Your coach updated your performance and fitness feedback.'
+      } else if (performanceFeedback) {
+        message =
+          'Your coach updated your performance feedback.'
+      } else if (fitnessFeedback) {
+        message =
+          'Your coach updated your fitness feedback.'
+      }
       await createNotification({
-        title: 'New Coach Note',
-        message: 'Your coach left a new note for you.',
+        title: 'Coach Feedback Updated',
+        message,
         type: 'info',
-        dedupeKey: `coach-note-${note.id}`,
+        dedupeKey:
+          `coach-feedback-${assessment.id}-${feedbackHash}`,
       })
     }
   }
-
   const runReminderChecks = async currentSettings => {
     setCheckingReminders(true)
     try {
       await checkMatchReminders(currentSettings)
       await checkFitnessReminders(currentSettings)
       await checkExpenseReminders(currentSettings)
-      await checkCoachNoteReminders(currentSettings)
+      await checkCoachFeedbackReminders(currentSettings)
     } catch (error) {
       console.log(error)
     } finally {
       setCheckingReminders(false)
     }
   }
-
   const set = key => e => {
     setForm(f => ({ ...f, [key]: e.target.value }))
   }
@@ -735,7 +734,7 @@ export default function Settings() {
     matchReminder: 'match_reminders',
     fitnessReminder: 'fitness_reminders',
     expenseReminder: 'expense_reminders',
-    coachNoteReminder: 'coach_note_reminder',
+    coachFeedbackReminder: 'coach_note_reminder',
     matchBeforeReminder: 'match_before_reminder',
     matchLogResultReminder: 'match_log_result_reminder',
     fitnessBeforeReminder: 'fitness_before_reminder',
@@ -745,7 +744,6 @@ export default function Settings() {
     soundEnabled: 'notification_sound_enabled',
     profilePublic: 'profile_public',
   }
-
   const toggle = async key => {
     const nextValue = !settings[key]
     setSettings(current => ({
@@ -824,7 +822,6 @@ export default function Settings() {
       }
     }
   }
-
   const saveAccountSettings = useCallback(
     async currentForm => {
       const authUser = await getAuthUser()
@@ -879,7 +876,6 @@ export default function Settings() {
     },
     [getAuthUser, refreshProfile]
   )
-
   useEffect(() => {
     if (!accountLoadedRef.current || loading) {
       return undefined
@@ -937,20 +933,17 @@ export default function Settings() {
       }
     }
   }, [form, loading, saveAccountSettings])
-
   const openEmailChangeModal = () => {
     setNewEmail('')
     setEmailChangeError('')
     setShowEmailModal(true)
   }
-
   const closeEmailChangeModal = () => {
     if (changingEmail) return
     setShowEmailModal(false)
     setNewEmail('')
     setEmailChangeError('')
   }
-
   const handleRequestEmailChange = async () => {
     if (changingEmail) return
     const cleanEmail = newEmail.trim().toLowerCase()
@@ -1005,7 +998,6 @@ export default function Settings() {
       setChangingEmail(false)
     }
   }
-
   const handleLogout = async () => {
     if (logout) {
       await logout()
@@ -1016,7 +1008,6 @@ export default function Settings() {
     }
     navigate('/')
   }
-
   const handleLogoutOtherDevices = async () => {
     if (loggingOutOtherDevices) return
     const confirmed = window.confirm(
@@ -1045,7 +1036,6 @@ export default function Settings() {
       setLoggingOutOtherDevices(false)
     }
   }
-
   const handleRequestDeleteAccount = async () => {
     if (requestingDelete) return
     const cleanReason = deletionReason.trim()
@@ -1219,7 +1209,6 @@ export default function Settings() {
       </div>
     )
   }
-
   return (
     <div className={styles.playerReadablePage}>
       <div className={styles.pageHead}>
@@ -1549,9 +1538,9 @@ export default function Settings() {
               </CustomizeBox>
             )}
             <SettingLine
-              label="Coach note reminders"
-              checked={settings.coachNoteReminder}
-              onChange={() => toggle('coachNoteReminder')}
+              label="Coach feedback reminders"
+              checked={settings.coachFeedbackReminder}
+              onChange={() => toggle('coachFeedbackReminder')}
             />
             <SettingLine
               label="Notification sound"
