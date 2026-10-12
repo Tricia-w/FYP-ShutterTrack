@@ -6,7 +6,6 @@ import React, {
 } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
-
 import AdminLayout from "./AdminLayout";
 import AdminDashboard from "./AdminDashboard";
 import AdminUsers from "./AdminUsers";
@@ -24,7 +23,6 @@ const capitalise = (value = "") =>
 
 const formatMonthYear = (value) => {
   if (!value) return "–";
-
   return new Date(value).toLocaleDateString("en-MY", {
     month: "short",
     year: "numeric",
@@ -33,7 +31,6 @@ const formatMonthYear = (value) => {
 
 const formatDateTime = (value) => {
   if (!value) return "Never";
-
   return new Date(value).toLocaleString("en-MY", {
     day: "numeric",
     month: "short",
@@ -45,31 +42,62 @@ const formatDateTime = (value) => {
 
 const getActivityStatus = (lastSeenAt) => {
   if (!lastSeenAt) return "Never active";
-
   const difference =
     Date.now() - new Date(lastSeenAt).getTime();
-
   const fiveMinutes = 5 * 60 * 1000;
   const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-
   if (difference <= fiveMinutes) return "Online";
   if (difference <= thirtyDays) return "Active";
   return "Inactive";
 };
 
+const ADMIN_PAGE_STORAGE_KEY = "shuttleAdminActivePage";
+
+const ADMIN_PAGES = new Set([
+  "dashboard",
+  "users",
+  "coaches",
+  "clubs",
+  "reports",
+  "logs",
+  "settings",
+]);
+
+const getSavedAdminPage = () => {
+  if (typeof window === "undefined") return "dashboard";
+  const savedPage = sessionStorage.getItem(
+    ADMIN_PAGE_STORAGE_KEY
+  );
+  return ADMIN_PAGES.has(savedPage)
+    ? savedPage
+    : "dashboard";
+};
+
 export default function Admin() {
   const { profile } = useAuth();
 
-  const [activePage, setActivePage] =
-    useState("dashboard");
+  const [activePage, setActivePage] = useState(
+    getSavedAdminPage
+  );
 
   const [users, setUsers] = useState([]);
+
   const [coaches, setCoaches] = useState([]);
+
   const [reports, setReports] = useState([]);
+
   const [logs, setLogs] = useState([]);
 
   const [loading, setLoading] = useState(true);
+
   const [adminError, setAdminError] = useState("");
+
+  useEffect(() => {
+    sessionStorage.setItem(
+      ADMIN_PAGE_STORAGE_KEY,
+      activePage
+    );
+  }, [activePage]);
 
   const loadUsers = useCallback(async () => {
     const { data, error } = await supabase
@@ -87,9 +115,7 @@ export default function Admin() {
         updated_at
       `)
       .order("created_at", { ascending: false });
-
     if (error) throw error;
-
     setUsers(
       (data || []).map((row) => ({
         id: row.user_id,
@@ -156,7 +182,6 @@ export default function Admin() {
           updated_at
         `)
         .order("display_name", { ascending: true }),
-
       supabase
         .from("coach_profiles")
         .select(`
@@ -167,17 +192,13 @@ export default function Admin() {
           rejection_reason
         `),
     ]);
-
     if (publicCoachResult.error) {
       throw publicCoachResult.error;
     }
-
     if (verificationResult.error) {
       throw verificationResult.error;
     }
-
     const coachRows = publicCoachResult.data || [];
-
     const coachUserIds = [
       ...new Set(
         coachRows
@@ -185,9 +206,7 @@ export default function Admin() {
           .filter(Boolean)
       ),
     ];
-
     let appUsers = [];
-
     if (coachUserIds.length > 0) {
       const { data, error } = await supabase
         .from("app_users")
@@ -195,35 +214,29 @@ export default function Admin() {
           "user_id, email, full_name, account_status"
         )
         .in("user_id", coachUserIds);
-
       if (error) throw error;
       appUsers = data || [];
     }
-
     const appUserMap = new Map(
       appUsers.map((row) => [
         String(row.user_id),
         row,
       ])
     );
-
     const verificationMap = new Map(
       (verificationResult.data || []).map((row) => [
         String(row.user_id),
         row,
       ])
     );
-
     setCoaches(
       coachRows.map((row) => {
         const appUser = appUserMap.get(
           String(row.user_id)
         );
-
         const verification = verificationMap.get(
           String(row.user_id)
         );
-
         const certificates = row.certification
           ? [
               {
@@ -241,7 +254,6 @@ export default function Admin() {
               },
             ]
           : [];
-
         return {
           id: row.id,
           userId: row.user_id,
@@ -316,9 +328,7 @@ export default function Admin() {
       `)
       .order("created_at", { ascending: false })
       .limit(100);
-
     if (error) throw error;
-
     setLogs(
       (data || []).map((row) => ({
         id: row.id,
@@ -336,7 +346,6 @@ export default function Admin() {
   const refreshAdminData = useCallback(async () => {
     setLoading(true);
     setAdminError("");
-
     try {
       await Promise.all([
         loadUsers(),
@@ -356,7 +365,6 @@ export default function Admin() {
 
   const refreshCoaches = useCallback(async () => {
     setAdminError("");
-
     try {
       await Promise.all([
         loadCoaches(),
@@ -392,7 +400,6 @@ export default function Admin() {
         }))
       );
     }, 60 * 1000);
-
     return () =>
       window.clearInterval(intervalId);
   }, []);
@@ -434,7 +441,6 @@ export default function Admin() {
         </div>
       );
     }
-
     switch (activePage) {
       case "users":
         return (
@@ -444,7 +450,6 @@ export default function Admin() {
             refreshUsers={refreshAdminData}
           />
         );
-
       case "coaches":
         return (
           <AdminCoaches
@@ -452,10 +457,8 @@ export default function Admin() {
             refreshCoaches={refreshCoaches}
           />
         );
-
       case "clubs":
         return <AdminClubs />;
-
       case "reports":
         return (
           <AdminReports
@@ -464,13 +467,10 @@ export default function Admin() {
             addLog={addLog}
           />
         );
-
       case "logs":
         return <AdminLogs logs={logs} />;
-
       case "settings":
         return <AdminSettings />;
-
       default:
         return (
           <AdminDashboard
@@ -505,7 +505,6 @@ export default function Admin() {
           {adminError}
         </div>
       )}
-
       {renderPage()}
     </AdminLayout>
   );

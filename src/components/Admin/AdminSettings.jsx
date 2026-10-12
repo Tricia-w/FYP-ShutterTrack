@@ -18,16 +18,13 @@ const getSavedTheme = () => {
   if (typeof window === "undefined") return null;
 
   const savedTheme = localStorage.getItem("shuttleTheme");
-
   if (savedTheme === "dark") return true;
   if (savedTheme === "light") return false;
-
   return null;
 };
 
 const applyTheme = (darkMode) => {
   const theme = darkMode ? "dark" : "light";
-
   document.documentElement.setAttribute("data-theme", theme);
   document.body.setAttribute("data-theme", theme);
   localStorage.setItem("shuttleTheme", theme);
@@ -35,9 +32,7 @@ const applyTheme = (darkMode) => {
 
 const roleLabel = (role) => {
   const value = String(role || "admin").toLowerCase();
-
   if (value === "admin") return "Administrator";
-
   return value.charAt(0).toUpperCase() + value.slice(1);
 };
 
@@ -45,7 +40,6 @@ export default function AdminSettings() {
   const {
     user,
     profile,
-    refreshProfile,
   } = useAuth();
 
   const [form, setForm] = useState({
@@ -59,23 +53,31 @@ export default function AdminSettings() {
   );
 
   const [loading, setLoading] = useState(true);
+
   const [accountSaveStatus, setAccountSaveStatus] =
     useState("");
+
   const [themeSaveStatus, setThemeSaveStatus] =
     useState("");
+
   const [accountError, setAccountError] =
     useState("");
+
   const [themeError, setThemeError] =
     useState("");
+
   const [lastUpdated, setLastUpdated] =
     useState("—");
 
   const accountLoadedRef = useRef(false);
+
   const initialFormRef = useRef({
     name: "",
   });
-  const accountSaveTimerRef = useRef(null);
+
+
   const accountStatusTimerRef = useRef(null);
+
   const themeStatusTimerRef = useRef(null);
 
   const adminName = useMemo(() => {
@@ -96,15 +98,12 @@ export default function AdminSettings() {
       setLoading(true);
       setAccountError("");
       setThemeError("");
-
       try {
         const {
           data: { user: authUser },
           error: authError,
         } = await supabase.auth.getUser();
-
         if (authError) throw authError;
-
         if (!authUser?.id) {
           throw new Error("Please log in again.");
         }
@@ -127,7 +126,6 @@ export default function AdminSettings() {
             `)
             .eq("user_id", authUser.id)
             .maybeSingle(),
-
           supabase
             .from("admin_profiles")
             .select(`
@@ -137,7 +135,6 @@ export default function AdminSettings() {
             `)
             .eq("user_id", authUser.id)
             .maybeSingle(),
-
           supabase
             .from("user_settings")
             .select(`
@@ -148,25 +145,23 @@ export default function AdminSettings() {
             .eq("user_id", authUser.id)
             .maybeSingle(),
         ]);
-
         if (appUserResult.error) {
           throw appUserResult.error;
         }
-
         if (adminProfileResult.error) {
           throw adminProfileResult.error;
         }
-
         if (settingsResult.error) {
           throw settingsResult.error;
         }
 
         const appUser = appUserResult.data;
+
         const adminProfile =
           adminProfileResult.data;
+
         const savedSettings =
           settingsResult.data;
-
         if (
           appUser?.role &&
           String(appUser.role).toLowerCase() !==
@@ -176,7 +171,6 @@ export default function AdminSettings() {
             "The current account is not an administrator."
           );
         }
-
         if (
           appUser?.account_status &&
           String(appUser.account_status).toLowerCase() !==
@@ -208,7 +202,6 @@ export default function AdminSettings() {
           localTheme !== null
             ? localTheme
             : Boolean(savedSettings?.dark_mode);
-
         if (!mounted) return;
 
         const loadedForm = {
@@ -216,13 +209,10 @@ export default function AdminSettings() {
           email: loadedEmail,
           role: loadedRole,
         };
-
         setForm(loadedForm);
-
         initialFormRef.current = {
           name: loadedName.trim(),
         };
-
         setDarkMode(loadedDarkMode);
         applyTheme(loadedDarkMode);
 
@@ -230,7 +220,6 @@ export default function AdminSettings() {
           adminProfile?.updated_at ||
           savedSettings?.updated_at ||
           appUser?.updated_at;
-
         setLastUpdated(
           latestUpdated
             ? new Date(latestUpdated).toLocaleString(
@@ -238,16 +227,13 @@ export default function AdminSettings() {
               )
             : "—"
         );
-
         accountLoadedRef.current = true;
       } catch (error) {
         console.error(
           "Load admin settings error:",
           error
         );
-
         if (!mounted) return;
-
         setAccountError(
           error?.message ||
             "Unable to load administrator settings."
@@ -255,7 +241,6 @@ export default function AdminSettings() {
 
         const fallbackTheme =
           getSavedTheme() ?? false;
-
         setDarkMode(fallbackTheme);
         applyTheme(fallbackTheme);
       } finally {
@@ -264,24 +249,15 @@ export default function AdminSettings() {
         }
       }
     };
-
     loadAdminSettings();
 
     return () => {
       mounted = false;
-
-      if (accountSaveTimerRef.current) {
-        window.clearTimeout(
-          accountSaveTimerRef.current
-        );
-      }
-
       if (accountStatusTimerRef.current) {
         window.clearTimeout(
           accountStatusTimerRef.current
         );
       }
-
       if (themeStatusTimerRef.current) {
         window.clearTimeout(
           themeStatusTimerRef.current
@@ -304,15 +280,12 @@ export default function AdminSettings() {
       data: { user: authUser },
       error: authError,
     } = await supabase.auth.getUser();
-
     if (authError) throw authError;
-
     if (!authUser?.id) {
       throw new Error("Please log in again.");
     }
 
     const cleanName = currentForm.trim();
-
     if (!cleanName) {
       throw new Error(
         "Display name cannot be empty."
@@ -334,132 +307,62 @@ export default function AdminSettings() {
             onConflict: "user_id",
           }
         );
-
     if (adminProfileError) {
       throw adminProfileError;
     }
-
-    /*
-      This updates Auth metadata, not public.app_users.
-      It helps components that display user.user_metadata.full_name.
-    */
-    const { error: metadataError } =
-      await supabase.auth.updateUser({
-        data: {
-          full_name: cleanName,
-        },
-      });
-
-    if (metadataError) {
-      console.warn(
-        "Auth metadata name update warning:",
-        metadataError
-      );
-    }
-
     initialFormRef.current = {
       name: cleanName,
     };
-
     setLastUpdated(
       new Date(now).toLocaleString("en-MY")
     );
-
     localStorage.setItem(
       "adminDisplayName",
       cleanName
     );
 
-    if (refreshProfile) {
-      await refreshProfile();
-    }
+  }, []);
 
-    window.dispatchEvent(
-      new CustomEvent("profile-updated", {
-        detail: {
-          display_name: cleanName,
-          full_name: cleanName,
-          role: "admin",
-        },
-      })
-    );
-  }, [refreshProfile]);
-
-  useEffect(() => {
+  const handleSaveAccount = async () => {
     if (
-      !accountLoadedRef.current ||
-      loading
+      loading ||
+      accountSaveStatus === "Saving..."
     ) {
-      return undefined;
-    }
-
-    const cleanName = form.name.trim();
-
-    const nameChanged =
-      cleanName !==
-      initialFormRef.current.name;
-
-    /*
-      Do not autosave when the page first opens.
-      Only save after the display name is edited.
-    */
-    if (!nameChanged) {
-      return undefined;
-    }
-
-    if (accountSaveTimerRef.current) {
-      window.clearTimeout(
-        accountSaveTimerRef.current
-      );
+      return;
     }
 
     setAccountSaveStatus("Saving...");
     setAccountError("");
 
-    accountSaveTimerRef.current =
-      window.setTimeout(async () => {
-        try {
-          await saveAdminAccount(form.name);
+    try {
+      await saveAdminAccount(form.name);
 
-          setAccountSaveStatus(
-            "Saved automatically"
-          );
+      setAccountSaveStatus("Saved");
 
-          if (accountStatusTimerRef.current) {
-            window.clearTimeout(
-              accountStatusTimerRef.current
-            );
-          }
-
-          accountStatusTimerRef.current =
-            window.setTimeout(() => {
-              setAccountSaveStatus("");
-            }, 1800);
-        } catch (error) {
-          console.error(
-            "Admin account autosave error:",
-            error
-          );
-
-          setAccountSaveStatus(
-            "Could not save"
-          );
-
-          setAccountError(
-            error?.message ||
-              "Administrator information could not be saved."
-          );
-        }
-      }, 700);
-
-    return () => {
-      if (accountSaveTimerRef.current) {
+      if (accountStatusTimerRef.current) {
         window.clearTimeout(
-          accountSaveTimerRef.current
+          accountStatusTimerRef.current
         );
       }
-    };
-  }, [form.name, loading, saveAdminAccount]);
+
+      accountStatusTimerRef.current =
+        window.setTimeout(() => {
+          setAccountSaveStatus("");
+        }, 1800);
+    } catch (error) {
+      console.error(
+        "Admin account save error:",
+        error
+      );
+
+      setAccountSaveStatus("Could not save");
+
+      setAccountError(
+        error?.message ||
+          "Administrator information could not be saved."
+      );
+    }
+  };
 
   const toggleDarkMode = async () => {
     if (
@@ -470,20 +373,16 @@ export default function AdminSettings() {
     }
 
     const nextValue = !darkMode;
-
     setDarkMode(nextValue);
     applyTheme(nextValue);
     setThemeSaveStatus("Saving...");
     setThemeError("");
-
     try {
       const {
         data: { user: authUser },
         error: authError,
       } = await supabase.auth.getUser();
-
       if (authError) throw authError;
-
       if (!authUser?.id) {
         throw new Error("Please log in again.");
       }
@@ -502,23 +401,18 @@ export default function AdminSettings() {
             onConflict: "user_id",
           }
         );
-
       if (error) throw error;
-
       setLastUpdated(
         new Date(now).toLocaleString("en-MY")
       );
-
       setThemeSaveStatus(
         "Saved automatically"
       );
-
       if (themeStatusTimerRef.current) {
         window.clearTimeout(
           themeStatusTimerRef.current
         );
       }
-
       themeStatusTimerRef.current =
         window.setTimeout(() => {
           setThemeSaveStatus("");
@@ -530,14 +424,11 @@ export default function AdminSettings() {
       );
 
       const revertedValue = !nextValue;
-
       setDarkMode(revertedValue);
       applyTheme(revertedValue);
-
       setThemeSaveStatus(
         "Could not save"
       );
-
       setThemeError(
         error?.message ||
           "Appearance setting could not be saved."
@@ -601,7 +492,6 @@ export default function AdminSettings() {
       "0 1px 5px rgba(13,27,62,0.08)",
     padding: 24,
   };
-
   if (loading) {
     return (
       <div className="adminReadablePage">
@@ -611,25 +501,20 @@ export default function AdminSettings() {
             font-size: 14px;
             font-weight: 400;
           }
-
           .adminReadablePage [style*='font-size: 10px'] {
             font-size: 12px !important;
           }
-
           .adminReadablePage [style*='font-size: 11px'] {
             font-size: 13px !important;
           }
-
           .adminReadablePage [style*='font-size: 12px'],
           .adminReadablePage [style*='font-size: 13px'] {
             font-size: 14px !important;
           }
-
           .adminReadablePage [style*='font-weight: 800'],
           .adminReadablePage [style*='font-weight: 900'] {
             font-weight: 700 !important;
           }
-
           .adminReadablePage button,
           .adminReadablePage input,
           .adminReadablePage select,
@@ -637,26 +522,21 @@ export default function AdminSettings() {
             font-family: "DM Sans", sans-serif !important;
             font-size: 14px !important;
           }
-
           .adminReadablePage table {
             font-family: "DM Sans", sans-serif;
           }
-
           .adminReadablePage th {
             font-size: 13px !important;
             font-weight: 700 !important;
           }
-
           .adminReadablePage td {
             font-size: 14px !important;
           }
         `}</style>
-
         <SectionHeader
           title="Admin Settings"
           subtitle="Manage administrator information and appearance"
         />
-
         <div
           style={{
             ...cardStyle,
@@ -680,25 +560,20 @@ export default function AdminSettings() {
           font-size: 14px;
           font-weight: 400;
         }
-
         .adminReadablePage [style*='font-size: 10px'] {
           font-size: 12px !important;
         }
-
         .adminReadablePage [style*='font-size: 11px'] {
           font-size: 13px !important;
         }
-
         .adminReadablePage [style*='font-size: 12px'],
         .adminReadablePage [style*='font-size: 13px'] {
           font-size: 14px !important;
         }
-
         .adminReadablePage [style*='font-weight: 800'],
         .adminReadablePage [style*='font-weight: 900'] {
           font-weight: 700 !important;
         }
-
         .adminReadablePage button,
         .adminReadablePage input,
         .adminReadablePage select,
@@ -706,26 +581,21 @@ export default function AdminSettings() {
           font-family: "DM Sans", sans-serif !important;
           font-size: 14px !important;
         }
-
         .adminReadablePage table {
           font-family: "DM Sans", sans-serif;
         }
-
         .adminReadablePage th {
           font-size: 13px !important;
           font-weight: 700 !important;
         }
-
         .adminReadablePage td {
           font-size: 14px !important;
         }
       `}</style>
-
       <SectionHeader
         title="Admin Settings"
         subtitle="Manage administrator information and appearance"
       />
-
       <div
         style={{
           maxWidth: 650,
@@ -761,7 +631,6 @@ export default function AdminSettings() {
                 role="Admin"
                 size={48}
               />
-
               <div>
                 <div
                   style={{
@@ -773,7 +642,6 @@ export default function AdminSettings() {
                 >
                   {adminName}
                 </div>
-
                 <div
                   style={{
                     fontSize: 12,
@@ -787,7 +655,6 @@ export default function AdminSettings() {
                 </div>
               </div>
             </div>
-
             <span
               style={{
                 fontSize: 11,
@@ -803,10 +670,9 @@ export default function AdminSettings() {
               }}
             >
               {accountSaveStatus ||
-                "Changes save automatically"}
+                "Press Save changes after editing"}
             </span>
           </div>
-
           {accountError && (
             <div
               style={{
@@ -824,22 +690,72 @@ export default function AdminSettings() {
               {accountError}
             </div>
           )}
-
           <Field label="Display name">
-            <input
+            <div
               style={{
-                ...inputStyle,
-                background:
-                  "var(--card, #FFFFFF)",
-                color:
-                  "var(--text, #0D1B3E)",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                width: "100%",
               }}
-              value={form.name}
-              onChange={setField("name")}
-              placeholder="Administrator name"
-            />
-          </Field>
+            >
+              <input
+                style={{
+                  ...inputStyle,
+                  flex: 1,
+                  minWidth: 0,
+                  background:
+                    "var(--card, #FFFFFF)",
+                  color:
+                    "var(--text, #0D1B3E)",
+                }}
+                value={form.name}
+                onChange={setField("name")}
+                placeholder="Administrator name"
+              />
 
+              <button
+                type="button"
+                onClick={handleSaveAccount}
+                disabled={
+                  loading ||
+                  accountSaveStatus === "Saving..." ||
+                  form.name.trim() ===
+                    initialFormRef.current.name
+                }
+                style={{
+                  minWidth: 170,
+                  height: 44,
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "0 18px",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  background:
+                    form.name.trim() ===
+                    initialFormRef.current.name
+                      ? "#CBD5E1"
+                      : "var(--blue, #1A5FFF)",
+                  color: "#FFFFFF",
+                  cursor:
+                    loading ||
+                    accountSaveStatus === "Saving..." ||
+                    form.name.trim() ===
+                      initialFormRef.current.name
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity:
+                    accountSaveStatus === "Saving..."
+                      ? 0.7
+                      : 1,
+                }}
+              >
+                {accountSaveStatus === "Saving..."
+                  ? "Saving..."
+                  : "Save changes"}
+              </button>
+            </div>
+          </Field>
           <Field label="Email address">
             <input
               style={{
@@ -855,7 +771,6 @@ export default function AdminSettings() {
               readOnly
               title="Login email cannot be changed from this page."
             />
-
             <div
               style={{
                 marginTop: 5,
@@ -869,7 +784,6 @@ export default function AdminSettings() {
               separate verification process.
             </div>
           </Field>
-
           <Field label="Account role">
             <input
               style={{
@@ -885,7 +799,6 @@ export default function AdminSettings() {
               readOnly
             />
           </Field>
-
           <div
             style={{
               display: "flex",
@@ -907,7 +820,6 @@ export default function AdminSettings() {
             >
               Last updated
             </span>
-
             <span
               style={{
                 color:
@@ -919,7 +831,6 @@ export default function AdminSettings() {
             </span>
           </div>
         </div>
-
         <div style={cardStyle}>
           <div
             style={{
@@ -943,7 +854,6 @@ export default function AdminSettings() {
             >
               Appearance
             </div>
-
             <span
               style={{
                 fontSize: 11,
@@ -962,7 +872,6 @@ export default function AdminSettings() {
                 "Auto-saved"}
             </span>
           </div>
-
           {themeError && (
             <div
               style={{
@@ -980,7 +889,6 @@ export default function AdminSettings() {
               {themeError}
             </div>
           )}
-
           <div
             style={{
               minHeight: 50,
@@ -1002,7 +910,6 @@ export default function AdminSettings() {
             >
               Dark mode
             </span>
-
             <div
               style={{
                 display: "flex",
@@ -1019,7 +926,6 @@ export default function AdminSettings() {
               >
                 {darkMode ? "On" : "Off"}
               </span>
-
               <ToggleSwitch
                 checked={darkMode}
                 onChange={toggleDarkMode}
@@ -1031,7 +937,6 @@ export default function AdminSettings() {
               />
             </div>
           </div>
-
           <div style={{ marginTop: 14 }}>
             <span
               style={{
