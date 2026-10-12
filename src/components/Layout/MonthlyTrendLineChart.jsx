@@ -26,26 +26,23 @@ export default function MonthlyTrendLineChart({ monthly }) {
 
   useEffect(() => {
     if (!chartRef.current) return
-    if (chartInstance.current) {
-      chartInstance.current.destroy()
-    }
+
     const isMobile = window.innerWidth <= 768
+
     chartInstance.current = new Chart(chartRef.current, {
       type: 'line',
       data: {
-        labels: monthly.map((m) => m.month.replace(/\s\d{4}$/, '')),
+        labels: [],
         datasets: [
           {
             label: 'Monthly Spending',
-            data: monthly.map((m) => m.amt),
+            data: [],
             borderColor: '#1A5FFF',
             backgroundColor: 'rgba(26, 95, 255, 0.12)',
             borderWidth: 3,
             fill: true,
             tension: 0.4,
-            pointBackgroundColor: monthly.map((m) =>
-              m.current ? '#F59E0B' : '#1A5FFF'
-            ),
+            pointBackgroundColor: [],
             pointBorderColor: '#ffffff',
             pointBorderWidth: 2,
             pointRadius: isMobile ? 4 : 5,
@@ -68,6 +65,7 @@ export default function MonthlyTrendLineChart({ monthly }) {
             bottom: 0,
           },
         },
+        animation: false,
         plugins: {
           legend: {
             display: false,
@@ -99,9 +97,11 @@ export default function MonthlyTrendLineChart({ monthly }) {
               },
               callback(value) {
                 const label = this.getLabelForValue(value)
+
                 if (!isMobile) {
                   return label
                 }
+
                 return String(label).slice(0, 3)
               },
             },
@@ -127,12 +127,32 @@ export default function MonthlyTrendLineChart({ monthly }) {
         },
       },
     })
+
     return () => {
       if (chartInstance.current) {
         chartInstance.current.destroy()
         chartInstance.current = null
       }
     }
+  }, [])
+
+  useEffect(() => {
+    if (!chartInstance.current) return
+
+    chartInstance.current.data.labels = monthly.map((m) =>
+      m.month.replace(/\s\d{4}$/, '')
+    )
+
+    chartInstance.current.data.datasets[0].data = monthly.map(
+      (m) => m.amt
+    )
+
+    chartInstance.current.data.datasets[0].pointBackgroundColor =
+      monthly.map((m) =>
+        m.current ? '#F59E0B' : '#1A5FFF'
+      )
+
+    chartInstance.current.update('none')
   }, [monthly])
 
   return (
