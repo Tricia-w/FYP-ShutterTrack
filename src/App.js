@@ -48,31 +48,40 @@ function LoadingScreen() {
     </div>
   )
 }
+
 function getUserRole(profile, isAdmin) {
   if (isAdmin) return 'admin'
+
   return profile?.role || 'player'
 }
+
 function hasPlayerAccess(profile, isAdmin) {
   if (isAdmin) return false
   if (typeof profile?.has_player_access === 'boolean') {
     return profile.has_player_access
   }
+
   return profile?.role === 'player'
 }
+
 function hasCoachAccess(profile, isAdmin) {
   if (isAdmin) return false
   if (typeof profile?.has_coach_access === 'boolean') {
     return profile.has_coach_access
   }
+
   return profile?.role === 'coach'
 }
+
 function getSetupCompleted(profile) {
   return profile?.setup_completed === true
 }
+
 function getUserRedirectPath(profile, isAdmin) {
   if (profile?.requires_reverification === true) {
     return '/verify-returning-user'
   }
+
   const role = getUserRole(profile, isAdmin)
   if (role === 'admin') return '/admin'
   if (
@@ -93,10 +102,13 @@ function getUserRedirectPath(profile, isAdmin) {
   if (hasCoachAccess(profile, isAdmin)) {
     return '/coach'
   }
+
   return '/login'
 }
+
 function PrivateRoute({ children }) {
   const { user, profile, loading } = useAuth()
+
   const location = useLocation()
   if (loading) return <LoadingScreen />
   if (!user) {
@@ -108,6 +120,7 @@ function PrivateRoute({ children }) {
     ) {
       sessionStorage.setItem('shuttlePostLoginRedirect', returnTo)
     }
+
     return (
       <Navigate
         to={`/login?redirect=${encodeURIComponent(returnTo)}`}
@@ -125,6 +138,7 @@ function PrivateRoute({ children }) {
     ) {
       sessionStorage.setItem('shuttlePostLoginRedirect', returnTo)
     }
+
     return (
       <Navigate
         to="/verify-returning-user"
@@ -132,8 +146,10 @@ function PrivateRoute({ children }) {
       />
     )
   }
+
   return children
 }
+
 function PublicRoute({ children }) {
   const {
     user,
@@ -141,13 +157,13 @@ function PublicRoute({ children }) {
     loading,
     isAdmin,
   } = useAuth()
+
   const location = useLocation()
   if (loading) return <LoadingScreen />
   const addingRole =
     sessionStorage.getItem(
       'shuttleAddingRole',
     ) === '1'
-
   if (
     user &&
     !(
@@ -156,21 +172,21 @@ function PublicRoute({ children }) {
     )
   ) {
     const params = new URLSearchParams(location.search)
+
     const redirectFromQuery = params.get('redirect') || ''
     const redirectFromSession =
       sessionStorage.getItem('shuttlePostLoginRedirect') || ''
     const pendingRedirect = redirectFromQuery || redirectFromSession
-
     const isSafeRedirect =
       pendingRedirect.startsWith('/') &&
       !pendingRedirect.startsWith('//') &&
       pendingRedirect !== '/login'
-
     if (isSafeRedirect) {
       const redirectUrl = new URL(
         pendingRedirect,
         window.location.origin,
       )
+
       const redirectPath = redirectUrl.pathname
       const playerPaths = new Set([
         '/dashboard',
@@ -193,9 +209,9 @@ function PublicRoute({ children }) {
         ((redirectPath === '/coach' ||
           redirectPath.startsWith('/coach/')) &&
           hasCoachAccess(profile, isAdmin))
-
       if (canOpenRedirect) {
         sessionStorage.removeItem('shuttlePostLoginRedirect')
+
         return <Navigate to={pendingRedirect} replace />
       }
     }
@@ -207,8 +223,10 @@ function PublicRoute({ children }) {
       />
     )
   }
+
   return children
 }
+
 function AdminRoute({ children }) {
   const {
     user,
@@ -220,16 +238,31 @@ function AdminRoute({ children }) {
   if (!user) {
     return <Navigate to="/login" replace />
   }
-  if (getUserRole(profile, isAdmin) !== 'admin') {
-    return (
-      <Navigate
-        to={getUserRedirectPath(profile, isAdmin)}
-        replace
-      />
-    )
+
+  const hasAdminAccess =
+    isAdmin === true ||
+    String(profile?.role || '').toLowerCase() === 'admin'
+  if (hasAdminAccess) {
+    return children
   }
-  return children
+
+  /*
+   * Keep the admin on the current page while the profile is temporarily
+   * unavailable during an auth/profile refresh. Without this guard,
+   * the route helper can fall back to "player" and redirect to /dashboard.
+   */
+  if (!profile) {
+    return <LoadingScreen />
+  }
+
+  return (
+    <Navigate
+      to={getUserRedirectPath(profile, isAdmin)}
+      replace
+    />
+  )
 }
+
 function CoachRoute({ children }) {
   const {
     user,
@@ -252,8 +285,10 @@ function CoachRoute({ children }) {
       />
     )
   }
+
   return children
 }
+
 function PlayerRoute({ children }) {
   const {
     user,
@@ -279,8 +314,10 @@ function PlayerRoute({ children }) {
   if (!getSetupCompleted(profile)) {
     return <Navigate to="/setup" replace />
   }
+
   return children
 }
+
 function PlayerSetupRoute({ children }) {
   const {
     user,
@@ -288,6 +325,7 @@ function PlayerSetupRoute({ children }) {
     loading,
     isAdmin,
   } = useAuth()
+
   const location = useLocation()
   if (loading) return <LoadingScreen />
   if (!user) {
@@ -304,8 +342,10 @@ function PlayerSetupRoute({ children }) {
       />
     )
   }
+
   const searchParams =
     new URLSearchParams(location.search)
+
   const isRedoSetup =
     searchParams.get('redo') === '1'
   const isAddingRole =
@@ -317,8 +357,10 @@ function PlayerSetupRoute({ children }) {
   ) {
     return <Navigate to="/dashboard" replace />
   }
+
   return children
 }
+
 function App() {
   return (
     <BrowserRouter>
@@ -530,6 +572,7 @@ function App() {
             element={<AdminDashboard />}
           />
         )}
+
         {/* Unknown routes */}
         <Route
           path="*"
@@ -539,4 +582,5 @@ function App() {
     </BrowserRouter>
   )
 }
+
 export default App
