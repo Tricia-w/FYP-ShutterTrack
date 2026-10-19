@@ -139,7 +139,6 @@ export default function Settings() {
   const [requestingDelete, setRequestingDelete] = useState(false)
   const [deletionReason, setDeletionReason] = useState('')
   const [approvedDeletionRequest, setApprovedDeletionRequest] = useState(null)
-  const [deletionDecisionBusy, setDeletionDecisionBusy] = useState(false)
   const [loggingOutOtherDevices, setLoggingOutOtherDevices] =
     useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
@@ -234,62 +233,6 @@ export default function Settings() {
       }
     }
   }, [getAuthUser, loadApprovedDeletionRequest])
-  const handleConfirmApprovedDeletion = async () => {
-    if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
-    setDeletionDecisionBusy(true)
-    try {
-      const { error } = await supabase.rpc(
-        'confirm_account_deletion',
-        {
-          p_request_id: approvedDeletionRequest.id,
-        }
-      )
-      if (error) throw error
-      await loadApprovedDeletionRequest()
-      alert(
-        'Deletion confirmed. Your account is scheduled for permanent deletion 24 hours from now.'
-      )
-    } catch (error) {
-      console.error(
-        'Player confirm account deletion error:',
-        error
-      )
-      alert(
-        error?.message ||
-          'Unable to confirm account deletion.'
-      )
-    } finally {
-      setDeletionDecisionBusy(false)
-    }
-  }
-  const handleCancelApprovedDeletion = async () => {
-    if (!approvedDeletionRequest?.id || deletionDecisionBusy) return
-    setDeletionDecisionBusy(true)
-    try {
-      const { error } = await supabase.rpc(
-        'cancel_account_deletion',
-        {
-          p_request_id: approvedDeletionRequest.id,
-        }
-      )
-      if (error) throw error
-      setApprovedDeletionRequest(null)
-      alert(
-        'Account deletion has been cancelled. Your account will remain active.'
-      )
-    } catch (error) {
-      console.error(
-        'Player cancel account deletion error:',
-        error
-      )
-      alert(
-        error?.message ||
-          'Unable to cancel account deletion.'
-      )
-    } finally {
-      setDeletionDecisionBusy(false)
-    }
-  }
   const getPlayerProfileId = async userId => {
     const { data, error } = await supabase
       .from('player_profiles')
@@ -1756,76 +1699,6 @@ export default function Settings() {
                   ? 'Sending Verification...'
                   : 'Send Verification Email'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {approvedDeletionRequest &&
-        !approvedDeletionRequest.user_confirmed_at && (
-        <div className={styles.modalOverlay}>
-          <div
-            className={styles.modal}
-            style={{ maxWidth: 500 }}
-          >
-            <div className={styles.modalHead}>
-              <div className={styles.modalTitle}>
-                Account Deletion Approved
-              </div>
-            </div>
-            <p
-              style={{
-                color: 'var(--text-muted, #8892A4)',
-                lineHeight: 1.6,
-              }}
-            >
-              Your account deletion request has been approved.
-              Please confirm whether you still want to permanently
-              delete your account.
-            </p>
-            <div
-              style={{
-                marginTop: 12,
-                padding: '11px 13px',
-                borderRadius: 10,
-                border: '1px solid #FDE68A',
-                background: '#FFFBEB',
-                color: '#92400E',
-                fontSize: 12,
-                lineHeight: 1.55,
-              }}
-            >
-              If you confirm, your account will be scheduled for
-              permanent deletion 24 hours later. If you choose to
-              keep your account, the deletion request will be
-              cancelled.
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 8,
-                marginTop: 18,
-                flexWrap: 'wrap',
-              }}
-            >
-              <SmallButton
-                onClick={handleCancelApprovedDeletion}
-                disabled={deletionDecisionBusy}
-              >
-                {deletionDecisionBusy
-                  ? 'Processing...'
-                  : 'No, Keep My Account'}
-              </SmallButton>
-              <SmallButton
-                solid
-                danger
-                onClick={handleConfirmApprovedDeletion}
-                disabled={deletionDecisionBusy}
-              >
-                {deletionDecisionBusy
-                  ? 'Processing...'
-                  : 'Yes, Confirm Deletion'}
-              </SmallButton>
             </div>
           </div>
         </div>

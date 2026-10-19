@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import styles from './Layout.module.css'
+import AccountDeletionApprovalModal from './AccountDeletionApprovalModal'
 
 export default function Layout() {
   const {
@@ -1158,6 +1159,9 @@ export default function Layout() {
       <main className={styles.main}>
         <Outlet />
       </main>
+
+      {/* Shared Player/Coach account deletion approval popup */}
+      <AccountDeletionApprovalModal userId={user?.id} />
 
       {showAccessDenied && (
         <div
