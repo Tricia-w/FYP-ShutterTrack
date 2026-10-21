@@ -342,15 +342,22 @@ export default function Login() {
         type: 'signup',
         email: cleanEmail,
         options: {
-          emailRedirectTo: `${AUTH_REDIRECT_ORIGIN}/login`,
+          emailRedirectTo: `${AUTH_REDIRECT_ORIGIN}/email-verified`,
         },
       })
       if (resendError) throw resendError
-      setSuccess(
-        'A new verification email has been sent. Check Inbox, Spam, Junk, and Promotions.',
-      )
+
+      // Reuse Register's existing OTP entry UI; no new route is required.
+      // A resend acknowledgement does not confirm whether an account exists.
+      navigate('/register', {
+        state: {
+          verificationEmail: cleanEmail,
+          verificationEmailSent: true,
+          fromLoginVerification: true,
+        },
+      })
     } catch (err) {
-      console.error('Resend verification error:', err)
+      console.error('Verification email request failed:', err)
       const message = String(err?.message || '').toLowerCase()
       if (
         message.includes('rate limit') ||
@@ -360,7 +367,7 @@ export default function Login() {
           'Too many verification emails were requested. Please wait before trying again.',
         )
       } else {
-        setError('Unable to resend the verification email. Please try again.')
+        setError('Unable to request a verification code. Please try again.')
       }
     } finally {
       setResendVerificationLoading(false)
@@ -1147,7 +1154,7 @@ export default function Login() {
           >
             {resendVerificationLoading
               ? 'Sending...'
-              : 'Resend Verification Email'}
+              : 'Verify Email'}
           </button>
         )}
         {success && (

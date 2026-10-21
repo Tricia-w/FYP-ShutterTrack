@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import styles from '../Welcome/Auth.module.css'
 
 export default function EmailVerified() {
-  const [checking, setChecking] = useState(true)
-  const [verified, setVerified] = useState(false)
+  const location = useLocation()
+  // The OTP screen reaches this page only after verifyOtp succeeds.
+  // This flag controls the success display; Supabase remains the authority.
+  const fromSuccessfulOtp = location.state?.verifiedByOtp === true
+  const [checking, setChecking] = useState(!fromSuccessfulOtp)
+  const [verified, setVerified] = useState(fromSuccessfulOtp)
 
   // Follow the same theme selected on Login/Register.
   const [isDark] = useState(
@@ -13,6 +17,7 @@ export default function EmailVerified() {
   )
 
   useEffect(() => {
+    if (fromSuccessfulOtp) return undefined
     let active = true
 
     async function checkVerification() {
@@ -56,7 +61,7 @@ export default function EmailVerified() {
     return () => {
       active = false
     }
-  }, [])
+  }, [fromSuccessfulOtp])
 
   const screenStyle = {
     minHeight: '100vh',

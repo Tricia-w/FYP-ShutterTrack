@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { createClient } from '@supabase/supabase-js'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import styles from '../Welcome/Auth.module.css'
 import LegalModal from './LegalModal'
@@ -115,7 +116,7 @@ function getFriendlyAuthMessage(error, fallback) {
     message.includes('already exists') ||
     message.includes('user exists')
   ) {
-    return 'This email is already registered. If the account has not been verified yet, check your email for the verification link. Otherwise, choose "Add Role" to add another role or go to Login.'
+    return 'This email may already have an account. If you just registered, enter the verification code sent to your inbox. Otherwise, sign in or use Add Role.'
   }
 
   if (
@@ -190,6 +191,7 @@ function isExistingSignupResponse(error, user) {
     code === 'email_exists' ||
     message.includes('already registered') ||
     message.includes('already exists') ||
+    message.includes('user exists') ||
     (Boolean(user) &&
       Array.isArray(user.identities) &&
       user.identities.length === 0)
@@ -285,6 +287,12 @@ function PasswordChecklist({ password }) {
 
 export default function Register() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const loginVerificationEmail =
+    location.state?.fromLoginVerification === true &&
+    typeof location.state?.verificationEmail === 'string'
+      ? location.state.verificationEmail.trim().toLowerCase()
+      : ''
 
   const [step, setStep] = useState('role')
   const [role, setRole] = useState('')
@@ -293,13 +301,21 @@ export default function Register() {
   const [form, setForm] = useState(INITIAL_FORM_STATE)
 
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [success, setSuccess] = useState(
+    loginVerificationEmail
+      ? 'If your account needs verification, enter the code sent to your inbox.'
+      : ''
+  )
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [verificationEmail, setVerificationEmail] = useState('')
-  const [registrationComplete, setRegistrationComplete] = useState(false)
+  const [verificationEmail, setVerificationEmail] = useState(loginVerificationEmail)
+  const [registrationComplete, setRegistrationComplete] = useState(Boolean(loginVerificationEmail))
   const [resending, setResending] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
+  const [verifyingOtp, setVerifyingOtp] = useState(false)
+  const [existingNotice, setExistingNotice] = useState('')
+  const [resumingVerification, setResumingVerification] = useState(false)
 
   // Legal acknowledgements always start unchecked.
   // Registration cannot continue until all required acknowledgements are given.
@@ -332,6 +348,7 @@ export default function Register() {
     setPrivacyAccepted(false)
     setProfileConsentAccepted(false)
     setLegalModal(null)
+    setExistingNotice('')
   }
 
   async function handleNewAccount() {
@@ -395,8 +412,58 @@ export default function Register() {
       return
     }
 
-    const consentedAt = new Date().toISOString()
+    // Check the credentials without touching the shared ShuttleTrack
+    // Supabase auth session. Using supabase.auth.signInWithPassword here
+    // would emit SIGNED_IN to AuthContext and redirect out of Register.
+    // This temporary client stores no session in the browser.
+    const registrationCheckClient = createClient(
+      supabase.supabaseUrl,
+      supabase.supabaseKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          storageKey: 'shuttletrack-registration-check',
+        },
+      },
+    )
 
+    const { data: existingLogin, error: existingLoginError } =
+      await registrationCheckClient.auth.signInWithPassword({
+        email: cleanEmail,
+        password: form.password,
+      })
+
+    if (existingLogin?.user && !existingLoginError) {
+      // This is an existing verified account. Keep registration visible;
+      // do not create another account, send an OTP or navigate away.
+      setExistingNotice('verified')
+      setError('')
+      setSuccess('')
+      return
+    }
+
+    const loginCode = String(existingLoginError?.code || '').toLowerCase()
+    const loginMessage = String(existingLoginError?.message || '').toLowerCase()
+    if (loginCode === 'email_not_confirmed' || loginMessage.includes('email not confirmed')) {
+      // Supabase reports this when the supplied password belongs to an
+      // existing but unconfirmed email account.
+      setVerificationEmail(cleanEmail)
+      setExistingNotice('unverified')
+      setError('')
+      setSuccess('')
+      return
+    }
+
+    // Do not create accounts following connection/rate-limit failures.
+    if (existingLoginError &&
+        loginCode !== 'invalid_credentials' &&
+        !loginMessage.includes('invalid login credentials')) {
+      throw existingLoginError
+    }
+
+    const consentedAt = new Date().toISOString()
     const { data, error: signupError } = await supabase.auth.signUp({
       email: cleanEmail,
       password: form.password,
@@ -418,43 +485,57 @@ export default function Register() {
       },
     })
 
-    // Supabase may return a masked "existing user" response to avoid
-    // revealing whether an email address already has an account.
-    // Do not attempt to sign in or resend automatically during registration.
-    if (isExistingSignupResponse(signupError, data?.user)) {
-      setVerificationEmail(cleanEmail)
-      setRegistrationComplete(true)
+    const registeredUser = data?.user || (data?.id && data?.email ? data : null)
+    if (isExistingSignupResponse(signupError, registeredUser)) {
+      // Duplicate response from Supabase. With a different password the
+      // account status cannot be safely inferred, so do not open OTP.
+      setExistingNotice('unknown')
       setError('')
-      setSuccess(
-        'If this email needs verification, check your inbox for a verification link. If you have already verified it, select Go to Login. You can request another verification email below if needed.',
-      )
+      setSuccess('')
       return
     }
 
-    if (signupError) {
-      throw signupError
+    if (signupError) throw signupError
+
+    if (data?.session) {
+      // Confirmation should be enabled in the Supabase Email provider.
+      await supabase.auth.signOut({ scope: 'local' })
+      setExistingNotice('configuration')
+      return
     }
 
-    if (!data?.user) {
-      throw new Error(
-        'We could not finish setting up your account. Reason: ShuttleTrack did not receive the account information needed to complete registration. Please try again. If this email is already registered, use Login or Add Role instead.'
-      )
-    }
+    // A successful signup is the only path that immediately opens OTP.
+    // Some client versions may not expose data.user even when the signup
+    // request succeeded, so an error-free response is sufficient here.
+    setExistingNotice('')
+    setVerificationEmail(cleanEmail)
+    setOtpCode('')
+    setRegistrationComplete(true)
+    setError('')
+    setSuccess('Registration received. Enter the verification code sent to your email.')
+  }
 
-    if (!data.session) {
-      setVerificationEmail(cleanEmail)
+  async function resumeRegistrationVerification() {
+    if (resumingVerification || !verificationEmail) return
+    setResumingVerification(true)
+    setError('')
+    setSuccess('')
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: verificationEmail,
+        options: { emailRedirectTo: `${PUBLIC_APP_URL}/email-verified` },
+      })
+      if (resendError) throw resendError
+      setOtpCode('')
       setRegistrationComplete(true)
-      setSuccess(
-        'Account created successfully. Please check your email and verify your account before logging in.',
-      )
-      return
+      setExistingNotice('')
+      setSuccess('A new verification code has been requested. Check your inbox.')
+    } catch (err) {
+      setError(getFriendlyAuthMessage(err, 'Could not resend verification code.'))
+    } finally {
+      setResumingVerification(false)
     }
-
-    window.location.replace(
-      role === 'coach'
-        ? '/coach/profile?newRole=1'
-        : '/setup',
-    )
   }
 
   async function handleExistingAccount() {
@@ -625,6 +706,7 @@ export default function Register() {
   async function handleSubmit(event) {
     event.preventDefault()
     resetMessages()
+    setExistingNotice('')
     setLoading(true)
 
     try {
@@ -649,6 +731,45 @@ export default function Register() {
     }
   }
 
+  async function verifyRegistrationCode(event) {
+    event.preventDefault()
+    if (verifyingOtp || !/^\d{6,8}$/.test(otpCode)) {
+      setError('Enter the verification code from your latest email.')
+      return
+    }
+
+    setVerifyingOtp(true)
+    resetMessages()
+    try {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        email: verificationEmail,
+        token: otpCode,
+        type: 'signup',
+      })
+      if (verifyError) throw verifyError
+
+      // verifyOtp may start an authenticated session. Require the normal
+      // Login step as requested; do not automatically open Dashboard.
+      const { error: signOutError } = await supabase.auth.signOut({
+        scope: 'local',
+      })
+      if (signOutError) {
+        console.warn('Unable to clear the post-verification session:', signOutError)
+      }
+      setForm((previous) => ({ ...previous, password: '', confirm: '' }))
+      setOtpCode('')
+      navigate('/email-verified', {
+        replace: true,
+        state: { verifiedByOtp: true, email: verificationEmail },
+      })
+    } catch (verifyError) {
+      console.error('Email OTP verification failed:', verifyError)
+      setError('The code is invalid or expired. Check the latest email or request a new code.')
+    } finally {
+      setVerifyingOtp(false)
+    }
+  }
+
   async function resendVerificationEmail() {
     if (!verificationEmail || resending) return
 
@@ -669,7 +790,7 @@ export default function Register() {
       if (resendError) throw resendError
 
       setSuccess(
-        'We sent the verification email again. Please check your Inbox, Spam, Junk, Promotions, and Trash folders.',
+        'If verification is needed, a new verification code will arrive shortly. Check Inbox, Spam, Junk and Promotions.',
       )
     } catch (err) {
       setError(
@@ -727,123 +848,59 @@ export default function Register() {
   )
 
   if (registrationComplete) {
+    const otpBg = isDark ? '#171e2b' : '#ffffff'
+    const otpText = isDark ? '#ffffff' : '#0d1b3e'
+    const otpMuted = isDark ? '#aab6cc' : '#64748b'
     return (
-      <div className={styles.screen}>
-        <div className={styles.box}>
-          <Logo />
-
-          <div
-            style={{
-              width: 70,
-              height: 70,
-              margin: '8px auto 18px',
-              borderRadius: '50%',
-              border: '1px solid #00C48C',
-              background: '#10251C',
-              color: '#34D399',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 34,
-            }}
-          >
-            ✓
-          </div>
-
-          <h1
-            className={styles.title}
-            style={{ textAlign: 'center' }}
-          >
-            Check your email
+      <div className={styles.screen} style={{ background: isDark ? '#0D1117' : '#f3f6fb' }}>
+        <div className={styles.box} style={{ background: otpBg, borderRadius: 16, padding: 32 }}>
+          <div style={{ color: otpText }}><Logo /></div>
+          <h1 className={styles.title} style={{ color: otpText, textAlign: 'center', marginTop: 24 }}>
+            Verify Your Email
           </h1>
-
-          <p
-            className={styles.sub}
-            style={{
-              textAlign: 'center',
-              lineHeight: 1.6,
-            }}
-          >
-            Check for a verification link sent to
-            <br />
-            <strong style={{ color: '#FFFFFF' }}>
-              {verificationEmail}
-            </strong>
+          <p className={styles.sub} style={{ color: otpMuted, textAlign: 'center', lineHeight: 1.6 }}>
+            Enter the verification code sent to your email address:
+            <br /><strong style={{ color: otpText }}>{verificationEmail}</strong>
           </p>
-
-          {error && (
-            <div className={styles.error}>{error}</div>
-          )}
-
-          {success && (
-            <div
-              style={{
-                background: isDark ? '#10251C' : '#ECFDF5',
-                color: isDark ? '#34D399' : '#047857',
-                border: isDark
-                  ? '1px solid #1F4A39'
-                  : '1px solid #A7F3D0',
-                padding: '11px 14px',
-                borderRadius: 10,
-                marginBottom: 16,
-                fontSize: 13,
-                fontWeight: 600,
-                lineHeight: 1.6,
-              }}
-            >
-              {success}
-            </div>
-          )}
-
-          <div
-            style={{
-              background: '#1E2535',
-              border: '1px solid #2A3147',
-              color: '#8892A4',
-              borderRadius: 12,
-              padding: 14,
-              fontSize: 12,
-              lineHeight: 1.7,
-              marginBottom: 16,
-            }}
-          >
-            If you received a verification email, open it and click the link.
-            If the account is already verified, choose Go to Login.
-            Check Spam, Junk and Promotions if needed.
-          </div>
-
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() =>
-              navigate('/login', {
-                state: { email: verificationEmail },
-              })
-            }
-          >
-            Go to Login
-          </button>
-
-          <button
-            type="button"
-            onClick={resendVerificationEmail}
-            disabled={resending}
-            style={{
-              width: '100%',
-              marginTop: 10,
-              padding: 12,
-              borderRadius: 12,
-              border: '1px solid #2A3147',
-              background: '#1E2535',
-              color: '#FFFFFF',
-              cursor: resending ? 'not-allowed' : 'pointer',
-              opacity: resending ? 0.7 : 1,
-            }}
-          >
-            {resending
-              ? 'Sending...'
-              : 'Resend verification email'}
-          </button>
+          {error && <div className={styles.error} role="alert">{error}</div>}
+          {success && <p role="status" style={{ color: isDark ? '#34D399' : '#047857', background: isDark ? '#10251C' : '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 10, padding: 12, fontSize: 13, textAlign: 'center' }}>{success}</p>}
+          <>
+              <form onSubmit={verifyRegistrationCode}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  aria-label="Email verification code"
+                  maxLength={8}
+                  pattern="[0-9]{6,8}"
+                  required
+                  value={otpCode}
+                  onChange={(event) => {
+                    setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 8))
+                    if (error) setError('')
+                  }}
+                  placeholder="000000"
+                  style={{ width: '100%', boxSizing: 'border-box', textAlign: 'center', fontSize: 28,
+                    letterSpacing: 9, padding: 14, border: '1px solid #b9c9ed', borderRadius: 10,
+                    background: isDark ? '#1e2535' : '#f8fafc', color: otpText, margin: '12px 0 18px' }}
+                />
+                <button type="submit" disabled={!/^\d{6,8}$/.test(otpCode) || verifyingOtp}
+                  style={{ width: '100%', padding: 14, borderRadius: 12, border: 0,
+                    background: '#1A5FFF', color: '#FFFFFF', fontSize: 15, fontWeight: 700,
+                    opacity: (!/^\d{6,8}$/.test(otpCode) || verifyingOtp) ? 0.65 : 1,
+                    cursor: verifyingOtp ? 'wait' : 'pointer' }}>
+                  {verifyingOtp ? 'Verifying...' : 'Verify Email'}
+                </button>
+              </form>
+              <button type="button" onClick={resendVerificationEmail} disabled={resending || verifyingOtp}
+                style={{ width: '100%', padding: 12, background: 'transparent', border: 'none',
+                  color: '#1a5fff', marginTop: 12, cursor: 'pointer', fontWeight: 700 }}>
+                {resending ? 'Sending...' : 'Resend Verification Code'}
+              </button>
+              <button type="button" onClick={() => navigate('/login', { state: { email: verificationEmail } })}
+                style={{ width: '100%', padding: 10, background: 'transparent', border: 'none',
+                  color: otpMuted, cursor: 'pointer' }}>Already verified? Go to Login</button>
+          </>
         </div>
       </div>
     )
@@ -1706,6 +1763,66 @@ export default function Register() {
               Add Role
             </button>
           </div>
+
+          {existingNotice && (
+            <div role="status" style={{
+              padding: 14, marginBottom: 16, borderRadius: 12,
+              background: isDark ? '#202B3D' : '#EFF6FF',
+              color: detailsPrimary, border: `1px solid ${detailsBorder}`,
+              fontSize: 13, lineHeight: 1.6,
+            }}>
+              <strong>{existingNotice === 'verified'
+                ? 'Account already registered'
+                : existingNotice === 'unverified'
+                  ? 'Account registered but not verified'
+                  : existingNotice === 'configuration'
+                    ? 'Email confirmation is not enabled'
+                    : 'This email may already be registered'}</strong>
+              <p style={{ margin: '8px 0 12px' }}>
+                {existingNotice === 'verified'
+                  ? 'This email is already registered and verified. Please go to Login or use Add Role.'
+                  : existingNotice === 'unverified'
+                    ? 'This account exists but its email has not been verified. Press Resume Verification to request a fresh code.'
+                    : existingNotice === 'configuration'
+                      ? 'Enable email confirmations in Supabase Auth before using OTP registration.'
+                      : 'If this account already exists, log in or use Add Role. If you have already received a verification code, you can enter it using the option below.'}
+              </p>
+              {existingNotice === 'unverified' && (
+                <button type="button" onClick={resumeRegistrationVerification}
+                  disabled={resumingVerification}
+                  style={{ width: '100%', padding: 12, border: 0, borderRadius: 10,
+                    color: '#fff', background: '#1A5FFF', fontWeight: 700, cursor: 'pointer' }}>
+                  {resumingVerification ? 'Sending code...' : 'Resume Verification — Send Code'}
+                </button>
+              )}
+              {existingNotice === 'unknown' && (
+                <button type="button" onClick={() => {
+                  setVerificationEmail(form.email.trim().toLowerCase())
+                  setRegistrationComplete(true)
+                  setOtpCode('')
+                  setExistingNotice('')
+                  setSuccess('Enter the verification code that was already sent to your inbox.')
+                }} style={{ width: '100%', padding: 12, border: 0,
+                  borderRadius: 10, color: '#fff', background: '#1A5FFF', fontWeight: 700 }}>
+                  Already have a code? Verify email
+                </button>
+              )}
+              {existingNotice === 'unknown' && (
+                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                  <button type="button" onClick={() => navigate('/login')}
+                    style={{ flex: 1, padding: 10, border: 0, borderRadius: 10,
+                      color: '#fff', background: '#1A5FFF', cursor: 'pointer' }}>Go to Login</button>
+                  <button type="button" onClick={() => {
+                    setAccountMode('existing')
+                    setExistingNotice('')
+                    setError('')
+                  }} style={{ flex: 1, padding: 10, borderRadius: 10,
+                    border: `1px solid ${detailsBorder}`, background: detailsSurface,
+                    color: detailsPrimary, cursor: 'pointer' }}>Add Role</button>
+                </div>
+              )}
+            </div>
+          )}
 
           {error && (
             <div

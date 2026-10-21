@@ -15,6 +15,16 @@ const SESSION_HEARTBEAT_KEY = 'shuttleSessionHeartbeat'
 const SESSION_HEARTBEAT_MAX_AGE_MS = 10000
 const SESSION_HEARTBEAT_INTERVAL_MS = 3000
 
+// Email/password accounts must complete Supabase email confirmation before
+// ShuttleTrack treats them as authenticated. Keep recovery handling separate.
+function isUnverifiedEmailUser(currentUser) {
+  return Boolean(
+    currentUser?.id &&
+    currentUser?.app_metadata?.provider === 'email' &&
+    !currentUser.email_confirmed_at
+  )
+}
+
 function needsReturningReverification(appUser) {
   if (!appUser?.last_seen_at) return false
 
@@ -121,7 +131,7 @@ export function AuthProvider({ children }) {
    */
   const loadAppUser = useCallback(
     async (currentUser) => {
-      if (!currentUser?.id) {
+      if (!currentUser?.id || isUnverifiedEmailUser(currentUser)) {
         setProfile(null)
         return null
       }
@@ -454,6 +464,15 @@ export function AuthProvider({ children }) {
           }
         }
 
+        // An unverified email account can exist in Supabase Auth, but
+        // must not become an authenticated ShuttleTrack app user.
+        if (isUnverifiedEmailUser(currentUser)) {
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
+
         setUser(currentUser)
 
         if (!currentUser) {
@@ -517,6 +536,21 @@ export function AuthProvider({ children }) {
             )
           }
 
+          return
+        }
+
+        // Do not set an unverified email user in AuthContext. The signup
+        // OTP screen remains free to verify the code using Supabase directly.
+        if (isUnverifiedEmailUser(currentUser)) {
+          if (profileLoadTimer) {
+            window.clearTimeout(profileLoadTimer)
+            profileLoadTimer = null
+          }
+          if (mounted) {
+            setUser(null)
+            setProfile(null)
+            setLoading(false)
+          }
           return
         }
 
