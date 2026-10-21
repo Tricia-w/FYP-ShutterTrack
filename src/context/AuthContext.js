@@ -405,7 +405,54 @@ export function AuthProvider({ children }) {
 
         if (!mounted) return
 
-        const currentUser = session?.user || null
+        let currentUser = session?.user || null
+
+        // A locally stored session can outlive a user who was deleted
+        // from Supabase Auth (for example, by an administrator).
+        // getUser() checks the account against the Auth server rather
+        // than trusting only the saved session payload.
+        if (currentUser) {
+          const { data: verified, error: verifyError } =
+            await supabase.auth.getUser()
+
+          if (!mounted) return
+
+          const status = Number(verifyError?.status || 0)
+          const authCode = String(verifyError?.code || '').toLowerCase()
+          const accountGone =
+            (!verifyError && !verified?.user) ||
+            [401, 403, 404].includes(status) ||
+            ['user_not_found', 'session_not_found',
+              'refresh_token_not_found', 'invalid_refresh_token',
+              'bad_jwt'].includes(authCode)
+
+          if (accountGone) {
+            // Only clear the session in this browser; do not change
+            // authentication for other accounts or browsers.
+            await supabase.auth.signOut({ scope: 'local' })
+            localStorage.removeItem('activeRole')
+            localStorage.removeItem('shuttleSessionOnly')
+            localStorage.removeItem(SESSION_HEARTBEAT_KEY)
+            sessionStorage.removeItem('shuttleBrowserSession')
+
+            if (!mounted) return
+            setUser(null)
+            setProfile(null)
+            setLoading(false)
+
+            if (window.location.pathname !== '/login') {
+              window.location.replace('/login')
+            }
+            return
+          }
+
+          if (!verifyError && verified?.user) {
+            currentUser = verified.user
+          } else if (verifyError) {
+            // Do not sign out on a temporary network/server error.
+            console.warn('Could not verify saved session:', verifyError.message)
+          }
+        }
 
         setUser(currentUser)
 

@@ -21,6 +21,31 @@ export default function AuthCallback() {
       try {
         setMessage('Checking your Google account...')
 
+        // Supabase sends rejected Google OAuth attempts back with an error
+        // instead of a session (for example, Before User Created hook rejection).
+        const callbackQuery = new URLSearchParams(window.location.search)
+        const callbackHash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+        const oauthError = callbackQuery.get('error') || callbackHash.get('error')
+        const oauthDescription =
+          callbackQuery.get('error_description') ||
+          callbackHash.get('error_description') || ''
+
+        if (oauthError) {
+          const description = oauthDescription.toLowerCase()
+          const registrationRequired =
+            description.includes('register') ||
+            description.includes('signup') ||
+            description.includes('sign up') ||
+            description.includes('before user created')
+          const blockedMessage = registrationRequired
+            ? 'No registered ShuttleTrack account was found for this Google account. Please register as a Player or Coach first.'
+            : 'Google Sign-In could not be completed. If you have not registered with ShuttleTrack, please register as a Player or Coach first.'
+
+          sessionStorage.setItem('shuttleLoginBlockedMessage', blockedMessage)
+          navigate('/login', { replace: true })
+          return
+        }
+
         const {
           data: { session },
           error: sessionError,
@@ -64,74 +89,24 @@ export default function AuthCallback() {
           throw appUserError
         }
 
-        let appUser = existingAppUser
+        const appUser = existingAppUser
 
+        // Google is a sign-in method only. Do not create a ShuttleTrack
+        // profile or assign a Player/Coach role to an unregistered user.
         if (!appUser) {
-          setMessage('Creating your ShuttleTrack account...')
+          sessionStorage.removeItem('googleAuthMode')
+          sessionStorage.removeItem('googleSelectedRole')
+          sessionStorage.setItem(
+            'shuttleLoginBlockedMessage',
+            'No registered ShuttleTrack account was found for this Google account. Please register as a Player or Coach first.',
+          )
 
-          const selectedRole =
-            sessionStorage.getItem('googleSelectedRole') ||
-            user.user_metadata?.role ||
-            'player'
+          await supabase.auth.signOut()
 
-          const safeRole =
-            selectedRole === 'coach' ? 'coach' : 'player'
-
-          const fullName =
-            user.user_metadata?.full_name ||
-            user.user_metadata?.name ||
-            user.email?.split('@')[0] ||
-            'New User'
-
-          const emailPrefix =
-            user.email?.split('@')[0] || 'user'
-
-          const cleanUsername = emailPrefix
-            .replace(/[^a-zA-Z0-9_]/g, '')
-            .slice(0, 20)
-
-          const generatedUsername = `${
-            cleanUsername || 'user'
-          }_${user.id.slice(0, 6)}`
-
-          const { data: createdAppUser, error: createError } =
-            await supabase
-              .from('app_users')
-              .insert({
-                user_id: user.id,
-                email: user.email,
-                full_name: fullName,
-                username: generatedUsername,
-                role: safeRole,
-                setup_completed:
-                  safeRole === 'coach',
-                account_status: 'active',
-                has_player_access:
-                  safeRole === 'player',
-                has_coach_access:
-                  safeRole === 'coach',
-              })
-              .select(
-                `
-                  user_id,
-                  email,
-                  full_name,
-                  username,
-                  role,
-                  setup_completed,
-                  account_status,
-                  removed_at,
-                  has_player_access,
-                  has_coach_access
-                `,
-              )
-              .single()
-
-          if (createError) {
-            throw createError
+          if (active) {
+            navigate('/login', { replace: true })
           }
-
-          appUser = createdAppUser
+          return
         }
 
         sessionStorage.removeItem('googleAuthMode')
@@ -233,8 +208,9 @@ export default function AuthCallback() {
           appUser.has_coach_access === true ||
           appUser.role === 'coach'
 
+        // Per-user role preference prevents shared-browser account crossover.
         const savedMode =
-          localStorage.getItem('activeRole')
+          localStorage.getItem(`shuttleLastRole:${user.id}`)
 
         if (
           savedMode === 'coach' &&
@@ -330,16 +306,19 @@ export default function AuthCallback() {
           error?.message ||
           'Google authentication could not be completed.'
 
+        // Login reads this key and displays the message after redirect.
+        const friendlyMessage =
+          errorMessage === 'Google authentication session was not found.'
+            ? 'Google Sign-In could not be completed. If you have not registered with ShuttleTrack, please register as a Player or Coach first.'
+            : 'Google Sign-In could not be completed. Please try again.'
+        sessionStorage.setItem('shuttleLoginBlockedMessage', friendlyMessage)
         setMessage(errorMessage)
 
         setTimeout(() => {
           if (active) {
-            navigate('/login', {
-              replace: true,
-              state: {
-                error: errorMessage,
-              },
-            })
+            // The friendly error was already stored for the Login page.
+            // Do not pass raw errors as persistent navigation state.
+            navigate('/login', { replace: true })
           }
         }, 2500)
       }

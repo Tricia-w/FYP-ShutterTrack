@@ -20,6 +20,7 @@ import Settings from './components/Player/Settings'
 import Login from './components/Welcome/Login'
 import Register from './components/Welcome/Register'
 import ResetPassword from './components/Welcome/ResetPassword'
+import ConfirmDeletion from './components/Welcome/ConfirmDeletion'
 import EmailVerified from './components/Welcome/EmailVerified'
 import VerifyReturningUser from './components/Welcome/VerifyReturningUser'
 import AuthCallback from './components/Welcome/AuthCallback'
@@ -393,6 +394,10 @@ function App() {
         <Route
           path="/reset-password"
           element={<ResetPassword />}
+        />
+        <Route
+          path="/confirm-deletion"
+          element={<ConfirmDeletion />}
         />
         <Route
           path="/auth/callback"

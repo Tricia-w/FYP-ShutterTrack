@@ -8,7 +8,6 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import styles from './Layout.module.css'
-import AccountDeletionApprovalModal from './AccountDeletionApprovalModal'
 
 export default function Layout() {
   const {
@@ -366,6 +365,11 @@ export default function Layout() {
     mode === 'coach' ? 'Coach' : 'Player'
 
   const handleLogout = async () => {
+    // Keep the last-used mode for THIS account, not for anyone else
+    // who later signs in on the same computer.
+    if (user?.id && (mode === 'player' || mode === 'coach')) {
+      localStorage.setItem(`shuttleLastRole:${user.id}`, mode)
+    }
     await logout()
     navigate('/')
   }
@@ -383,6 +387,10 @@ export default function Layout() {
       }
 
       setMode('player')
+      if (user?.id) {
+        localStorage.setItem(`shuttleLastRole:${user.id}`, 'player')
+      }
+      localStorage.setItem('activeRole', 'player')
       navigate('/dashboard')
       return
     }
@@ -398,6 +406,10 @@ export default function Layout() {
       }
 
       setMode('coach')
+      if (user?.id) {
+        localStorage.setItem(`shuttleLastRole:${user.id}`, 'coach')
+      }
+      localStorage.setItem('activeRole', 'coach')
       navigate('/coach')
     }
   }
@@ -1159,9 +1171,6 @@ export default function Layout() {
       <main className={styles.main}>
         <Outlet />
       </main>
-
-      {/* Shared Player/Coach account deletion approval popup */}
-      <AccountDeletionApprovalModal userId={user?.id} />
 
       {showAccessDenied && (
         <div

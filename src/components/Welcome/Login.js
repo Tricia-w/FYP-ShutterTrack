@@ -182,6 +182,7 @@ export default function Login() {
   const location = useLocation()
   const postLoginRedirect = getSafePostLoginRedirect(location)
   const locationEmail = location.state?.email || ''
+  const locationError = location.state?.error || ''
   const [email, setEmail] = useState(
     locationEmail,
   )
@@ -246,6 +247,20 @@ export default function Login() {
     if (blockedMessage) {
       setError(blockedMessage)
       sessionStorage.removeItem('shuttleLoginBlockedMessage')
+    } else if (locationError) {
+      // Display callback errors once, rather than on every page refresh.
+      setError(locationError)
+    }
+
+    // React Router persists location.state across refreshes. Consume the
+    // one-time OAuth error but keep any unrelated routing state intact.
+    if (locationError) {
+      const nextState = { ...(location.state || {}) }
+      delete nextState.error
+      navigate(`${location.pathname}${location.search}${location.hash}`, {
+        replace: true,
+        state: Object.keys(nextState).length ? nextState : null,
+      })
     }
 
     if (blockedSuspendedUntil) {
@@ -280,7 +295,7 @@ export default function Login() {
       }
     }
     checkBrowserSession()
-  }, [locationEmail])
+  }, [locationEmail, locationError, navigate, location.pathname, location.search, location.hash, location.state])
 
   async function blockLoginWithMessage(
     message,
@@ -567,12 +582,15 @@ export default function Login() {
         navigate(postLoginRedirect, { replace: true })
         return
       }
+      // Restore only THIS user's preference. Never reuse another
+      // account's activeRole from the same browser.
       const savedMode =
-        localStorage.getItem('activeRole')
+        localStorage.getItem(`shuttleLastRole:${user.id}`)
       if (
         savedMode === 'coach' &&
         hasCoach
       ) {
+        localStorage.setItem('activeRole', 'coach')
         navigate('/coach', { replace: true })
         return
       }
@@ -580,6 +598,7 @@ export default function Login() {
         savedMode === 'player' &&
         hasPlayer
       ) {
+        localStorage.setItem('activeRole', 'player')
         navigate(
           appUser.setup_completed
             ? '/dashboard'
@@ -665,7 +684,7 @@ export default function Login() {
           cleanEmail,
           {
             redirectTo:
-              `${AUTH_REDIRECT_ORIGIN}/reset-password`,
+              `${MOBILE_QR_URL}/reset-password`,
           },
         )
       if (resetError) throw resetError
@@ -716,6 +735,9 @@ export default function Login() {
           options: {
             redirectTo:
               `${AUTH_REDIRECT_ORIGIN}/auth/callback`,
+            queryParams: {
+              prompt: 'select_account',
+            },
           },
         })
       if (googleError) throw googleError
@@ -1072,7 +1094,6 @@ export default function Login() {
             }}
           >
             <div>{error}</div>
-
             {suspendedUntil && (
               <div
                 style={{

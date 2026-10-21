@@ -10,8 +10,11 @@ const MAX_USERNAME_LENGTH = 30
 const MAX_EMAIL_LENGTH = 254
 const MAX_PASSWORD_LENGTH = 128
 
-const AUTH_REDIRECT_ORIGIN =
-  String(window.location.origin || '')
+const PUBLIC_APP_URL =
+  String(
+    process.env.REACT_APP_PUBLIC_APP_URL ||
+      'https://fyp-shutter-track.vercel.app'
+  )
     .trim()
     .replace(/\/$/, '')
 
@@ -190,17 +193,6 @@ function isExistingSignupResponse(error, user) {
     (Boolean(user) &&
       Array.isArray(user.identities) &&
       user.identities.length === 0)
-  )
-}
-
-function isEmailNotConfirmedError(error) {
-  const message = String(error?.message || '').toLowerCase()
-  const code = String(error?.code || '').toLowerCase()
-
-  return (
-    code === 'email_not_confirmed' ||
-    message.includes('email not confirmed') ||
-    message.includes('email_not_confirmed')
   )
 }
 
@@ -409,7 +401,7 @@ export default function Register() {
       email: cleanEmail,
       password: form.password,
       options: {
-        emailRedirectTo: `${AUTH_REDIRECT_ORIGIN}/email-verified`,
+        emailRedirectTo: `${PUBLIC_APP_URL}/email-verified`,
         data: {
           role,
           requested_role: role,
@@ -426,137 +418,20 @@ export default function Register() {
       },
     })
 
-    if (signupError && data?.user?.id) {
-      console.warn(
-        'Signup created the account but returned an error afterwards:',
-        signupError,
-      )
-
+    // Supabase may return a masked "existing user" response to avoid
+    // revealing whether an email address already has an account.
+    // Do not attempt to sign in or resend automatically during registration.
+    if (isExistingSignupResponse(signupError, data?.user)) {
       setVerificationEmail(cleanEmail)
       setRegistrationComplete(true)
       setError('')
       setSuccess(
-        'Account created successfully. Please check your email and verify your account before logging in. If the verification email is not visible, use "Resend verification email" below.',
+        'If this email needs verification, check your inbox for a verification link. If you have already verified it, select Go to Login. You can request another verification email below if needed.',
       )
       return
     }
 
-    if (signupError || isExistingSignupResponse(signupError, data?.user)) {
-      if (isExistingSignupResponse(signupError, data?.user)) {
-        /*
-         * Supabase may return an obfuscated existing-user response even when
-         * this is the user's first visible registration attempt and the account
-         * was just created but is still waiting for email confirmation.
-         *
-         * Try the supplied email/password once:
-         * - if it signs in, the account is already confirmed
-         * - if Supabase says email not confirmed, show the verification screen
-         * - otherwise fall back to the normal existing-account guidance
-         */
-        try {
-          const {
-            data: existingLoginData,
-            error: existingLoginError,
-          } = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password: form.password,
-          })
-
-          if (
-            existingLoginData?.user?.id &&
-            existingLoginData?.session
-          ) {
-            setAccountMode('existing')
-            setError(
-              'This email is already registered and verified. Please use Login, or choose "Add Role" if another ShuttleTrack role is needed.',
-            )
-            setLoading(false)
-            return
-          }
-
-          if (
-            isEmailNotConfirmedError(
-              existingLoginError
-            )
-          ) {
-            const {
-              error: resendError,
-            } = await supabase.auth.resend({
-              type: 'signup',
-              email: cleanEmail,
-              options: {
-                emailRedirectTo:
-                  `${AUTH_REDIRECT_ORIGIN}/email-verified`,
-              },
-            })
-
-            if (resendError) {
-              console.warn(
-                'Unable to resend verification email:',
-                resendError,
-              )
-            }
-
-            setVerificationEmail(cleanEmail)
-            setRegistrationComplete(true)
-            setError('')
-            setSuccess(
-              resendError
-                ? 'Account created successfully. Please check your email and verify your account before logging in.'
-                : 'Account created successfully. Please check your email and verify your account before logging in.',
-            )
-            setLoading(false)
-            return
-          }
-        } catch (existingCheckError) {
-          console.warn(
-            'Unable to check whether the existing signup is awaiting verification:',
-            existingCheckError,
-          )
-        }
-
-        setAccountMode('existing')
-        setError(
-          'This email is already registered. Please use Login, or choose "Add Role" if another ShuttleTrack role is needed.',
-        )
-        setLoading(false)
-        return
-      }
-
-      try {
-        const {
-          data: recoveryLoginData,
-          error: recoveryLoginError,
-        } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: form.password,
-        })
-
-        if (recoveryLoginData?.user?.id && recoveryLoginData?.session) {
-          window.location.replace(
-            role === 'coach'
-              ? '/coach/profile?newRole=1'
-              : '/setup',
-          )
-          return
-        }
-
-        if (isEmailNotConfirmedError(recoveryLoginError)) {
-          setVerificationEmail(cleanEmail)
-          setRegistrationComplete(true)
-          setError('')
-          setSuccess(
-            'Account created successfully. Please check your email and verify your account before logging in.',
-          )
-          return
-        }
-      } catch (recoveryError) {
-        console.warn(
-          'Unable to verify whether the signup already created the account:',
-          recoveryError,
-        )
-      }
-
+    if (signupError) {
       throw signupError
     }
 
@@ -787,7 +662,7 @@ export default function Register() {
           email: verificationEmail,
           options: {
             emailRedirectTo:
-              `${AUTH_REDIRECT_ORIGIN}/email-verified`,
+              `${PUBLIC_APP_URL}/email-verified`,
           },
         })
 
@@ -889,7 +764,7 @@ export default function Register() {
               lineHeight: 1.6,
             }}
           >
-            A verification link was sent to
+            Check for a verification link sent to
             <br />
             <strong style={{ color: '#FFFFFF' }}>
               {verificationEmail}
@@ -932,9 +807,9 @@ export default function Register() {
               marginBottom: 16,
             }}
           >
-            Open the email and click the verification link.
-            Check Inbox, Spam, Junk, Promotions and Trash if it
-            is not visible.
+            If you received a verification email, open it and click the link.
+            If the account is already verified, choose Go to Login.
+            Check Spam, Junk and Promotions if needed.
           </div>
 
           <button
