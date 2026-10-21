@@ -72,6 +72,20 @@ const normaliseDeletionStatus = (value) => {
     : "Pending";
 };
 
+// The portal role is where the request originated; the scope is what gets deleted.
+// Legacy requests with no scope were full-account deletion requests.
+const deletionScopeLabel = (scope) => {
+  if (scope === "player") return "Player only";
+  if (scope === "coach") return "Coach only";
+  return "Entire account";
+};
+
+const deletionScopeDescription = (scope) => {
+  if (scope === "player") return "Delete the Player role and its data; retain Coach access.";
+  if (scope === "coach") return "Delete the Coach role and its data; retain Player access.";
+  return "Delete the entire account, including both roles and related data.";
+};
+
 const formatDate = (value) => {
   if (!value) return "—";
   const date = new Date(value);
@@ -295,6 +309,11 @@ export default function AdminReports() {
             request.role ||
             user?.role ||
             "player",
+          deletionScope: request.deletion_scope ?? "both",
+          deletionScopeLabel: deletionScopeLabel(request.deletion_scope),
+          deletionCompletedAt: request.deletion_completed_at || null,
+          userConfirmedAt: request.user_confirmed_at || null,
+          scheduledDeleteAt: request.scheduled_delete_at || null,
           accountStatus:
             user?.account_status ||
             "unknown",
@@ -425,6 +444,7 @@ export default function AdminReports() {
               item.name,
               item.email,
               item.role,
+              item.deletionScopeLabel,
               item.accountStatus,
               item.reason,
               item.details,
@@ -461,6 +481,11 @@ export default function AdminReports() {
 
   const beginStatusUpdate = (status) => {
     if (!selected) return;
+    if (selected.kind === "deletion" &&
+        (selected.deletionCompletedAt || ["Cancelled", "Rejected"].includes(selected.status))) {
+      setErrorMessage("This deletion request is closed and cannot be approved or changed.");
+      return;
+    }
     setPendingStatus(status);
     setAdminNote(selected.adminNote || "");
     setErrorMessage("");
@@ -473,6 +498,21 @@ export default function AdminReports() {
     setSaving(true);
     setErrorMessage("");
     try {
+      if (selected.kind === "deletion") {
+        const { data: current, error: currentError } = await supabase
+          .from("account_deletion_requests")
+          .select("status, deletion_scope, deletion_completed_at")
+          .eq("id", selected.id)
+          .single();
+        if (currentError) throw currentError;
+        if (current.deletion_completed_at ||
+            ["cancelled", "rejected"].includes(String(current.status || "").toLowerCase())) {
+          throw new Error("This deletion request is already closed. Refresh the page.");
+        }
+        if ((current.deletion_scope ?? "both") !== selected.deletionScope) {
+          throw new Error("The requested deletion scope changed. Refresh the page before approving.");
+        }
+      }
       const {
         data: { user: adminUser },
         error: authError,
@@ -497,7 +537,7 @@ export default function AdminReports() {
           .eq("id", selected.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
+        const { data: updatedDeletionRows, error } = await supabase
           .from(
             "account_deletion_requests",
           )
@@ -509,8 +549,14 @@ export default function AdminReports() {
             reviewed_at: now,
             reviewed_by: adminUser.id,
           })
-          .eq("id", selected.id);
+          .eq("id", selected.id)
+          .eq("status", selected.status.toLowerCase())
+          .is("deletion_completed_at", null)
+          .select("id");
         if (error) throw error;
+        if (!updatedDeletionRows?.length) {
+          throw new Error("This request changed or was revoked. Refresh and review again.");
+        }
       }
       const targetName =
         selected.kind === "report"
@@ -527,7 +573,7 @@ export default function AdminReports() {
       await loadData();
       setSuccessMessage(
         selected.kind === "deletion" && savedStatus === "Approved"
-          ? `Deletion request for ${targetName} was approved. The user will be asked to confirm the deletion before the 24-hour countdown begins.`
+          ? `${selected.deletionScopeLabel} deletion request for ${targetName} was approved. The user must confirm it before the 24-hour countdown begins.`
           : `${noun} for ${targetName} was marked as ${savedStatus}. The action was added to Activity Logs automatically.`,
       );
     } catch (error) {
@@ -1019,6 +1065,7 @@ export default function AdminReports() {
                   {[
                     "Account",
                     "Role",
+                    "Deletion choice",
                     "Account status",
                     "Reason",
                     "Requested",
@@ -1043,7 +1090,7 @@ export default function AdminReports() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       style={{
                         padding: 38,
                         textAlign:
@@ -1058,7 +1105,7 @@ export default function AdminReports() {
                 ) : visibleItems.length ===
                   0 ? (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <EmptyState text="No deletion requests found." />
                     </td>
                   </tr>
@@ -1132,6 +1179,9 @@ export default function AdminReports() {
                           <RoleBadge
                             role={request.role}
                           />
+                        </td>
+                        <td style={{ padding: "14px 16px", fontSize: 12, fontWeight: 700 }}>
+                          {request.deletionScopeLabel}
                         </td>
                         <td
                           style={{
@@ -1311,10 +1361,14 @@ export default function AdminReports() {
                     selected.email,
                   ],
                   [
-                    "Role",
+                    "Request source",
                     capitalise(
                       selected.role,
                     ),
+                  ],
+                  [
+                    "Deletion choice",
+                    selected.deletionScopeLabel,
                   ],
                   [
                     "Account status",
@@ -1402,9 +1456,15 @@ export default function AdminReports() {
                   lineHeight: 1.55,
                 }}
               >
-                Approving this request sends the user an approval notification.
-                The user must confirm the deletion from Settings. Once confirmed,
-                permanent account deletion is scheduled for 24 hours later.
+                <strong>Requested action: {selected.deletionScopeLabel}.</strong>{" "}
+                {deletionScopeDescription(selected.deletionScope)}
+                {selected.deletionCompletedAt ? (
+                  <> This request was completed on {formatDate(selected.deletionCompletedAt)}.</>
+                ) : selected.userConfirmedAt ? (
+                  <> The user confirmed this request. Scheduled for {formatDate(selected.scheduledDeleteAt)}.</>
+                ) : (
+                  <> Approving sends an approval notification. The user must confirm the action, then a 24-hour countdown begins.</>
+                )}
               </div>
             </>
           )}
@@ -1420,7 +1480,11 @@ export default function AdminReports() {
           >
             {(selected.kind === "report"
               ? reportActions
-              : deletionActions
+              : selected.deletionCompletedAt || ["Cancelled", "Rejected"].includes(selected.status)
+                ? []
+                : selected.status === "Approved"
+                  ? []
+                  : deletionActions
             ).map((action) => (
               <button
                 key={action.status}
@@ -1465,8 +1529,13 @@ export default function AdminReports() {
           >
             {selected.kind === "report"
               ? `The report will be marked as ${pendingStatus}.`
-              : `The account deletion request will be marked as ${pendingStatus}.`}
+              : `The ${selected.deletionScopeLabel} deletion request will be marked as ${pendingStatus}. ${deletionScopeDescription(selected.deletionScope)}`}
           </p>
+          {selected.kind === "deletion" && (
+            <div style={{ fontSize: 13, marginBottom: 12, fontWeight: 700 }}>
+              Confirmed deletion choice: {selected.deletionScopeLabel}
+            </div>
+          )}
           <textarea
             rows={4}
             maxLength={1000}

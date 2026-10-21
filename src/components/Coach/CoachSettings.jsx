@@ -56,6 +56,9 @@ export default function CoachSettings() {
   const [requestingDelete, setRequestingDelete] = useState(false)
   const [deletionReason, setDeletionReason] = useState('')
   const [approvedDeletionRequest, setApprovedDeletionRequest] = useState(null)
+  const [deletionScope, setDeletionScope] = useState('both')
+  const [hasBothRoles, setHasBothRoles] = useState(false)
+  const [revokingDeletion, setRevokingDeletion] = useState(false)
   const [loggingOutOtherDevices, setLoggingOutOtherDevices] =
     useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
@@ -218,10 +221,11 @@ export default function CoachSettings() {
       const { data, error } = await supabase
         .from('account_deletion_requests')
         .select(
-          'id, status, reviewed_at, user_confirmed_at, scheduled_delete_at'
+          'id, status, deletion_scope, reviewed_at, user_confirmed_at, scheduled_delete_at, deletion_completed_at'
         )
         .eq('user_id', authUser.id)
-        .eq('status', 'approved')
+        .in('status', ['pending', 'reviewing', 'approved'])
+        .is('deletion_completed_at', null)
         .order('requested_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -235,6 +239,26 @@ export default function CoachSettings() {
     }
   }, [getAuthUser])
 
+  useEffect(() => {
+    let active = true
+    const loadRoleAccess = async () => {
+      try {
+        const authUser = await getAuthUser()
+        const { data, error } = await supabase
+          .from('app_users')
+          .select('has_player_access, has_coach_access')
+          .eq('user_id', authUser.id)
+          .maybeSingle()
+        if (error) throw error
+        if (active) setHasBothRoles(data?.has_player_access === true && data?.has_coach_access === true)
+      } catch (error) {
+        console.error('Unable to load role access for deletion:', error)
+        if (active) setHasBothRoles(false)
+      }
+    }
+    loadRoleAccess()
+    return () => { active = false }
+  }, [getAuthUser])
   useEffect(() => {
     let active = true
     let channel = null
@@ -610,6 +634,26 @@ export default function CoachSettings() {
       setLoggingOutOtherDevices(false)
     }
   }
+  const handleRevokeDeletionRequest = async () => {
+    if (!approvedDeletionRequest?.id || revokingDeletion) return
+    if (!window.confirm('Revoke this deletion request? Any scheduled deletion will be cancelled.')) return
+    setRevokingDeletion(true)
+    try {
+      const { error } = await supabase.rpc('cancel_account_deletion', {
+        p_request_id: approvedDeletionRequest.id,
+      })
+      if (error) throw error
+      setApprovedDeletionRequest(null)
+      await loadApprovedDeletionRequest()
+      alert('Your deletion request has been revoked.')
+    } catch (error) {
+      console.error('Deletion revocation error:', error)
+      alert(error?.message || 'Unable to revoke the deletion request.')
+      await loadApprovedDeletionRequest()
+    } finally {
+      setRevokingDeletion(false)
+    }
+  }
   const handleRequestDeleteAccount = async () => {
     if (requestingDelete) return
     const cleanReason = deletionReason.trim()
@@ -619,7 +663,11 @@ export default function CoachSettings() {
     }
     setRequestingDelete(true)
     try {
+      await loadApprovedDeletionRequest()
       const authUser = await getAuthUser()
+      if (!hasBothRoles && deletionScope !== 'both') {
+        throw new Error('Only accounts with both Player and Coach access can remove one role.')
+      }
       const { error } = await supabase
         .from('account_deletion_requests')
         .insert({
@@ -629,6 +677,7 @@ export default function CoachSettings() {
           role: 'coach',
           reason: cleanReason,
           status: 'pending',
+          deletion_scope: hasBothRoles ? deletionScope : 'both',
         })
       if (error) {
         if (error.code === '23505') {
@@ -639,6 +688,7 @@ export default function CoachSettings() {
       }
       setShowDeleteModal(false)
       setDeletionReason('')
+      await loadApprovedDeletionRequest()
       alert(
         'Your account deletion request has been submitted. You can continue using your account while the admin reviews it.'
       )
@@ -1117,24 +1167,35 @@ export default function CoachSettings() {
                 flexWrap: 'wrap',
               }}
             >
+              {approvedDeletionRequest && (
+                <div style={{ width: '100%', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Deletion request: <strong>{approvedDeletionRequest.user_confirmed_at ? 'Scheduled (24-hour countdown)' : approvedDeletionRequest.status === 'approved' ? 'Approved — awaiting your confirmation' : approvedDeletionRequest.status === 'reviewing' ? 'Under admin review' : 'Pending admin review'}</strong>
+                  {' · '}{approvedDeletionRequest.deletion_scope === 'player' ? 'Player only' : approvedDeletionRequest.deletion_scope === 'coach' ? 'Coach only' : 'Entire account'}
+                </div>
+              )}
               <SmallButton onClick={handleLogout}>
                 Log Out This Device
               </SmallButton>
-              <SmallButton
-                danger
-                disabled={Boolean(approvedDeletionRequest)}
-                onClick={() => {
-                  if (approvedDeletionRequest) return
-                  setDeletionReason('')
-                  setShowDeleteModal(true)
-                }}
-              >
-                {approvedDeletionRequest?.user_confirmed_at
-                  ? 'Deletion Scheduled'
-                  : approvedDeletionRequest
-                    ? 'Deletion Approval Pending Confirmation'
-                    : 'Request Account Deletion'}
-              </SmallButton>
+              {approvedDeletionRequest ? (
+                <SmallButton
+                  danger
+                  disabled={revokingDeletion}
+                  onClick={handleRevokeDeletionRequest}
+                >
+                  {revokingDeletion ? 'Revoking...' : 'Revoke Deletion Request'}
+                </SmallButton>
+              ) : (
+                <SmallButton
+                  danger
+                  onClick={() => {
+                    setDeletionReason('')
+                    setDeletionScope('both')
+                    setShowDeleteModal(true)
+                  }}
+                >
+                  Request Account Deletion
+                </SmallButton>
+              )}
             </div>
           </div>
         </div>
@@ -1330,6 +1391,22 @@ export default function CoachSettings() {
               You will remain logged in and can continue using your
               account while the admin reviews your request.
             </p>
+            <div style={{ marginTop: 14, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
+              <div className={styles.formLabel} style={{ marginBottom: 9 }}>What would you like to delete?</div>
+              {(hasBothRoles ? [
+                ['player', 'Delete Player role only — keep Coach access'],
+                ['coach', 'Delete Coach role only — keep Player access'],
+                ['both', 'Delete entire account — Player and Coach'],
+              ] : [['both', 'Delete entire account']]).map(([value, label]) => (
+                <label key={value} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 9, fontSize: 13, cursor: 'pointer', color: 'var(--text)' }}>
+                  <input type="radio" name="deletionScope" value={value} checked={deletionScope === value} onChange={() => setDeletionScope(value)} disabled={requestingDelete} />
+                  <span>{label}</span>
+                </label>
+              ))}
+              <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--text-muted)' }}>
+                Admin approval is required. After approval, you must confirm before the 24-hour countdown begins. You can revoke your request before processing.
+              </div>
+            </div>
             <div style={{ marginTop: 14 }}>
               <label
                 className={styles.formLabel}
