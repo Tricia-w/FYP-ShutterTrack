@@ -186,6 +186,9 @@ export default function AdminReports() {
     useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [selectedDeletionIds, setSelectedDeletionIds] = useState([]);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const [errorMessage, setErrorMessage] =
     useState("");
   const [successMessage, setSuccessMessage] =
@@ -339,6 +342,14 @@ export default function AdminReports() {
       setDeletionRequests(
         formattedDeletions,
       );
+      setSelectedDeletionIds((current) =>
+        current.filter((id) =>
+          formattedDeletions.some(
+            (request) => request.id === id &&
+              ["Cancelled", "Rejected"].includes(request.status),
+          ),
+        ),
+      );
       setSelected((current) => {
         if (!current) return null;
         const source =
@@ -462,8 +473,56 @@ export default function AdminReports() {
     });
   }, [filter, items, search]);
 
+  const toggleDeletionSelection = (id) => {
+    setSelectedDeletionIds((current) =>
+      current.includes(id)
+        ? current.filter((selectedId) => selectedId !== id)
+        : [...current, id],
+    );
+  };
+
+  const removeSelectedDeletionRequests = async () => {
+    if (deletingSelected || selectedDeletionIds.length === 0) return;
+    const count = selectedDeletionIds.length;
+    if (!window.confirm(
+      `Permanently remove ${count} cancelled/rejected deletion request record${count === 1 ? "" : "s"}? This does NOT delete user accounts. This cannot be undone.`,
+    )) return;
+
+    setDeletingSelected(true);
+    setErrorMessage("");
+    try {
+      // The status condition is enforced again in the database operation.
+      const { data, error } = await supabase
+        .from("account_deletion_requests")
+        .delete()
+        .in("id", selectedDeletionIds)
+        .in("status", ["cancelled", "rejected"])
+        .select("id");
+      if (error) throw error;
+      if (!data?.length) {
+        throw new Error(
+          "No records were removed. Check the admin DELETE policy in Supabase or refresh the page.",
+        );
+      }
+      setSelectedDeletionIds([]);
+      setSelectionMode(false);
+      await loadData();
+      setSuccessMessage(
+        `${data.length} closed deletion request record${data.length === 1 ? " was" : "s were"} removed. User accounts were not deleted.` +
+        (data.length < count ? " Some requests were not removed because their status changed." : ""),
+      );
+    } catch (error) {
+      console.error("Unable to remove deletion request records:", error);
+      setErrorMessage(error?.message || "Could not remove selected records.");
+    } finally {
+      setDeletingSelected(false);
+    }
+  };
+
   const switchTab = (nextTab) => {
     setTab(nextTab);
+    setSelectedDeletionIds([]);
+    setSelectionMode(false);
     setFilter("All");
     setSearch("");
     setSelected(null);
@@ -806,9 +865,10 @@ export default function AdminReports() {
             <button
               key={status}
               type="button"
-              onClick={() =>
-                setFilter(status)
-              }
+              onClick={() => {
+                setFilter(status);
+                setSelectedDeletionIds([]);
+              }}
               style={{
                 ...buttonBase,
                 padding: "9px 14px",
@@ -830,22 +890,60 @@ export default function AdminReports() {
             </button>
           ))}
         </div>
-        <input
-          value={search}
-          onChange={(event) =>
-            setSearch(event.target.value)
-          }
-          placeholder={
-            tab === "reports"
-              ? "Search user reports"
-              : "Search deletion requests"
-          }
-          style={{
-            ...inputStyle,
-            width: 330,
-            maxWidth: "100%",
-          }}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {tab === "deletions" && (
+            <>
+              {selectionMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectionMode(false);
+                    setSelectedDeletionIds([]);
+                  }}
+                  disabled={deletingSelected}
+                  style={{ ...buttonBase, padding: "9px 13px", background: "#FFFFFF", color: "#6B7280", border: "1px solid #DDE3EF" }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!selectionMode) {
+                    setSelectionMode(true);
+                    setSelectedDeletionIds([]);
+                  } else {
+                    removeSelectedDeletionRequests();
+                  }
+                }}
+                disabled={deletingSelected || (selectionMode && selectedDeletionIds.length === 0)}
+                style={{
+                  ...buttonBase,
+                  padding: "9px 15px",
+                  background: selectionMode ? "#DC2626" : "#FFFFFF",
+                  color: selectionMode ? "#FFFFFF" : "#0D1B3E",
+                  border: selectionMode ? "1px solid #DC2626" : "1px solid #DDE3EF",
+                  opacity: deletingSelected || (selectionMode && selectedDeletionIds.length === 0) ? 0.55 : 1,
+                }}
+              >
+                {deletingSelected
+                  ? "Removing..."
+                  : selectionMode
+                    ? `Remove Selected (${selectedDeletionIds.length})`
+                    : "Select"}
+              </button>
+            </>
+          )}
+          <input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setSelectedDeletionIds([]);
+            }}
+            placeholder={tab === "reports" ? "Search user reports" : "Search deletion requests"}
+            style={{ ...inputStyle, width: 330, maxWidth: "100%" }}
+          />
+        </div>
       </div>
       <TableCard>
         <div style={{ overflowX: "auto" }}>
@@ -1063,6 +1161,7 @@ export default function AdminReports() {
                   }}
                 >
                   {[
+                    ...(selectionMode ? ["Select"] : []),
                     "Account",
                     "Role",
                     "Deletion choice",
@@ -1090,7 +1189,7 @@ export default function AdminReports() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={selectionMode ? 8 : 7}
                       style={{
                         padding: 38,
                         textAlign:
@@ -1105,7 +1204,7 @@ export default function AdminReports() {
                 ) : visibleItems.length ===
                   0 ? (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={selectionMode ? 8 : 7}>
                       <EmptyState text="No deletion requests found." />
                     </td>
                   </tr>
@@ -1144,6 +1243,23 @@ export default function AdminReports() {
                             "transparent";
                         }}
                       >
+                        {selectionMode && (
+                          <td style={{ padding: "14px 16px" }}>
+                            {["Cancelled", "Rejected"].includes(request.status) ? (
+                              <input
+                                type="checkbox"
+                                aria-label={`Select deletion request for ${request.name}`}
+                                checked={selectedDeletionIds.includes(request.id)}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={() => toggleDeletionSelection(request.id)}
+                                disabled={deletingSelected}
+                                style={{ width: 17, height: 17, cursor: "pointer" }}
+                              />
+                            ) : (
+                              <span style={{ color: "#CBD5E1" }}>—</span>
+                            )}
+                          </td>
+                        )}
                         <td
                           style={{
                             padding:
