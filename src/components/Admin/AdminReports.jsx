@@ -288,11 +288,45 @@ export default function AdminReports() {
             report.requested_at,
         };
       });
-      const formattedDeletions = (
-        deletionResult.data || []
-      ).map((request) => {
+      // A deletion applies to the account, not only to the approved request.
+      // Keep older cancelled/rejected requests in the history, but show the
+      // account's CURRENT removal status consistently across those records.
+      const allDeletionRows = deletionResult.data || [];
+      const removedUserIds = new Set();
+      const removedEmails = new Set();
+      allDeletionRows.forEach((request) => {
+        const isFullAccount =
+          !request.deletion_scope || request.deletion_scope === "both";
+        const isApproved =
+          String(request.status || "").toLowerCase() === "approved";
+        const knownUser = userMap.get(String(request.user_id));
+        const scheduledTime = request.scheduled_delete_at
+          ? new Date(request.scheduled_delete_at).getTime()
+          : NaN;
+        const deadlinePassed =
+          !Number.isFinite(scheduledTime) || scheduledTime <= Date.now();
+        const hasCompletedDeletion = Boolean(request.deletion_completed_at);
+        if (
+          isFullAccount &&
+          (hasCompletedDeletion ||
+            (isApproved && !knownUser && deadlinePassed))
+        ) {
+          if (request.user_id) removedUserIds.add(String(request.user_id));
+          const email = String(request.email || "").trim().toLowerCase();
+          if (email) removedEmails.add(email);
+        }
+      });
+
+      const formattedDeletions = allDeletionRows.map((request) => {
         const user = userMap.get(
           String(request.user_id),
+        );
+        const requestEmail = String(request.email || "").trim().toLowerCase();
+        // Prefer a matching user ID; email fallback supports old records
+        // whose user ID was not retained. Never mark an existing account removed.
+        const accountRemoved = !user && (
+          removedUserIds.has(String(request.user_id)) ||
+          (requestEmail && removedEmails.has(requestEmail))
         );
         return {
           kind: "deletion",
@@ -317,9 +351,9 @@ export default function AdminReports() {
           deletionCompletedAt: request.deletion_completed_at || null,
           userConfirmedAt: request.user_confirmed_at || null,
           scheduledDeleteAt: request.scheduled_delete_at || null,
-          accountStatus:
-            user?.account_status ||
-            "unknown",
+          accountStatus: accountRemoved
+            ? "removed"
+            : user?.account_status || "unknown",
           reason:
             request.reason ||
             "No reason provided",

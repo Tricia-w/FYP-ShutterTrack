@@ -53,6 +53,8 @@ export default function AdminSettings() {
   );
 
   const [loading, setLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
 
   const [accountSaveStatus, setAccountSaveStatus] =
     useState("");
@@ -433,6 +435,23 @@ export default function AdminSettings() {
         error?.message ||
           "Appearance setting could not be saved."
       );
+    }
+  };
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    if (!window.confirm("Log out of your administrator account?")) return;
+
+    setLoggingOut(true);
+    setLogoutError("");
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      window.location.replace("/login");
+    } catch (error) {
+      console.error("Admin logout error:", error);
+      setLogoutError(error?.message || "Unable to log out. Please try again.");
+      setLoggingOut(false);
     }
   };
 
@@ -953,7 +972,65 @@ export default function AdminSettings() {
               {darkMode ? "Dark" : "Light"}
             </span>
           </div>
-        </div>
+         </div>
+         <div style={cardStyle}>
+           <div
+             style={{
+               fontSize: 12,
+               fontWeight: 700,
+               color: "var(--text-muted, #71809A)",
+               textTransform: "uppercase",
+               letterSpacing: 0.4,
+               marginBottom: 10,
+             }}
+           >
+             Account
+           </div>
+           <div
+             style={{
+               display: "flex",
+               justifyContent: "space-between",
+               alignItems: "center",
+               gap: 12,
+               flexWrap: "wrap",
+             }}
+           >
+             <span style={{ fontSize: 13, color: "var(--text-muted, #8892A4)" }}>
+               Sign out of your administrator account.
+             </span>
+             <button
+               type="button"
+               onClick={handleLogout}
+               disabled={loggingOut}
+               style={{
+                 display: "inline-flex",
+                 alignItems: "center",
+                 justifyContent: "center",
+                 gap: 8,
+                 minHeight: 42,
+                 padding: "10px 16px",
+                 borderRadius: 10,
+                 border: "1px solid #FECACA",
+                 background: "#FEF2F2",
+                 color: "#B91C1C",
+                 fontSize: 14,
+                 fontWeight: 700,
+                 cursor: loggingOut ? "not-allowed" : "pointer",
+                 opacity: loggingOut ? 0.65 : 1,
+               }}
+             >
+               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+               </svg>
+               {loggingOut ? "Logging out..." : "Log out"}
+             </button>
+           </div>
+           {logoutError && (
+             <div style={{ marginTop: 12, color: "#B91C1C", fontSize: 13 }} role="alert">
+               {logoutError}
+             </div>
+           )}
+         </div>
       </div>
     </div>
   );
