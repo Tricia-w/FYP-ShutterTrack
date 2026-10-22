@@ -54,6 +54,32 @@ const getMetricColor = label => {
 const MATCH_TYPES = ['Singles', 'Mixed Doubles', 'Womens Doubles', 'Mens Double']
 const isSingles = type => type === 'Singles'
 
+// The number before '-' is the player's score; the number after it is
+// the opponent's score. One, two, or three recorded sets are supported.
+const calculateMatchResult = ({ score1, score2, score3 }) => {
+  const entries = [score1, score2, score3].map(value => String(value ?? '').trim())
+  const recorded = entries.filter(Boolean)
+
+  if (recorded.length === 0) return ''
+
+  let won = 0
+  let lost = 0
+
+  for (const score of recorded) {
+    const match = /^(\d+)\s*-\s*(\d+)$/.exec(score)
+    if (!match) return ''
+
+    const own = Number(match[1])
+    const opponent = Number(match[2])
+    if (!Number.isSafeInteger(own) || !Number.isSafeInteger(opponent)) return ''
+
+    if (own > opponent) won += 1
+    if (own < opponent) lost += 1
+  }
+
+  return won > lost ? 'Win' : lost > won ? 'Loss' : 'Tied'
+}
+
 const ACTION_PLAN_META_PREFIX = '__SHUTTLETRACK_ACTION_PLAN__:'
 
 function decodeActionPlans(value) {
@@ -751,6 +777,7 @@ export default function Performance() {
   const [editingId, setEditingId] = useState(null)
   const [viewMatch, setViewMatch] = useState(null)
   const [form, setForm] = useState(emptyForm)
+  const calculatedResult = calculateMatchResult(form)
   const [removeVideo, setRemoveVideo] = useState(false)
   const [skillVals, setSkillVals] = useState(defaultSkills.map(skill => skill.val))
 
@@ -1550,6 +1577,11 @@ export default function Performance() {
       return
     }
 
+    if (!calculatedResult) {
+      alert('Enter valid scores in the format 21-18 (your score first). Complete or clear any partially entered sets.')
+      return
+    }
+
     setIsSaving(true)
 
     try {
@@ -1589,7 +1621,7 @@ export default function Performance() {
         score1: form.score1.trim(),
         score2: form.score2.trim() || null,
         score3: form.score3.trim() || null,
-        result: form.result,
+        result: calculatedResult,
         source_schedule_id: sourceUpcomingMatch?.schedule_id || null,
         round_name: form.roundName.trim() || null,
         notes: form.notes.trim() || null,
@@ -2640,7 +2672,9 @@ export default function Performance() {
                           className={
                             match.result === 'Win'
                               ? styles.badgeGreen
-                              : styles.badgeRed
+                              : match.result === 'Tied'
+                                ? styles.badgeBlue
+                                : styles.badgeRed
                           }
                         >
                           {match.result}
@@ -3924,7 +3958,7 @@ export default function Performance() {
             </div>
 
             <div className={styles.formRow}>
-              <label className={styles.formLabel}>Game Score</label>
+              <label className={styles.formLabel}>Game Score (own score - opponent)</label>
               <div
                 className="performanceMatchScoreGrid"
                 style={{
@@ -3973,14 +4007,24 @@ export default function Performance() {
             >
               <div>
                 <label className={styles.formLabel}>Result</label>
-                <select
-                  className={styles.formSelect}
-                  value={form.result}
-                  onChange={set('result')}
-                >
-                  <option>Win</option>
-                  <option>Loss</option>
-                </select>
+                <input
+                  className={styles.formInput}
+                  value={calculatedResult}
+                  placeholder="Enter game scores"
+                  readOnly
+                  aria-label="Automatically calculated match result"
+                  style={{
+                    fontWeight: 700,
+                    color: calculatedResult === 'Win'
+                      ? '#059669'
+                      : calculatedResult === 'Loss'
+                        ? '#DC2626'
+                        : 'var(--text-muted)',
+                  }}
+                />
+                <div style={{ marginTop: 5, fontSize: 12, color: C.muted }}>
+                  Automatically calculated from completed set scores.
+                </div>
               </div>
 
               <div>

@@ -35,12 +35,11 @@ function extractSetScores(matches = []) {
       match?.score2,
       match?.score3,
     ])
-    .filter(value => value !== null && value !== undefined && value !== '')
-    .flatMap(score =>
-      String(score)
-        .split('-')
-        .map(value => Number(value.trim()))
-    )
+    .filter(score => score !== null && score !== undefined && score !== '')
+    .map(score => {
+      const playerScore = String(score).split('-')[0].trim()
+      return playerScore === '' ? NaN : Number(playerScore)
+    })
     .filter(Number.isFinite)
 }
 
