@@ -277,10 +277,48 @@ export default function AdminDashboard({
           }
         }
 
+        /* Match the Player dashboard: two compact statistic cards per row. */
+        .adminOverviewStatsGrid > * {
+          min-width: 0;
+          box-sizing: border-box;
+        }
+
         @media (max-width: 820px) {
-          .adminOverviewStatsGrid,
+          .adminOverviewStatsGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px !important;
+          }
+
+          /* Keep charts and activity panels readable in a single column. */
           .adminOverviewTwoColumnGrid {
             grid-template-columns: minmax(0, 1fr);
+          }
+
+          .adminOverviewStatsGrid > * {
+            aspect-ratio: auto !important;
+            min-height: 128px !important;
+            height: auto !important;
+            padding: 16px !important;
+            border-radius: 18px !important;
+            overflow-wrap: anywhere;
+          }
+        }
+
+        @media (max-width: 420px) {
+          .adminOverviewStatsGrid {
+            gap: 12px !important;
+          }
+
+          .adminOverviewStatsGrid > * {
+            padding: 14px !important;
+            min-height: 128px !important;
+            border-radius: 16px !important;
+          }
+
+          .adminOverviewStatsGrid [style*='font-size: 11px'],
+          .adminOverviewStatsGrid [style*='font-size: 12px'],
+          .adminOverviewStatsGrid [style*='font-size: 13px'] {
+            font-size: 12px !important;
           }
         }
       `}</style>
