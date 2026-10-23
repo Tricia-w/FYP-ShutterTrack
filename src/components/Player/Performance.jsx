@@ -731,6 +731,148 @@ const getSkillAdvice = skillName => {
   )
 }
 
+function PerformanceTimeline({ records }) {
+  // Mobile-only sizing: a taller plotting area without stretching SVG text.
+  const [isMobileTimeline, setIsMobileTimeline] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches
+  )
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px)')
+    const updateMobile = () => setIsMobileTimeline(media.matches)
+    updateMobile()
+    if (media.addEventListener) {
+      media.addEventListener('change', updateMobile)
+      return () => media.removeEventListener('change', updateMobile)
+    }
+    media.addListener(updateMobile)
+    return () => media.removeListener(updateMobile)
+  }, [])
+  const [selectedSkill, setSelectedSkill] = useState('all')
+  const [period, setPeriod] = useState('All')
+  const [hovered, setHovered] = useState(null)
+  const allSkills = selectedSkill === 'all'
+  const visibleSkills = allSkills
+    ? SKILL_COLUMNS
+    : SKILL_COLUMNS.filter(skill => skill.column === selectedSkill)
+  const selected = visibleSkills[0] || SKILL_COLUMNS[0]
+  const days = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
+  const filtered = records
+    .filter(item => !days[period] || new Date(item.recorded_at).getTime() >= Date.now() - days[period] * 86400000)
+    .slice()
+    .sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at))
+  const width = 560
+  const height = isMobileTimeline ? 350 : 225
+  const padX = 38
+  const padY = 24
+  const chartW = width - padX * 2
+  const chartH = height - padY * 2
+  const minT = filtered.length ? new Date(filtered[0].recorded_at).getTime() : 0
+  const maxT = filtered.length ? new Date(filtered[filtered.length - 1].recorded_at).getTime() : 0
+  const x = (item, index) => maxT === minT
+    ? padX + (filtered.length === 1 ? chartW / 2 : chartW * index / (filtered.length - 1))
+    : padX + chartW * (new Date(item.recorded_at).getTime() - minT) / (maxT - minT)
+  const y = (item, column) => padY + chartH * (1 - Math.min(100, Math.max(0, Number(item[column]) || 0)) / 100)
+  const fmtScore = (skill, item) => `${skill.name}: ${item[skill.column] ?? '–'}/100`
+  const showLineDetails = (event, skill) => {
+    const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+    if (!rect || !filtered.length) return
+    const svgX = (event.clientX - rect.left) * width / rect.width
+    const nearestIndex = filtered.reduce((closest, item, index) =>
+      Math.abs(x(item, index) - svgX) < Math.abs(x(filtered[closest], closest) - svgX)
+        ? index : closest, 0)
+    setHovered({ column: skill.column, index: nearestIndex })
+  }
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
+        <select className={styles.formSelect} aria-label="Skill to chart" value={selectedSkill}
+          onChange={e => setSelectedSkill(e.target.value)} style={{ flex: '1 1 150px', minWidth: 0 }}>
+          <option value="all">All Skills</option>
+          {SKILL_COLUMNS.map(item => <option key={item.column} value={item.column}>{item.name}</option>)}
+        </select>
+        <select className={styles.formSelect} aria-label="Time range" value={period}
+          onChange={e => { setPeriod(e.target.value); setHovered(null) }} style={{ flex: '0 1 125px' }}>
+          {[['All', 'All time'], ['1M', '1 month'], ['3M', '3 months'], ['6M', '6 months'], ['1Y', '1 year']]
+            .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </div>
+      {filtered.length === 0 ? (
+        <div style={{ padding: '44px 10px', color: C.muted, textAlign: 'center', fontSize: 14 }}>
+          No assessments yet. Update your skills to begin tracking progress.
+        </div>
+      ) : (
+        <>
+          <div style={{ position: 'relative' }} onMouseLeave={() => setHovered(null)}>
+          {hovered && filtered[hovered.index] && (() => {
+            const skill = SKILL_COLUMNS.find(item => item.column === hovered.column)
+            const item = filtered[hovered.index]
+            return <div style={{ position: 'absolute', top: 3, right: 6, zIndex: 2,
+              padding: '7px 10px', borderRadius: 9, background: C.card,
+              border: `1px solid ${C.line}`, boxShadow: '0 4px 16px rgba(0,0,0,.10)',
+              color: C.text, fontSize: 12, pointerEvents: 'none' }}>
+              <strong style={{ color: SKILL_COLORS[skill.name] }}>{skill.name}: {item[skill.column]}/100</strong>
+              <div style={{ color: C.muted, marginTop: 2 }}>{fmtDate(item.recorded_at)}</div>
+            </div>
+          })()}
+          <svg viewBox={`0 0 ${width} ${height}`} role="img"
+            aria-label={allSkills ? 'Development of all six skills' : `${selected.name} score development`}
+            style={{ width: '100%', height: 'auto', minHeight: 160, display: 'block' }}>
+            {[0, 25, 50, 75, 100].map(score => {
+              const lineY = padY + chartH * (1 - score / 100)
+              return <g key={score}>
+                <line x1={padX} x2={width - padX} y1={lineY} y2={lineY} stroke="var(--line, #E5E7EB)" strokeDasharray="4 5" />
+                <text x={padX - 9} y={lineY + 4} textAnchor="end" fontSize="12" fill="var(--text-muted, #8892A4)">{score}</text>
+              </g>
+            })}
+            {visibleSkills.map(skill => {
+              const color = SKILL_COLORS[skill.name] || '#2563EB'
+              const points = filtered.map((item, index) => `${x(item, index)},${y(item, skill.column)}`).join(' ')
+              return <g key={skill.column}>
+                {filtered.length > 1 && <polyline points={points} fill="none" stroke={color}
+                  strokeWidth={allSkills ? '2.5' : '3'} strokeLinecap="round" strokeLinejoin="round" />}
+                {filtered.length > 1 && <polyline points={points} fill="none" stroke="transparent"
+                  strokeWidth="16" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ cursor: 'crosshair', pointerEvents: 'stroke' }}
+                  onMouseMove={event => showLineDetails(event, skill)}
+                  onMouseEnter={event => showLineDetails(event, skill)} />}
+                {filtered.map((item, index) =>
+                  <circle key={`${skill.column}-${item.recorded_at}-${index}`}
+                    cx={x(item, index)} cy={y(item, skill.column)} r={allSkills ? 3.5 : 5}
+                    fill={color} stroke="var(--card, white)" strokeWidth="1.5"
+                    style={{ cursor: 'crosshair' }}
+                    onMouseEnter={() => setHovered({ column: skill.column, index })}
+                    onMouseMove={() => setHovered({ column: skill.column, index })}>
+                    <title>{`${new Date(item.recorded_at).toLocaleDateString('en-MY')}: ${fmtScore(skill, item)}`}</title>
+                  </circle>
+                )}
+              </g>
+            })}
+            <text x={padX} y={height - 4} fontSize="12" fill="var(--text-muted, #8892A4)">
+              {new Date(filtered[0].recorded_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: '2-digit' })}
+            </text>
+            <text x={width - padX} y={height - 4} textAnchor="end" fontSize="12" fill="var(--text-muted, #8892A4)">
+              {new Date(filtered[filtered.length - 1].recorded_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: '2-digit' })}
+            </text>
+          </svg>
+          </div>
+          {allSkills && (
+            <div style={{ display: 'flex', gap: isMobileTimeline ? '7px 9px' : '8px 15px', flexWrap: 'wrap', margin: '24px 0 12px' }}>
+              {SKILL_COLUMNS.map(skill => (
+                <span key={skill.column} title={`${skill.name}: ${filtered[filtered.length - 1][skill.column] ?? '–'}/100`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: isMobileTimeline ? 4 : 6, fontSize: isMobileTimeline ? 10 : 12, color: C.text }}>
+                  <span style={{ width: isMobileTimeline ? 10 : 15, height: 3, borderRadius: 3, background: SKILL_COLORS[skill.name] }} />
+                  {skill.name}
+                </span>
+              ))}
+            </div>
+          )}
+          {filtered.length === 1 && <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>One assessment recorded. Save another changed score to see a trend.</div>}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function Performance() {
   const { user } = useAuth()
   const videoRef = useRef(null)
@@ -745,6 +887,15 @@ export default function Performance() {
   const [equipmentOptions, setEquipmentOptions] = useState([])
   const [skills, setSkills] = useState(defaultSkills)
   const [hasSkillRecord, setHasSkillRecord] = useState(false)
+  const [skillHistory, setSkillHistory] = useState([])
+  const [showSkillDevelopment, setShowSkillDevelopment] = useState(false)
+  const [hasCoach, setHasCoach] = useState(false)
+  const [personalPlan, setPersonalPlan] = useState(null)
+  const [planText, setPlanText] = useState('')
+  const [planDeadline, setPlanDeadline] = useState('')
+  const [planCompletion, setPlanCompletion] = useState(0)
+  const [editingPersonalPlan, setEditingPersonalPlan] = useState(true)
+  const [savingPersonalPlan, setSavingPersonalPlan] = useState(false)
   const [coachProgress, setCoachProgress] = useState([])
   const [coachAssessments, setCoachAssessments] = useState([])
   const [
@@ -1077,6 +1228,28 @@ export default function Performance() {
         setHasSkillRecord(false)
         setSkills(defaultSkills)
       }
+
+      const [historyResult, relationshipResult, personalPlanResult] = await Promise.all([
+        supabase.from('player_skill_rating_history').select('*')
+          .eq('player_id', currentProfileId).order('recorded_at', { ascending: true }),
+        supabase.from('coach_player_relationships').select('status')
+          .eq('player_user_id', authUser.id),
+        supabase.from('player_performance_action_plans').select('*')
+          .eq('user_id', authUser.id).maybeSingle(),
+      ])
+      if (historyResult.error) console.error('Skill history load error:', historyResult.error)
+      setSkillHistory(historyResult.data || [])
+      if (relationshipResult.error) console.error('Coach relationship load error:', relationshipResult.error)
+      setHasCoach((relationshipResult.data || []).some(item =>
+        ['accepted', 'active', 'connected'].includes(String(item.status || '').toLowerCase())
+      ))
+      if (personalPlanResult.error) console.error('Performance action plan load error:', personalPlanResult.error)
+      const ownPlan = personalPlanResult.data || null
+      setPersonalPlan(ownPlan)
+      setPlanText(ownPlan?.plan_text || '')
+      setPlanDeadline(ownPlan?.deadline || '')
+      setPlanCompletion(Number(ownPlan?.completion_rate || 0))
+      setEditingPersonalPlan(!ownPlan?.plan_text)
 
       const { data: progressRows, error: progressError } = await supabase
         .from('coach_player_progress')
@@ -1798,16 +1971,8 @@ export default function Performance() {
 
       setProfileId(currentProfileId)
 
-      const { error: invalidateError } = await supabase
-        .from('skill_verification_requests')
-        .update({
-          is_active: false,
-          invalidated_at: new Date().toISOString(),
-        })
-        .eq('player_user_id', authUser.id)
-        .eq('is_active', true)
-
-      if (invalidateError) throw invalidateError
+      // The first verified assessment is a permanent baseline.
+      // Updating self-ratings must not invalidate the existing verification.
 
       const payload = {
         player_id: currentProfileId,
@@ -1828,6 +1993,12 @@ export default function Performance() {
 
       if (error) throw error
 
+      const { data: refreshedHistory, error: historyError } = await supabase
+        .from('player_skill_rating_history').select('*')
+        .eq('player_id', currentProfileId).order('recorded_at', { ascending: true })
+      if (historyError) console.error('Reload skill history error:', historyError)
+      else setSkillHistory(refreshedHistory || [])
+
       setSkills(
         SKILL_COLUMNS.map((skill, index) => ({
           ...skill,
@@ -1835,18 +2006,42 @@ export default function Performance() {
         }))
       )
       setHasSkillRecord(true)
-      setVerificationRequest(null)
-      setVerificationSummary({
-        playerCount: 0,
-        coachCount: 0,
-      })
-      setVerificationAssessments([])
+      // Keep original verification and verifier details; refresh from the database.
+      await loadVerificationData(authUser)
       setShowSkillModal(false)
     } catch (error) {
       console.error('Save skills error:', error)
       alert(error.message || 'Failed to save skills')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const savePersonalPerformancePlan = async () => {
+    if (savingPersonalPlan) return
+    if (!planText.trim()) return alert('Please enter your performance action plan.')
+    if (!planDeadline) return alert('Please select a deadline.')
+    setSavingPersonalPlan(true)
+    try {
+      const authUser = await getAuthUser()
+      const { data, error } = await supabase.from('player_performance_action_plans').upsert({
+        user_id: authUser.id,
+        plan_text: planText.trim(),
+        deadline: planDeadline,
+        completion_rate: planCompletion,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' }).select('*').single()
+      if (error) throw error
+      setPersonalPlan(data)
+      setPlanText(data.plan_text || '')
+      setPlanDeadline(data.deadline || '')
+      setPlanCompletion(Number(data.completion_rate || 0))
+      setEditingPersonalPlan(false)
+    } catch (error) {
+      console.error('Save personal performance plan error:', error)
+      alert(error.message || 'Failed to save performance plan.')
+    } finally {
+      setSavingPersonalPlan(false)
     }
   }
 
@@ -2066,6 +2261,16 @@ export default function Performance() {
   return (
     <div className={styles.playerReadablePage}>
       <style>{`
+        .performanceTimelineGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
+        .performanceTimelineGrid > * { min-width: 0; }
+        .performanceTimelineGrid .performanceCoachFeedbackGrid { grid-template-columns: minmax(0, 1fr) !important; }
+        .performanceTimelineGrid .performanceCoachActionPlan { grid-column: auto !important; background: color-mix(in srgb, #1A5FFF 10%, var(--card, #FFFFFF)) !important; border-color: color-mix(in srgb, #1A5FFF 20%, var(--line, #EEF1F8)) !important; }
+        .performanceTimelineGrid .performanceCoachFeedbackGrid > div { min-width: 0; }
+        .performanceTimelineGrid .performanceCoachFeedbackGrid > div:first-child { background: color-mix(in srgb, #7C3AED 8%, var(--card, #FFFFFF)) !important; }
+        @media (max-width: 900px) {
+          .performanceTimelineGrid { grid-template-columns: minmax(0, 1fr); }
+          .performancePlanInputs { grid-template-columns: minmax(0, 1fr) !important; }
+        }
         .performanceVerificationNote {
           font-size: 14px !important;
         }
@@ -2702,9 +2907,28 @@ export default function Performance() {
         </div>
       </div>
 
-      <div className={styles.g2}>
+      <div className="performanceTimelineGrid">
         <div className={styles.card}>
-          <div className={styles.cardTitle}>Skill self-assessment</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+            <div className={styles.cardTitle} style={{ marginBottom: 0 }}>
+              {showSkillDevelopment ? 'Performance Development' : 'Skill self-assessment'}
+            </div>
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={() => setShowSkillDevelopment(current => !current)}
+              aria-label={showSkillDevelopment ? 'Flip to skill self-assessment' : 'Flip to performance development'}
+              title={showSkillDevelopment ? 'View skill self-assessment' : 'View performance development'}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', flexShrink: 0, fontSize: 13 }}
+            >
+              <span aria-hidden="true">↻</span>
+              <span>{showSkillDevelopment ? 'Back to skills' : 'Flip'}</span>
+            </button>
+          </div>
+          {showSkillDevelopment ? (
+            <PerformanceTimeline records={skillHistory} />
+          ) : (
+            <>
 
           {skills.map(skill => {
             const latestCoachAssessment = coachAssessments[0] || null
@@ -2762,7 +2986,7 @@ export default function Performance() {
                           padding: '4px 8px',
                         }}
                       >
-                        ✓ Verified by {verificationSummary.playerCount} player
+                        ✓ Initial assessment verified by {verificationSummary.playerCount} player
                         {verificationSummary.playerCount === 1 ? '' : 's'}
                       </span>
                     )}
@@ -2778,7 +3002,7 @@ export default function Performance() {
                           padding: '4px 8px',
                         }}
                       >
-                        ✓ Coach verified
+                        ✓ Initial assessment coach verified
                       </span>
                     )}
 
@@ -2879,14 +3103,16 @@ export default function Performance() {
             className="performanceVerificationNote"
             style={{ marginTop: 10, fontSize: 13, color: C.muted, lineHeight: 1.5 }}
           >
-            Verification is optional. Unverified ratings use your self-assessment;
-            the purple marker shows your coach&apos;s rating. Verified results remain
-            separate in Verification Details and reset when you update your skills.
+            Initial skill verification is optional and provides a baseline assessment.
+            Later skill updates remain self-assessed and do not reset that baseline.
+            The purple marker shows your coach&apos;s latest rating; original verified
+            scores remain in Verification Details.
           </div>
 
+            </>
+          )}
         </div>
-
-        {hasSkillRecord && (
+        {hasSkillRecord ? (
           <div className={styles.card}>
             <div className={styles.cardTitle}>Recommendations</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2952,16 +3178,23 @@ export default function Performance() {
               ))}
             </div>
           </div>
+        ) : (
+          <div className={styles.card} style={{ minWidth: 0 }}>
+            <div className={styles.cardTitle}>Recommendations</div>
+            <div style={{ color: C.muted, marginTop: 12 }}>Save a skill self-assessment to see recommendations.</div>
+          </div>
         )}
       </div>
-
-      {(coachAssessments[0]?.performance_comment ||
-        coachProgress.length > 0) && (
+      <div style={{ marginTop: 16 }}>
+      {hasCoach && (
         <div
           className={`${styles.card} performanceCoachFeedback`}
-          style={{ marginTop: 16 }}
+          style={{ minWidth: 0 }}
         >
           <div className={styles.cardTitle}>Coach Feedback</div>
+        {coachProgress.length === 0 && !coachAssessments[0]?.performance_comment && (
+          <div style={{ color: C.muted, padding: 18 }}>No coach feedback has been added yet.</div>
+        )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {coachProgress.map(item => {
@@ -3346,6 +3579,49 @@ export default function Performance() {
           </div>
         </div>
       )}
+
+      {!hasCoach && (
+        <div className={styles.card} style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div className={styles.cardTitle}>My Performance Action Plan</div>
+            <span style={{ borderRadius: 999, padding: '4px 10px', background: '#E8EFFE', color: '#1A5FFF', fontSize: 12, fontWeight: 700 }}>Self-managed</span>
+          </div>
+          <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.6, margin: '12px 0' }}>
+            Set clear badminton performance goals. Describe the skills you want to improve and how often you will practise.
+          </p>
+          <textarea className={styles.formTextarea} maxLength={1000} rows={6}
+            placeholder="Example: Practise drop shots and footwork three times a week and increase my drop shot rating to 65."
+            value={planText} readOnly={Boolean(personalPlan?.plan_text) && !editingPersonalPlan}
+            onChange={e => setPlanText(e.target.value)}
+            style={{ width: '100%', minHeight: 128, boxSizing: 'border-box', background: personalPlan?.plan_text && !editingPersonalPlan ? 'var(--soft, #F8FAFC)' : undefined }} />
+          <div className="performancePlanInputs" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.7fr)', gap: 14, marginTop: 12 }}>
+            <div><label className={styles.formLabel}>Action plan deadline</label>
+              <input className={styles.formInput} type="date" value={planDeadline}
+                disabled={Boolean(personalPlan?.plan_text) && !editingPersonalPlan}
+                onChange={e => setPlanDeadline(e.target.value)} style={{ width: '100%', boxSizing: 'border-box' }}/></div>
+            <div><div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <label className={styles.formLabel}>Completion rate</label><strong style={{ color: '#1A5FFF' }}>{planCompletion}%</strong>
+              </div>
+              <input type="range" min="0" max="100" step="5" value={planCompletion}
+                onChange={e => setPlanCompletion(Number(e.target.value))} style={{ width: '100%', accentColor: '#1A5FFF' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: C.muted, fontSize: 11 }}><span>0%</span><span>50%</span><span>100%</span></div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+            <span style={{ color: C.muted, fontSize: 12 }}>{planText.length}/1000 {planDeadline ? ` · Deadline: ${planDeadline}` : ''}</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {personalPlan?.plan_text && !editingPersonalPlan && <button className={styles.btnOutline} onClick={() => setEditingPersonalPlan(true)}>Edit Plan</button>}
+              {personalPlan?.plan_text && editingPersonalPlan && <button className={styles.btnOutline}
+                onClick={() => { setPlanText(personalPlan.plan_text || ''); setPlanDeadline(personalPlan.deadline || ''); setPlanCompletion(Number(personalPlan.completion_rate || 0)); setEditingPersonalPlan(false) }}>Cancel Edit</button>}
+              <button className={styles.btnPrimary} onClick={savePersonalPerformancePlan} disabled={savingPersonalPlan}>
+                {savingPersonalPlan ? 'Saving...' : personalPlan?.plan_text && !editingPersonalPlan ? 'Save Progress' : 'Save Action Plan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      </div>
 
       {showUpcomingModal && editingUpcoming && (
         <div
@@ -4759,8 +5035,8 @@ export default function Performance() {
               }}
             >
               The verifier must be logged in. You cannot verify your own
-              assessment, and each account can verify the current assessment
-              only once. Updating your skills resets the current verification.
+              assessment, and each account can verify the initial assessment
+              only once. Later updates to your skills do not reset that verification.
             </div>
 
             <div
