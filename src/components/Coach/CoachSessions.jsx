@@ -747,6 +747,15 @@ export default function CoachSessions() {
     const assignments =
       session.coach_training_session_players || []
 
+    // Finalised attendance locks session editing, whether completed or absent.
+    const allFinalised =
+      assignments.length > 0 &&
+      assignments.every(assignment =>
+        ['completed', 'absent'].includes(assignment.attendance_status)
+      )
+
+    if (allFinalised) return
+
     setEditingSession(session)
     setStudentSearch('')
     setError('')
@@ -1487,142 +1496,54 @@ export default function CoachSessions() {
   ) => {
     if (saving || !session?.id || !assignment?.id) return
 
+    // Finalised attendance cannot be changed using the ordinary
+    // completion/absence actions. Only scheduled players may be marked.
+    if (String(assignment.attendance_status || 'scheduled').toLowerCase() !== 'scheduled') {
+      setError('Attendance is already finalised for this player.')
+      return
+    }
+
+    if (!['completed', 'absent'].includes(nextStatus)) return
+
     setSaving(true)
     setError('')
 
     try {
-      const completedAt =
-        nextStatus === 'completed'
-          ? new Date().toISOString()
-          : null
+      const duration = calculateDuration(
+        session.start_time,
+        session.end_time
+      )
 
-      const { error: attendanceError } = await supabase
-        .from('coach_training_session_players')
-        .update({
-          attendance_status: nextStatus,
-          completed_at: completedAt,
-        })
-        .eq('id', assignment.id)
-        .eq('session_id', session.id)
+      const notes = [
+        `Coach session: ${session.session_type}`,
+        session.venue ? `Venue: ${session.venue}` : '',
+        session.group_notes || '',
+        assignment.player_focus
+          ? `Individual focus: ${assignment.player_focus}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
 
-      if (attendanceError) throw attendanceError
-
-      if (nextStatus === 'completed') {
-        const duration = calculateDuration(
-          session.start_time,
-          session.end_time
-        )
-
-        const playerName =
-          studentMap.get(
-            String(assignment.player_user_id)
-          )?.name || 'Player'
-
-        const notes = [
-          `Coach session: ${session.session_type}`,
-          session.venue ? `Venue: ${session.venue}` : '',
-          session.group_notes || '',
-          assignment.player_focus
-            ? `Individual focus: ${assignment.player_focus}`
-            : '',
-        ]
-          .filter(Boolean)
-          .join('\n')
-
-        const trainingLogPayload = {
-          user_id: assignment.player_user_id,
-          coach_session_id: session.id,
-          training_date: session.session_date,
-          start_time: session.start_time,
-          end_time: session.end_time,
-          activity: session.session_type,
-          duration,
-          intensity: 'Medium',
-          focus: normalizeTrainingFocus(
+      // Database RPC updates attendance, the player's completed training
+      // log and the linked schedule inside ONE transaction. An error
+      // rolls back all changes instead of leaving inconsistent records.
+      const { error: attendanceError } = await supabase.rpc(
+        'finalise_coach_session_attendance',
+        {
+          p_session_id: session.id,
+          p_assignment_id: assignment.id,
+          p_next_status: nextStatus,
+          p_duration: duration,
+          p_focus: normalizeTrainingFocus(
             assignment.player_focus,
             session.session_type
           ),
-          notes,
-          updated_at: new Date().toISOString(),
+          p_notes: notes,
         }
+      )
 
-        console.log(
-          'TRAINING LOG PAYLOAD:',
-          trainingLogPayload
-        )
-
-        const { data: existingLog, error: existingLogError } =
-          await supabase
-            .from('fitness_training_logs')
-            .select('id')
-            .eq('user_id', assignment.player_user_id)
-            .eq('coach_session_id', session.id)
-            .maybeSingle()
-
-        if (existingLogError) {
-          throw new Error(
-            `${playerName}: ${existingLogError.message}`
-          )
-        }
-
-        const logQuery = existingLog?.id
-          ? supabase
-              .from('fitness_training_logs')
-              .update(trainingLogPayload)
-              .eq('id', existingLog.id)
-          : supabase
-              .from('fitness_training_logs')
-              .insert(trainingLogPayload)
-
-        const { error: logError } = await logQuery
-
-        if (logError) {
-          throw new Error(
-            `${playerName}: ${logError.message}`
-          )
-        }
-
-        const { error: scheduleDeleteError } = await supabase
-          .from('player_schedule')
-          .delete()
-          .eq('user_id', assignment.player_user_id)
-          .eq('coach_session_id', session.id)
-
-        if (scheduleDeleteError) {
-          console.error(
-            'Unable to remove completed player schedule:',
-            scheduleDeleteError
-          )
-        }
-      }
-
-      if (nextStatus === 'absent') {
-        const { error: logDeleteError } = await supabase
-          .from('fitness_training_logs')
-          .delete()
-          .eq('user_id', assignment.player_user_id)
-          .eq('coach_session_id', session.id)
-
-        if (logDeleteError) {
-          console.error(
-            'Unable to remove player training log:',
-            logDeleteError
-          )
-        }
-
-        const { error: scheduleDeleteError } = await supabase
-          .from('player_schedule')
-          .delete()
-          .eq('user_id', assignment.player_user_id)
-          .eq('coach_session_id', session.id)
-
-        if (scheduleDeleteError) {
-          console.error(
-            'Unable to remove absent player schedule:',
-            scheduleDeleteError
-          )
-        }
-      }
+      if (attendanceError) throw attendanceError
 
       await loadData()
     } catch (attendanceError) {
@@ -1905,7 +1826,7 @@ export default function CoachSessions() {
   const filteredCompletedSessions = useMemo(
     () =>
       sessionFilter === 'All' ||
-      sessionFilter === 'Completed'
+      sessionFilter === 'Finalised'
         ? completedSessions.filter(
             matchesSessionSearch
           )
@@ -2181,7 +2102,11 @@ export default function CoachSessions() {
       completedCount + absentCount === assignments.length
 
     const status = allFinalised
-      ? 'Completed'
+      ? completedCount === 0
+        ? 'Absent'
+        : absentCount === 0
+          ? 'Completed'
+          : 'Finalised'
       : fallbackStatus
 
     return (
@@ -2192,7 +2117,7 @@ export default function CoachSessions() {
           alignItems: 'flex-start',
           paddingTop: 12,
           paddingBottom: 12,
-          opacity: status === 'Completed' ? 0.74 : 1,
+          opacity: allFinalised ? 0.74 : 1,
         }}
       >
         <div
@@ -2290,7 +2215,7 @@ export default function CoachSessions() {
                 {status}
               </span>
 
-              {status !== 'Completed' && (
+              {!allFinalised && (
                 <button
                   type="button"
                   className={styles.btnOutline}
@@ -2487,7 +2412,7 @@ export default function CoachSessions() {
                           : 'Scheduled'}
                     </span>
 
-                    {attendance !== 'completed' && (
+                    {attendance === 'scheduled' && (
                       <button
                         type="button"
                         className={styles.btnPrimary}
@@ -2509,7 +2434,7 @@ export default function CoachSessions() {
                       </button>
                     )}
 
-                    {attendance !== 'absent' && (
+                    {attendance === 'scheduled' && (
                       <button
                         type="button"
                         disabled={saving}
@@ -2582,7 +2507,7 @@ export default function CoachSessions() {
             icon: 'upcoming',
           },
           {
-            label: 'Completed sessions',
+            label: 'Total Finalised sessions',
             value: completedSessions.length,
             color: '#F59E0B',
             background: '#FEF3C7',
@@ -3166,7 +3091,7 @@ export default function CoachSessions() {
             'All',
             'Upcoming',
             'Awaiting',
-            'Completed',
+            'Finalised',
           ].map(option => {
             const active =
               sessionFilter === option
@@ -3204,7 +3129,7 @@ export default function CoachSessions() {
       </div>
 
 
-          {sessionFilter === 'Completed' &&
+          {sessionFilter === 'Finalised' &&
             filteredCompletedSessions.length === 0 && (
               <div className={styles.card}>
                 <div
@@ -3216,7 +3141,7 @@ export default function CoachSessions() {
                     padding: '20px 0',
                   }}
                 >
-                  No completed sessions match the current search.
+                  No finalised sessions match the current search.
                 </div>
               </div>
             )}
@@ -3227,13 +3152,13 @@ export default function CoachSessions() {
                 className={styles.cardTitle}
                 style={{ fontSize: 16 }}
               >
-                Completed sessions
+                Finalised sessions
               </div>
 
               {filteredCompletedSessions.map(session =>
                 renderSession(
                   session,
-                  'Completed'
+                  'Finalised'
                 )
               )}
             </div>

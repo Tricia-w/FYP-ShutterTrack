@@ -8,6 +8,7 @@ import useLoadingDelay from '../Loader/LoadingDelay'
 import { Avatar, CoachPageHeader, LevelBadge } from './CoachShared'
 import CoachNotificationBell from '../Notifications/CoachNotificationBell'
 import TestModal from '../Player/fitness/components/FitnessTestModal'
+import FitnessDevelopmentTimeline from '../Player/fitness/components/FitnessDevelopmentTimeline'
 
 const DEFAULT_SCORE = 50
 
@@ -1345,6 +1346,244 @@ function ActionPlanProgress({
   )
 }
 
+function CoachRatingHistory({ section, entries, loading, error, refresh }) {
+  const rows = entries.filter(entry => entry.section === section)
+  const fieldLabel = key => ({
+    smash: 'Smash', defense: 'Defense', footwork: 'Footwork',
+    drop_shot: 'Drop shot', net_play: 'Net play', serve: 'Serve',
+    endurance: 'Endurance', speed: 'Speed', strength: 'Strength',
+    agility: 'Agility', recovery: 'Recovery',
+  }[key] || String(key).replaceAll('_', ' '))
+  const scoreText = value => value == null ? 'Not rated' : `${value}/100`
+  return (
+    <div style={{ width: '100%', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <strong style={{ fontSize: 14 }}>{section === 'performance' ? 'Performance' : 'Fitness'} assessment history</strong>
+        <button type="button" className={styles.btnOutline} onClick={refresh} style={{ fontSize: 11, padding: '7px 10px' }}>Refresh</button>
+      </div>
+      {loading && <p style={{ color: 'var(--text-muted, #8892A4)', fontSize: 12 }}>Loading history...</p>}
+      {error && <p role="status" style={{ fontSize: 12, color: '#B45309' }}>{error}</p>}
+      {!loading && rows.length === 0 && (
+        <p style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)', lineHeight: 1.6 }}>No {section} assessment history yet. The date, scores and changes will appear here when the coach saves a new update.</p>
+      )}
+      <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+        {rows.map((entry, index) => {
+          const changedKeys = (entry.changed_fields || []).filter(key => key in (entry.scores || {}))
+          // Prefer exact previous scores captured when the assessment was saved.
+          // Older snapshots may not contain them; do not assume a direction.
+          const savedPrevious = entry.scores?.__previous || {}
+          const nextOlder = rows[index + 1]
+          const olderScores = nextOlder?.scores || {}
+          const beforeValue = key => Object.prototype.hasOwnProperty.call(savedPrevious, key)
+            ? savedPrevious[key]
+            : Object.prototype.hasOwnProperty.call(olderScores, key) ? olderScores[key] : undefined
+          return (
+            <details key={entry.id} style={{ padding: '12px 0', borderTop: '1px solid var(--line, #EEF1F8)', fontSize: 12 }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 700, lineHeight: 1.6 }}>
+                {new Date(entry.recorded_at).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
+                {' · '}{changedKeys.length ? `${changedKeys.length} rating${changedKeys.length === 1 ? '' : 's'} changed` : 'Feedback / plan update'}
+              </summary>
+              {changedKeys.length > 0 && (
+                <div style={{ marginTop: 12, marginBottom: 10 }}>
+                  <strong style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>Skills updated</strong>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {changedKeys.map(key => {
+                      const before = beforeValue(key)
+                      const after = entry.scores?.[key]
+                      const hasBefore = before !== undefined && before !== null && Number.isFinite(Number(before))
+                      const hasAfter = after !== undefined && after !== null && Number.isFinite(Number(after))
+                      const diff = hasBefore && hasAfter ? Number(after) - Number(before) : null
+                      const color = diff === null ? '#64748B' : diff > 0 ? '#15803D' : diff < 0 ? '#DC2626' : '#64748B'
+                      const background = diff === null ? '#F1F5F9' : diff > 0 ? '#DCFCE7' : diff < 0 ? '#FEE2E2' : '#F1F5F9'
+                      return (
+                        <div key={key} style={{ padding: '8px 11px', borderRadius: 9, border: `1px solid ${color}35`, background, color, lineHeight: 1.65 }}>
+                          <strong>{fieldLabel(key)}</strong>{' · '}
+                          {before === undefined ? `Now ${scoreText(after)} (previous score unavailable)` : `${scoreText(before)} → ${scoreText(after)}`}
+                          {diff !== null && diff !== 0 && <strong>{` ${diff > 0 ? '▲ +' : '▼ '}${diff}`}</strong>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px 16px', marginTop: 10 }}>
+                {Object.entries(entry.scores || {}).filter(([key]) => !key.startsWith('__')).map(([key, value]) => (
+                  <span key={key}>{fieldLabel(key)}: <b>{scoreText(value)}</b></span>
+                ))}
+              </div>
+              {entry.feedback && <p>Feedback: {entry.feedback}</p>}
+              {entry.action_plan && <p>Action plan: {entry.action_plan}</p>}
+            </details>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+const COACH_TIMELINE_SKILLS = [
+  {name:'Smash',column:'smash'}, {name:'Defense',column:'defense'},
+  {name:'Footwork',column:'footwork'}, {name:'Drop shot',column:'drop_shot'},
+  {name:'Net play',column:'net_play'}, {name:'Serve',column:'serve'},
+]
+
+function CoachPlayerPerformanceTimeline({ records }) {
+  // Mobile-only sizing: a taller plotting area without stretching SVG text.
+  const [isMobileTimeline, setIsMobileTimeline] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches
+  )
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px)')
+    const updateMobile = () => setIsMobileTimeline(media.matches)
+    updateMobile()
+    if (media.addEventListener) {
+      media.addEventListener('change', updateMobile)
+      return () => media.removeEventListener('change', updateMobile)
+    }
+    media.addListener(updateMobile)
+    return () => media.removeListener(updateMobile)
+  }, [])
+  const [selectedSkill, setSelectedSkill] = useState('all')
+  const [period, setPeriod] = useState('All')
+  const [hovered, setHovered] = useState(null)
+  const allSkills = selectedSkill === 'all'
+  const visibleSkills = allSkills
+    ? COACH_TIMELINE_SKILLS
+    : COACH_TIMELINE_SKILLS.filter(skill => skill.column === selectedSkill)
+  const selected = visibleSkills[0] || COACH_TIMELINE_SKILLS[0]
+  const days = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
+  const filtered = records
+    .filter(item => !days[period] || new Date(item.recorded_at).getTime() >= Date.now() - days[period] * 86400000)
+    .slice()
+    .sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at))
+  const width = 560
+  const height = isMobileTimeline ? 350 : 225
+  const padX = 38
+  const padY = 24
+  const chartW = width - padX * 2
+  const chartH = height - padY * 2
+  const minT = filtered.length ? new Date(filtered[0].recorded_at).getTime() : 0
+  const maxT = filtered.length ? new Date(filtered[filtered.length - 1].recorded_at).getTime() : 0
+  const x = (item, index) => maxT === minT
+    ? padX + (filtered.length === 1 ? 0 : chartW * index / (filtered.length - 1))
+    : padX + chartW * (new Date(item.recorded_at).getTime() - minT) / (maxT - minT)
+  const y = (item, column) => padY + chartH * (1 - Math.min(100, Math.max(0, Number(item[column]) || 0)) / 100)
+  const fmtScore = (skill, item) => `${skill.name}: ${item[skill.column] ?? '–'}/100`
+  const showLineDetails = (event, skill) => {
+    const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+    if (!rect || !filtered.length) return
+    const svgX = (event.clientX - rect.left) * width / rect.width
+    const nearestIndex = filtered.reduce((closest, item, index) =>
+      Math.abs(x(item, index) - svgX) < Math.abs(x(filtered[closest], closest) - svgX)
+        ? index : closest, 0)
+    setHovered({ column: skill.column, index: nearestIndex })
+  }
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
+        <select className={styles.formSelect} aria-label="Skill to chart" value={selectedSkill}
+          onChange={e => setSelectedSkill(e.target.value)} style={{ flex: '1 1 150px', minWidth: 0 }}>
+          <option value="all">All Skills</option>
+          {COACH_TIMELINE_SKILLS.map(item => <option key={item.column} value={item.column}>{item.name}</option>)}
+        </select>
+        <select className={styles.formSelect} aria-label="Time range" value={period}
+          onChange={e => { setPeriod(e.target.value); setHovered(null) }} style={{ flex: '0 1 125px' }}>
+          {[['All', 'All time'], ['1M', '1 month'], ['3M', '3 months'], ['6M', '6 months'], ['1Y', '1 year']]
+            .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </div>
+      {filtered.length === 0 ? (
+        <div style={{ padding: '44px 10px', color: 'var(--text-muted, #8892A4)', textAlign: 'center', fontSize: 14 }}>
+          No player self-assessments recorded yet.
+        </div>
+      ) : (
+        <>
+          <div style={{ position: 'relative' }} onMouseLeave={() => setHovered(null)}>
+          {hovered && filtered[hovered.index] && (() => {
+            const skill = COACH_TIMELINE_SKILLS.find(item => item.column === hovered.column)
+            const item = filtered[hovered.index]
+            return <div style={{ position: 'absolute', top: 3, right: 6, zIndex: 2,
+              padding: '7px 10px', borderRadius: 9, background: 'var(--card, #FFFFFF)',
+              border: `1px solid ${'var(--line, #EEF1F8)'}`, boxShadow: '0 4px 16px rgba(0,0,0,.10)',
+              color: 'var(--text, #0D1B3E)', fontSize: 12, pointerEvents: 'none' }}>
+              <strong style={{ color: PERFORMANCE_COLORS[skill.name] }}>{skill.name}: {item[skill.column]}/100</strong>
+              <div style={{ color: 'var(--text-muted, #8892A4)', marginTop: 2 }}>{new Date(item.recorded_at).toLocaleDateString('en-MY')}</div>
+            </div>
+          })()}
+          <svg viewBox={`0 0 ${width} ${height}`} role="img"
+            aria-label={allSkills ? 'Development of all six skills' : `${selected.name} score development`}
+            style={{ width: '100%', height: 'auto', minHeight: 160, display: 'block' }}>
+            {[0, 25, 50, 75, 100].map(score => {
+              const lineY = padY + chartH * (1 - score / 100)
+              return <g key={score}>
+                <line x1={padX} x2={width - padX} y1={lineY} y2={lineY} stroke="var(--line, #E5E7EB)" strokeDasharray="4 5" />
+                <text x={padX - 9} y={lineY + 4} textAnchor="end" fontSize="12" fill="var(--text-muted, #8892A4)">{score}</text>
+              </g>
+            })}
+            {visibleSkills.map(skill => {
+              const color = PERFORMANCE_COLORS[skill.name] || '#2563EB'
+              const points = filtered.map((item, index) => `${x(item, index)},${y(item, skill.column)}`).join(' ')
+              return <g key={skill.column}>
+                {filtered.length > 1 && <polyline points={points} fill="none" stroke={color}
+                  strokeWidth={allSkills ? '2.5' : '3'} strokeLinecap="round" strokeLinejoin="round" />}
+                {filtered.length > 1 && <polyline points={points} fill="none" stroke="transparent"
+                  strokeWidth="16" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ cursor: 'crosshair', pointerEvents: 'stroke' }}
+                  onMouseMove={event => showLineDetails(event, skill)}
+                  onMouseEnter={event => showLineDetails(event, skill)} />}
+                {filtered.map((item, index) =>
+                  <circle key={`${skill.column}-${item.recorded_at}-${index}`}
+                    cx={x(item, index)} cy={y(item, skill.column)} r={allSkills ? 3.5 : 5}
+                    fill={color} stroke="var(--card, white)" strokeWidth="1.5"
+                    style={{ cursor: 'crosshair' }}
+                    onMouseEnter={() => setHovered({ column: skill.column, index })}
+                    onMouseMove={() => setHovered({ column: skill.column, index })}>
+                    <title>{`${new Date(item.recorded_at).toLocaleDateString('en-MY')}: ${fmtScore(skill, item)}`}</title>
+                  </circle>
+                )}
+              </g>
+            })}
+            {filtered.length === 1 ? (
+              <text x={padX} y={height - 4} textAnchor="start" fontSize="12" fill="var(--text-muted, #8892A4)">
+                {new Date(filtered[0].recorded_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: '2-digit' })}
+              </text>
+            ) : (
+              <>
+                <text x={padX} y={height - 4} fontSize="12" fill="var(--text-muted, #8892A4)">
+                  {new Date(filtered[0].recorded_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: '2-digit' })}
+                </text>
+                <text x={width - padX} y={height - 4} textAnchor="end" fontSize="12" fill="var(--text-muted, #8892A4)">
+                  {new Date(filtered[filtered.length - 1].recorded_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: '2-digit' })}
+                </text>
+              </>
+            )}
+          </svg>
+          </div>
+          {allSkills && (
+            <div style={{ display: 'flex', gap: isMobileTimeline ? '7px 9px' : '8px 15px', flexWrap: 'wrap', margin: '24px 0 12px', paddingTop: 12, borderTop: '1px solid var(--line, #E5E7EB)' }}>
+              {COACH_TIMELINE_SKILLS.map(skill => (
+                <span key={skill.column} title={`${skill.name}: ${filtered[filtered.length - 1][skill.column] ?? '–'}/100`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: isMobileTimeline ? 4 : 6, fontSize: isMobileTimeline ? 10 : 12, color: 'var(--text, #0D1B3E)' }}>
+                  <span style={{ width: isMobileTimeline ? 10 : 15, height: 3, borderRadius: 3, background: PERFORMANCE_COLORS[skill.name] }} />
+                  {skill.name}
+                </span>
+              ))}
+            </div>
+          )}
+          {filtered.length === 1 && (
+            <div style={{ color: 'var(--text-muted, #8892A4)', fontSize: 12, lineHeight: 1.55, marginTop: 8 }}>
+              All six skills have only one saved assessment, so they appear as dots until another changed assessment is recorded.
+            </div>
+          )}
+          <div style={{ color: 'var(--text-muted, #8892A4)', fontSize: 12, lineHeight: 1.55, marginTop: 12 }}>
+            Based on the Player's saved self-assessment history. Coach assessments are shown separately and do not change this timeline.
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function CoachProgress() {
   const { user } = useAuth()
   const [viewportWidth, setViewportWidth] = useState(() =>
@@ -1371,7 +1610,16 @@ export default function CoachProgress() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [editOpen, setEditOpen] = useState(false)
+  const [progressSaveNotice, setProgressSaveNotice] = useState(null)
   const [progressSection, setProgressSection] = useState('performance')
+  const [assessmentHistory, setAssessmentHistory] = useState([])
+  const [performanceRecordsOpen, setPerformanceRecordsOpen] = useState(false)
+  const [developmentSection, setDevelopmentSection] = useState(null)
+  const [playerSkillHistory, setPlayerSkillHistory] = useState([])
+  const [developmentLoading, setDevelopmentLoading] = useState(false)
+  const [developmentError, setDevelopmentError] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const [matchModalOpen, setMatchModalOpen] =
     useState(false)
   const [matchDetailOpen, setMatchDetailOpen] =
@@ -2005,8 +2253,7 @@ export default function CoachProgress() {
             student.id === current
         )
           ? current
-          : normalizedStudents[0]
-              ?.id || null
+          : null
       )
       try {
         const today =
@@ -2222,6 +2469,58 @@ export default function CoachProgress() {
       ) || null,
     [students, selectedId]
   )
+  // Read history only for the selected player and current coach.
+  const loadAssessmentHistory = useCallback(async () => {
+    if (!selectedId || !user?.id) {
+      setAssessmentHistory([])
+      return
+    }
+    setHistoryLoading(true)
+    setHistoryError('')
+    const { data, error: readError } = await supabase
+      .from('coach_assessment_history')
+      .select('id, section, scores, feedback, action_plan, changed_fields, recorded_at')
+      .eq('coach_user_id', user.id)
+      .eq('player_user_id', selectedId)
+      .order('recorded_at', { ascending: false })
+      .limit(100)
+    if (readError) {
+      setAssessmentHistory([])
+      setHistoryError('History unavailable. Run the accompanying SQL setup first.')
+    } else {
+      setAssessmentHistory(data || [])
+    }
+    setHistoryLoading(false)
+  }, [selectedId, user?.id])
+
+  useEffect(() => {
+    loadAssessmentHistory()
+  }, [loadAssessmentHistory])
+
+  const openDevelopment = async section => {
+    if (!selectedStudent) return
+    const player = selectedStudent
+    setDevelopmentSection(section)
+    setDevelopmentError('')
+    if (section !== 'performance') return
+    setDevelopmentLoading(true)
+    setPlayerSkillHistory([])
+    try {
+      const { data, error: historyError } = await supabase
+        .from('player_skill_rating_history')
+        .select('recorded_at, smash, defense, footwork, drop_shot, net_play, serve')
+        .eq('player_id', player.profileId)
+        .order('recorded_at', { ascending: true })
+      if (historyError) throw historyError
+      setPlayerSkillHistory(data || [])
+    } catch (readError) {
+      console.error('Coach player performance development load error:', readError)
+      setDevelopmentError('Unable to load Player Performance history. Check whether accepted coaches have SELECT permission on player_skill_rating_history.')
+    } finally {
+      setDevelopmentLoading(false)
+    }
+  }
+
   const selectedActionPlans =
     useMemo(
       () =>
@@ -2902,6 +3201,11 @@ export default function CoachProgress() {
         [indicatorKey]: syncedCoachScore,
         updated_at: new Date().toISOString(),
       }
+      if (!selectedStudent.assessment) {
+        for (const key of ['smash', 'defense', 'footwork', 'drop_shot', 'net_play', 'serve', 'endurance', 'speed', 'strength', 'agility', 'recovery']) {
+          if (key !== indicatorKey) assessmentPayload[key] = null
+        }
+      }
       const {
         data: syncedAssessment,
         error: assessmentSyncError,
@@ -3244,7 +3548,10 @@ export default function CoachProgress() {
       setSavingMatchNote(false)
     }
   }
+  const [editedCoachRatings, setEditedCoachRatings] = useState([])
   const openEditor = student => {
+    setProgressSaveNotice(null)
+    setEditedCoachRatings([])
     const actionPlans =
       decodeActionPlans(
         student.progress
@@ -3294,62 +3601,17 @@ export default function CoachProgress() {
         student.progress
           ?.next_review_date ||
         '',
-      smash: Number(
-        student.assessment?.smash ??
-          student.performance.smash
-      ),
-      defense: Number(
-        student.assessment
-          ?.defense ??
-          student.performance.defense
-      ),
-      footwork: Number(
-        student.assessment
-          ?.footwork ??
-          student.performance
-            .footwork
-      ),
-      drop_shot: Number(
-        student.assessment
-          ?.drop_shot ??
-          student.performance
-            .dropShot
-      ),
-      net_play: Number(
-        student.assessment
-          ?.net_play ??
-          student.performance
-            .netPlay
-      ),
-      serve: Number(
-        student.assessment?.serve ??
-          student.performance.serve
-      ),
-      endurance: Number(
-        student.assessment
-          ?.endurance ??
-          student.fitness.endurance
-      ),
-      speed: Number(
-        student.assessment?.speed ??
-          student.fitness.speed
-      ),
-      strength: Number(
-        student.assessment
-          ?.strength ??
-          student.fitness.strength
-      ),
-      agility: Number(
-        student.assessment
-          ?.agility ??
-          student.fitness
-            .agility
-      ),
-      recovery: Number(
-        student.assessment
-          ?.recovery ??
-          student.fitness.recovery
-      ),
+      smash: Number(student.assessment?.smash ?? DEFAULT_SCORE),
+      defense: Number(student.assessment?.defense ?? DEFAULT_SCORE),
+      footwork: Number(student.assessment?.footwork ?? DEFAULT_SCORE),
+      drop_shot: Number(student.assessment?.drop_shot ?? DEFAULT_SCORE),
+      net_play: Number(student.assessment?.net_play ?? DEFAULT_SCORE),
+      serve: Number(student.assessment?.serve ?? DEFAULT_SCORE),
+      endurance: Number(student.assessment?.endurance ?? DEFAULT_SCORE),
+      speed: Number(student.assessment?.speed ?? DEFAULT_SCORE),
+      strength: Number(student.assessment?.strength ?? DEFAULT_SCORE),
+      agility: Number(student.assessment?.agility ?? DEFAULT_SCORE),
+      recovery: Number(student.assessment?.recovery ?? DEFAULT_SCORE),
     })
     setProgressSection('performance')
     setEditOpen(true)
@@ -3576,6 +3838,7 @@ export default function CoachProgress() {
     }
 
     setSaving(true)
+    setProgressSaveNotice(null)
     setError('')
     setSuccess('')
 
@@ -3652,101 +3915,91 @@ export default function CoachProgress() {
           new Date().toISOString(),
       }
 
-      const assessmentPayload =
-        isPerformance
-          ? {
-              coach_user_id: user.id,
-              player_user_id:
-                selectedStudent.id,
-              smash: Number(
-                form.smash
-              ),
-              defense: Number(
-                form.defense
-              ),
-              footwork: Number(
-                form.footwork
-              ),
-              drop_shot: Number(
-                form.drop_shot
-              ),
-              net_play: Number(
-                form.net_play
-              ),
-              serve: Number(
-                form.serve
-              ),
-              performance_comment:
-                form.performance_comment.trim() ||
-                null,
-              updated_at:
-                new Date().toISOString(),
-            }
-          : {
-              coach_user_id: user.id,
-              player_user_id:
-                selectedStudent.id,
-              endurance: Number(
-                form.endurance
-              ),
-              speed: Number(
-                form.speed
-              ),
-              strength: Number(
-                form.strength
-              ),
-              agility: Number(
-                form.agility
-              ),
-              recovery: Number(
-                form.recovery
-              ),
-              fitness_comment:
-                form.fitness_comment.trim() ||
-                null,
-              updated_at:
-                new Date().toISOString(),
-            }
+      const performanceKeys = ['smash', 'defense', 'footwork', 'drop_shot', 'net_play', 'serve']
+      const fitnessKeys = ['endurance', 'speed', 'strength', 'agility', 'recovery']
+      const scoreKeys = isPerformance ? performanceKeys : fitnessKeys
+      // A touched slider is only a change if its value differs from the
+      // coach's existing value. Player scores are never used here.
+      const changedScores = Object.fromEntries(
+        scoreKeys.filter(key => editedCoachRatings.includes(key))
+          .filter(key => {
+            const previous = selectedStudent.assessment?.[key]
+            return previous == null || Number(previous) !== Number(form[key])
+          })
+          .map(key => [key, Number(form[key])])
+      )
+      const previousScores = Object.fromEntries(
+        Object.keys(changedScores).map(key => [key, selectedStudent.assessment?.[key] ?? null])
+      )
+      const commentKey = isPerformance ? 'performance_comment' : 'fitness_comment'
+      const comment = String(form[commentKey] || '').trim() || null
+      const oldComment = selectedStudent.assessment?.[commentKey] || null
+      const hasAssessmentChanges = Object.keys(changedScores).length > 0 || comment !== oldComment
 
-      const [
-        progressSave,
-        assessmentSave,
-      ] = await Promise.all([
-        supabase
-          .from(
-            'coach_player_progress'
-          )
-          .upsert(
-            progressPayload,
-            {
-              onConflict:
-                'coach_user_id,player_user_id',
-            }
-          )
+      const progressSave = await supabase
+        .from('coach_player_progress')
+        .upsert(progressPayload, { onConflict: 'coach_user_id,player_user_id' })
+        .select('*')
+        .single()
+      if (progressSave.error) throw progressSave.error
+
+      let assessmentData = selectedStudent.assessment || null
+      if (hasAssessmentChanges) {
+        const assessmentPayload = {
+          coach_user_id: user.id,
+          player_user_id: selectedStudent.id,
+          ...changedScores,
+          [commentKey]: comment,
+          updated_at: new Date().toISOString(),
+        }
+        if (!selectedStudent.assessment) {
+          // Override any numeric column defaults: not assessed means NULL.
+          for (const key of [...performanceKeys, ...fitnessKeys]) {
+            if (!(key in changedScores)) assessmentPayload[key] = null
+          }
+        }
+        const assessmentSave = await supabase
+          .from('coach_player_assessments')
+          .upsert(assessmentPayload, { onConflict: 'coach_user_id,player_user_id' })
           .select('*')
-          .single(),
-
-        supabase
-          .from(
-            'coach_player_assessments'
-          )
-          .upsert(
-            assessmentPayload,
-            {
-              onConflict:
-                'coach_user_id,player_user_id',
-            }
-          )
-          .select('*')
-          .single(),
-      ])
-
-      if (progressSave.error) {
-        throw progressSave.error
+          .single()
+        if (assessmentSave.error) throw assessmentSave.error
+        assessmentData = assessmentSave.data
       }
+      setEditedCoachRatings([])
 
-      if (assessmentSave.error) {
-        throw assessmentSave.error
+      // Store a dated snapshot only when this section is explicitly saved.
+      // Preserve missing scores as null, never copy the player's values.
+      const snapshotKeys = isPerformance ? performanceKeys : fitnessKeys
+      const scores = Object.fromEntries(snapshotKeys.map(key => [
+        key,
+        Object.prototype.hasOwnProperty.call(changedScores, key)
+          ? changedScores[key]
+          : (assessmentData?.[key] ?? null),
+      ]))
+      // Embed original coach scores in the existing JSONB column, avoiding a
+      // database migration and retaining compatibility with old history rows.
+      // This metadata is not a player rating and is hidden from score lists.
+      if (Object.keys(previousScores).length > 0) {
+        scores.__previous = previousScores
+      }
+      const { error: historySaveError } = await supabase
+        .from('coach_assessment_history')
+        .insert({
+          coach_user_id: user.id,
+          player_user_id: selectedStudent.id,
+          section,
+          scores,
+          feedback: comment,
+          action_plan: isPerformance
+            ? form.performance_action_plan
+            : form.fitness_action_plan,
+          changed_fields: Object.keys(changedScores),
+        })
+      if (historySaveError) {
+        setHistoryError('Progress was saved, but history could not be recorded. Check the history table and RLS setup.')
+      } else {
+        await loadAssessmentHistory()
       }
 
       setStudents(current =>
@@ -3759,7 +4012,7 @@ export default function CoachProgress() {
                   progressSave.data,
                 assessment: {
                   ...(student.assessment || {}),
-                  ...(assessmentSave.data || {}),
+                  ...(assessmentData || {}),
                 },
               }
             : student
@@ -3771,6 +4024,7 @@ export default function CoachProgress() {
           ? `${selectedStudent.name}'s performance progress was updated.`
           : `${selectedStudent.name}'s fitness progress was updated.`
       )
+      setProgressSaveNotice({ playerId: selectedStudent.id, section, savedAt: new Date().toISOString() })
     } catch (saveError) {
       console.error(
         `Save ${section} progress error:`,
@@ -3822,19 +4076,27 @@ export default function CoachProgress() {
             icon: 'students',
           },
           {
-            label: 'Performance avg',
-            value: students.length
-              ? averageValues(students.map(student => student.performanceAverage))
-              : 0,
+            label: selectedStudent
+              ? `${selectedStudent.name}'s Performance Avg`
+              : "Students' Performance Avg",
+            value: selectedStudent
+              ? selectedStudent.performanceAverage
+              : students.length
+                ? averageValues(students.map(student => student.performanceAverage))
+                : 0,
             color: '#00A878',
             background: '#E0FAF3',
             icon: 'performance',
           },
           {
-            label: 'Fitness avg',
-            value: students.length
-              ? averageValues(students.map(student => student.fitnessAverage))
-              : 0,
+            label: selectedStudent
+              ? `${selectedStudent.name}'s Fitness Avg`
+              : "Students' Fitness Avg",
+            value: selectedStudent
+              ? selectedStudent.fitnessAverage
+              : students.length
+                ? averageValues(students.map(student => student.fitnessAverage))
+                : 0,
             color: '#F59E0B',
             background: '#FEF3C7',
             icon: 'fitness',
@@ -3954,6 +4216,25 @@ export default function CoachProgress() {
               width: '100%',
             }}
           >
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={() => setSelectedId(null)}
+              aria-pressed={!selectedId}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                textAlign: 'center',
+                background: !selectedId ? '#E8EFFE' : 'var(--card, #FFFFFF)',
+                border: !selectedId ? '2px solid #1A5FFF' : '1.5px solid #EEF1F8',
+                color: !selectedId ? '#1A5FFF' : 'var(--text, #0D1B3E)',
+                borderRadius: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              All students (overall averages)
+            </button>
             {students.map(student => (
               <div
                 key={student.id}
@@ -4061,6 +4342,80 @@ export default function CoachProgress() {
               </div>
             ))}
           </div>
+          {!selectedStudent && (
+            <div
+              className={styles.card}
+              style={{
+                gridColumn: progressSingleColumn ? 'auto' : 'span 2',
+                padding: 22,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text, #0D1B3E)' }}>
+                  All Students' Averages
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)', marginTop: 5 }}>
+                  Performance and fitness averages for each accepted student. Select a student to view their progress.
+                </div>
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))',
+                  gap: 12,
+                  alignItems: 'stretch',
+                }}
+              >
+                {students.map(student => (
+                  <button
+                    key={student.id}
+                    type="button"
+                    onClick={() => setSelectedId(student.id)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 15,
+                      padding: 16,
+                      textAlign: 'left',
+                      background: 'var(--card, #FFFFFF)',
+                      border: '1px solid var(--line, #EEF1F8)',
+                      borderRadius: 14,
+                      cursor: 'pointer',
+                      minWidth: 0,
+                      color: 'var(--text, #0D1B3E)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <Avatar name={student.name} size={38} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, overflowWrap: 'anywhere' }}>
+                          {student.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted, #8892A4)', marginTop: 3 }}>
+                          {student.club}{student.state ? ` • ${student.state}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                      <div style={{ borderRadius: 10, padding: '12px 10px', background: 'color-mix(in srgb, #10B981 10%, var(--card, #FFFFFF))' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted, #8892A4)' }}>Performance Avg</div>
+                        <div style={{ fontSize: 25, fontWeight: 800, color: '#059669', marginTop: 4 }}>
+                          {student.performanceAverage}
+                        </div>
+                      </div>
+                      <div style={{ borderRadius: 10, padding: '12px 10px', background: 'color-mix(in srgb, #F59E0B 12%, var(--card, #FFFFFF))' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted, #8892A4)' }}>Fitness Avg</div>
+                        <div style={{ fontSize: 25, fontWeight: 800, color: '#D97706', marginTop: 4 }}>
+                          {student.fitnessAverage}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {selectedStudent && (
             <>
               <div
@@ -4147,26 +4502,22 @@ export default function CoachProgress() {
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      marginBottom: 24,
-                    }}
-                  >
-                    <div
-                      className={styles.cardTitle}
-                      style={{ marginBottom: 4 }}
-                    >
-                      Performance skills
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: 'var(--text-muted, #8892A4)',
-                        lineHeight: 1.45,
-                      }}
-                    >
-                      Player self-assessment with coach comparison markers.
+                  <div style={{ marginBottom: 24 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                      <div>
+                        <div className={styles.cardTitle} style={{ marginBottom: 4 }}>Performance skills</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted, #8892A4)', lineHeight: 1.45 }}>
+                          Player self-assessment with coach comparison markers.
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+                        <button type="button" className={styles.btnOutline} onClick={() => openDevelopment('performance')} style={{ fontSize: 11, padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                          View Development
+                        </button>
+                        <button type="button" className={styles.btnOutline} onClick={() => { setPerformanceRecordsOpen(true); loadAssessmentHistory() }} style={{ fontSize: 11, padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                          View records
+                        </button>
+                      </div>
                     </div>
                   </div>
                   {PERFORMANCE_FIELDS.map(field => {
@@ -4235,18 +4586,14 @@ export default function CoachProgress() {
                         Current player fitness values and coach assessment.
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className={styles.btnOutline}
-                      onClick={() => setFitnessRecordsOpen(true)}
-                      style={{
-                        fontSize: 11,
-                        padding: '7px 10px',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      View records
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+                      <button type="button" className={styles.btnOutline} onClick={() => openDevelopment('fitness')} style={{ fontSize: 11, padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                        View Development
+                      </button>
+                      <button type="button" className={styles.btnOutline} onClick={() => setFitnessRecordsOpen(true)} style={{ fontSize: 11, padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                        View records
+                      </button>
+                    </div>
                   </div>
                   {FITNESS_FIELDS.map(field => (
                     <ComparisonSkillRow
@@ -5286,6 +5633,62 @@ export default function CoachProgress() {
               </div>
             </>
           )}
+        </div>
+      )}
+      {developmentSection && selectedStudent && (
+        <div className={styles.modalOverlay} onClick={event => { if (event.target === event.currentTarget) setDevelopmentSection(null) }}>
+          <div className={styles.modal} style={{ maxWidth: 860, width: '94vw', maxHeight: '88vh', overflowY: 'auto' }}>
+            <div className={styles.modalHead}>
+              <div>
+                <div className={styles.modalTitle}>
+                  {developmentSection === 'performance' ? 'Performance Development' : 'Fitness Development'}
+                </div>
+                <div style={{ marginTop: 3, fontSize: 11, color: 'var(--text-muted, #8892A4)' }}>
+                  {selectedStudent.name} • Player assessment history
+                </div>
+              </div>
+              <button type="button" className={styles.modalClose} onClick={() => setDevelopmentSection(null)} aria-label="Close development chart">×</button>
+            </div>
+            {developmentSection === 'performance' ? (
+              <>
+                {developmentLoading && <p>Loading performance history...</p>}
+                {developmentError && <p role="alert" style={{ color: '#DC2626' }}>{developmentError}</p>}
+                {!developmentLoading && !developmentError && (
+                  <CoachPlayerPerformanceTimeline records={playerSkillHistory} />
+                )}
+              </>
+            ) : (
+              <FitnessDevelopmentTimeline tests={(selectedStudent.fitnessTests || []).map(row => ({
+                id: row.id,
+                date: row.test_date,
+                test: row.test_name || '',
+                result: row.result || '',
+                indicator: row.indicator || 'Endurance',
+                score: clamp(row.score),
+                change: row.change_note || 'Saved',
+                addedByCoach: Boolean(row.added_by_coach && row.coach_user_id),
+                coachUserId: row.coach_user_id || null,
+                createdAt: row.created_at || '',
+                updatedAt: row.updated_at || '',
+              }))} />
+            )}
+          </div>
+        </div>
+      )}
+      {performanceRecordsOpen && selectedStudent && (
+        <div className={styles.modalOverlay} onClick={event => { if (event.target === event.currentTarget) setPerformanceRecordsOpen(false) }}>
+          <div className={styles.modal} style={{ maxWidth: 760, width: '92vw', maxHeight: '86vh', overflowY: 'auto' }}>
+            <div className={styles.modalHead}>
+              <div>
+                <div className={styles.modalTitle}>Performance Assessment Records</div>
+                <div style={{ marginTop: 3, fontSize: 11, color: 'var(--text-muted, #8892A4)' }}>
+                  {selectedStudent.name} • Saved coach assessment updates
+                </div>
+              </div>
+              <button type="button" className={styles.modalClose} onClick={() => setPerformanceRecordsOpen(false)} aria-label="Close performance records">×</button>
+            </div>
+            <CoachRatingHistory section="performance" entries={assessmentHistory} loading={historyLoading} error={historyError} refresh={loadAssessmentHistory} />
+          </div>
         </div>
       )}
       {fitnessRecordsOpen && selectedStudent && (
@@ -7174,8 +7577,13 @@ export default function CoachProgress() {
                   minWidth: 0,
                 }}
               >
+
+                <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text-muted, #8892A4)' }}>
+                  A slider marked “Not rated” is only a starting position, not a saved coach score.
+                  Move the slider to submit a Coach rating; updating feedback alone will not rate a skill.
+                </div>
                 {progressSection === 'performance' && (
-                <div
+                <div onChangeCapture={() => setProgressSaveNotice(null)}
                   style={{
                     padding: 18,
                     borderRadius: 14,
@@ -7203,15 +7611,18 @@ export default function CoachProgress() {
                   ].map(([key, label]) => (
                     <AssessmentSlider
                       key={key}
-                      label={label}
+                      label={`${label} — ${editedCoachRatings.includes(key) || selectedStudent?.assessment?.[key] != null ? 'Coach rating' : 'Not rated'}`}
                       value={form[key]}
                       accentColor="#00A878"
-                      onChange={value =>
+                      onChange={value => {
+                        setEditedCoachRatings(current =>
+                          current.includes(key) ? current : [...current, key]
+                        )
                         setForm(current => ({
                           ...current,
                           [key]: value,
                         }))
-                      }
+                      }}
                     />
                   ))}
                   <div
@@ -7388,13 +7799,29 @@ export default function CoachProgress() {
                     <div
                       style={{
                         display: 'flex',
-                        justifyContent: 'flex-end',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
                         marginTop: 16,
                         paddingTop: 14,
                         borderTop:
                           '1px solid var(--line, #EEF1F8)',
                       }}
                     >
+                      <div role="status" aria-live="polite" style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)', lineHeight: 1.5 }}>
+                        {progressSaveNotice?.playerId === selectedStudent.id && progressSaveNotice?.section === 'performance' && (
+                          <strong style={{ display: 'block', color: '#059669' }}>✓ Saved successfully</strong>
+                        )}
+                        {(() => {
+                          const savedAt = (progressSaveNotice?.playerId === selectedStudent.id && progressSaveNotice?.section === 'performance'
+                            ? progressSaveNotice.savedAt
+                            : assessmentHistory.find(entry => entry.section === 'performance')?.recorded_at)
+                          return savedAt
+                            ? `Last saved: ${new Date(savedAt).toLocaleString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}`
+                            : 'Last saved time not available'
+                        })()}
+                      </div>
                       <button
                         type="button"
                         className={styles.btnPrimary}
@@ -7414,7 +7841,7 @@ export default function CoachProgress() {
                 )}
 
                 {progressSection === 'fitness' && (
-                <div
+                <div onChangeCapture={() => setProgressSaveNotice(null)}
                   style={{
                     padding: 18,
                     borderRadius: 14,
@@ -7441,15 +7868,18 @@ export default function CoachProgress() {
                   ].map(([key, label]) => (
                     <AssessmentSlider
                       key={key}
-                      label={label}
+                      label={`${label} — ${editedCoachRatings.includes(key) || selectedStudent?.assessment?.[key] != null ? 'Coach rating' : 'Not rated'}`}
                       value={form[key]}
                       accentColor="#7C3AED"
-                      onChange={value =>
+                      onChange={value => {
+                        setEditedCoachRatings(current =>
+                          current.includes(key) ? current : [...current, key]
+                        )
                         setForm(current => ({
                           ...current,
                           [key]: value,
                         }))
-                      }
+                      }}
                     />
                   ))}
                   <div
@@ -7626,13 +8056,29 @@ export default function CoachProgress() {
                     <div
                       style={{
                         display: 'flex',
-                        justifyContent: 'flex-end',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
                         marginTop: 16,
                         paddingTop: 14,
                         borderTop:
                           '1px solid var(--line, #EEF1F8)',
                       }}
                     >
+                      <div role="status" aria-live="polite" style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)', lineHeight: 1.5 }}>
+                        {progressSaveNotice?.playerId === selectedStudent.id && progressSaveNotice?.section === 'fitness' && (
+                          <strong style={{ display: 'block', color: '#059669' }}>✓ Saved successfully</strong>
+                        )}
+                        {(() => {
+                          const savedAt = (progressSaveNotice?.playerId === selectedStudent.id && progressSaveNotice?.section === 'fitness'
+                            ? progressSaveNotice.savedAt
+                            : assessmentHistory.find(entry => entry.section === 'fitness')?.recorded_at)
+                          return savedAt
+                            ? `Last saved: ${new Date(savedAt).toLocaleString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}`
+                            : 'Last saved time not available'
+                        })()}
+                      </div>
                       <button
                         type="button"
                         className={styles.btnPrimary}

@@ -769,7 +769,7 @@ function PerformanceTimeline({ records }) {
   const minT = filtered.length ? new Date(filtered[0].recorded_at).getTime() : 0
   const maxT = filtered.length ? new Date(filtered[filtered.length - 1].recorded_at).getTime() : 0
   const x = (item, index) => maxT === minT
-    ? padX + (filtered.length === 1 ? chartW / 2 : chartW * index / (filtered.length - 1))
+    ? padX + (filtered.length === 1 ? 0 : chartW * index / (filtered.length - 1))
     : padX + chartW * (new Date(item.recorded_at).getTime() - minT) / (maxT - minT)
   const y = (item, column) => padY + chartH * (1 - Math.min(100, Math.max(0, Number(item[column]) || 0)) / 100)
   const fmtScore = (skill, item) => `${skill.name}: ${item[skill.column] ?? '–'}/100`
@@ -850,9 +850,11 @@ function PerformanceTimeline({ records }) {
             <text x={padX} y={height - 4} fontSize="12" fill="var(--text-muted, #8892A4)">
               {new Date(filtered[0].recorded_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: '2-digit' })}
             </text>
-            <text x={width - padX} y={height - 4} textAnchor="end" fontSize="12" fill="var(--text-muted, #8892A4)">
-              {new Date(filtered[filtered.length - 1].recorded_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: '2-digit' })}
-            </text>
+            {filtered.length > 1 && (
+              <text x={width - padX} y={height - 4} textAnchor="end" fontSize="12" fill="var(--text-muted, #8892A4)">
+                {new Date(filtered[filtered.length - 1].recorded_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: '2-digit' })}
+              </text>
+            )}
           </svg>
           </div>
           {allSkills && (
@@ -909,6 +911,7 @@ export default function Performance() {
     coachCount: 0,
   })
   const [verificationAssessments, setVerificationAssessments] = useState([])
+
   const [showVerificationModal, setShowVerificationModal] = useState(false)
   const [showVerificationDetailsModal, setShowVerificationDetailsModal] = useState(false)
   const [deletingVerificationId, setDeletingVerificationId] = useState(null)
@@ -2986,8 +2989,7 @@ export default function Performance() {
                           padding: '4px 8px',
                         }}
                       >
-                        ✓ Initial assessment verified by {verificationSummary.playerCount} player
-                        {verificationSummary.playerCount === 1 ? '' : 's'}
+                        ✓ Verified by {verificationSummary.playerCount} Player{verificationSummary.playerCount === 1 ? '' : 's'}
                       </span>
                     )}
 
@@ -3002,7 +3004,7 @@ export default function Performance() {
                           padding: '4px 8px',
                         }}
                       >
-                        ✓ Initial assessment coach verified
+                        ✓ Verified by {verificationSummary.coachCount} Coach{verificationSummary.coachCount === 1 ? '' : 'es'}
                       </span>
                     )}
 
@@ -5103,7 +5105,7 @@ export default function Performance() {
                 marginBottom: 16,
               }}
             >
-              These ratings were submitted independently by other ShuttleTrack users.
+              These ratings were submitted independently by other ShuttleTrack users for your initial skill assessment.
               They do not change your self-assessment and they do not add extra markers
               to the main skill chart. Use the × button on a verification card to remove
               it after you no longer need it.
@@ -5238,7 +5240,9 @@ export default function Performance() {
                         }}
                       >
                         {SKILL_COLUMNS.map(skill => {
+                          // Use the original assessment snapshot, not the player's latest edited ratings.
                           const playerScore = Number(
+                            verificationRequest?.[skill.column] ??
                             skills.find(current => current.column === skill.column)?.val ?? 0
                           )
                           const verifierScore = Number(item[skill.column] ?? playerScore)

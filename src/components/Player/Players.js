@@ -935,7 +935,7 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
                     color: C.muted,
                   }}
                 >
-                  These are independent ratings submitted for {p.name}&apos;s current self-assessment.
+                  These are independent ratings submitted for {p.name}&apos;s initial skill assessment. Current skill ratings may have changed since verification.
                 </div>
               </div>
 
@@ -1064,7 +1064,7 @@ function PlayerDetail({ p, isPartner, onAddOpponent, onRemoveOpponent, onAddPart
                             }}
                           >
                             <span style={{ color: C.text }}>
-                              Player: <strong>{Number(ownValue ?? 0)}</strong>
+                              Latest self-rating: <strong>{Number(ownValue ?? 0)}</strong>
                             </span>
                             <span style={{ color: accent }}>
                               {roleLabel}: <strong>{Number(item[key] ?? ownValue ?? 0)}</strong>

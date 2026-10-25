@@ -10,6 +10,7 @@ import TestModal from './fitness/components/FitnessTestModal'
 import RecoveryModal from './fitness/components/RecoveryModal'
 import InjuryModal from './fitness/components/InjuryModal'
 import ScheduleModal from './fitness/components/ScheduleModal'
+import FitnessDevelopmentTimeline from './fitness/components/FitnessDevelopmentTimeline'
 import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
@@ -775,7 +776,7 @@ function rowToTraining(row) {
 
 function rowToSchedule(row) {
   const type = row.schedule_type || row.title || 'Friendly Match'
-  const isCoachTraining = Boolean(row.is_coach_created)
+  const isCoachTraining = Boolean(row.is_coach_created || row.coach_session_id)
   const meta = decodeScheduleNotes(row.notes)
 
   return {
@@ -1416,15 +1417,15 @@ function ScheduleCalendar({
               sessionFinished &&
               !isAbsent &&
               !isCoachCompleted &&
-              item.source !== 'training_log' &&
-              (
-                item.source === 'schedule' ||
-                item.source === 'coach_training'
-              )
+              item.source === 'schedule' &&
+              !item.isCoachCreated &&
+              !item.coachSessionId
 
             const canMarkMissed =
               sessionFinished &&
               item.source === 'schedule' &&
+              !item.isCoachCreated &&
+              !item.coachSessionId &&
               item.type === 'Training' &&
               !isMissed
 
@@ -2375,6 +2376,7 @@ function AllFitnessRecordsModal({
   )
 }
 
+
 function FitnessComparisonRow({
   label,
   playerValue,
@@ -2696,7 +2698,8 @@ export default function Fitness() {
     setEditingPersonalActionPlan,
   ] = useState(false)
 
-  const [selectedDate, setSelectedDate] = useState(null)
+  // Today is selected on first render, so its activity panel always appears.
+  const [selectedDate, setSelectedDate] = useState(() => todayISO())
   const [
     selectedTrainingDetail,
     setSelectedTrainingDetail,
@@ -2725,6 +2728,7 @@ export default function Fitness() {
   const [googleSyncEnabled, setGoogleSyncEnabled] = useState(false)
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false)
   const [showFitnessInfo, setShowFitnessInfo] = useState(false)
+  const [showFitnessDevelopment, setShowFitnessDevelopment] = useState(false)
   const [showFitnessScoreInfo, setShowFitnessScoreInfo] = useState(false)
   const [fitnessGoal, setFitnessGoal] = useState(null)
   const [showFitnessGoal, setShowFitnessGoal] = useState(false)
@@ -3738,22 +3742,37 @@ export default function Fitness() {
   const latestCoachProgress =
     coachProgress[0] || null
 
+  // A coach marker must come from an assessment made by a coach who is
+  // currently connected to this player. Never infer a coach score from a
+  // player's initial fitness baseline or from an unrelated/stale assessment.
   const latestCoachAssessment = useMemo(() => {
-    if (!coachAssessments.length) return null
-
-    if (latestCoachProgress?.coach_user_id) {
-      return (
-        coachAssessments.find(
-          assessment =>
-            String(assessment.coach_user_id || '') ===
-            String(latestCoachProgress.coach_user_id || '')
-        ) ||
-        coachAssessments[0]
-      )
+    if (!hasCoach || !coachOptions.length || !coachAssessments.length) {
+      return null
     }
 
-    return coachAssessments[0]
+    const activeCoachIds = new Set(
+      coachOptions.map(coach => String(coach.userId))
+    )
+
+    const validAssessments = coachAssessments.filter(assessment =>
+      assessment.coach_user_id &&
+      activeCoachIds.has(String(assessment.coach_user_id))
+    )
+
+    if (!validAssessments.length) return null
+
+    const selectedCoachId = latestCoachProgress?.coach_user_id
+    if (selectedCoachId && activeCoachIds.has(String(selectedCoachId))) {
+      const matchingAssessment = validAssessments.find(assessment =>
+        String(assessment.coach_user_id) === String(selectedCoachId)
+      )
+      if (matchingAssessment) return matchingAssessment
+    }
+
+    return validAssessments[0]
   }, [
+    hasCoach,
+    coachOptions,
     coachAssessments,
     latestCoachProgress?.coach_user_id,
   ])
@@ -4185,6 +4204,10 @@ export default function Fitness() {
     ]
   }, [scheduleList, sessions])
 
+  // Keep one selected date for both the highlighted day and its details.
+  // A selected date is never toggled off; empty dates show the empty message.
+  const activeCalendarDate = selectedDate
+
   const venueHistory = useMemo(() => {
     const seen = new Set()
 
@@ -4264,6 +4287,7 @@ export default function Fitness() {
   }
 
   const openEditSchedule = row => {
+    if (row?.isCoachCreated || row?.coachSessionId || row?.source === 'coach_training') return
     setEditingSchedule(row)
     setLoadError('')
     setScheduleAvailabilityError('')
@@ -4512,7 +4536,7 @@ export default function Fitness() {
   ])
 
   const saveSchedule = async () => {
-    if (saving) return
+    if (saving || editingSchedule?.isCoachCreated || editingSchedule?.coachSessionId) return
 
     if (!scheduleForm.date || !scheduleForm.type) {
       setLoadError('Please select the date and type.')
@@ -4715,7 +4739,7 @@ export default function Fitness() {
   }
 
   const deleteSchedule = async () => {
-    if (!editingSchedule || saving) return
+    if (!editingSchedule || saving || editingSchedule.isCoachCreated || editingSchedule.coachSessionId) return
 
     setSaving(true)
     setLoadError('')
@@ -4802,7 +4826,9 @@ export default function Fitness() {
   const markScheduledTrainingMissed = async item => {
     if (
       saving ||
-      item?.source !== 'schedule'
+      item?.source !== 'schedule' ||
+      item?.isCoachCreated ||
+      item?.coachSessionId
     ) {
       return
     }
@@ -4864,7 +4890,11 @@ export default function Fitness() {
   }
 
   const completeScheduledTraining = async item => {
-    if (saving) return
+    // Coach-created session attendance is controlled by the coach only.
+    if (saving || item?.isCoachCreated || item?.coachSessionId || item?.source === 'coach_training') {
+      setLoadError('Only your coach can mark a coach-assigned session as completed.')
+      return
+    }
 
     if (item?.attendanceStatus === 'absent') {
       setLoadError(
@@ -5080,7 +5110,9 @@ export default function Fitness() {
     if (
       saving ||
       !item ||
-      item.source !== 'schedule'
+      item.source !== 'schedule' ||
+      item.isCoachCreated ||
+      item.coachSessionId
     ) {
       return
     }
@@ -5516,6 +5548,12 @@ export default function Fitness() {
 
     try {
       const uid = await getUserId()
+
+      // A player cannot complete a coach-assigned session through a training log.
+      if (completingSchedule?.coachSessionId || completingSchedule?.isCoachCreated || editingTraining?.coachSessionId) {
+        setLoadError('Coach-assigned training completion is managed by the coach.')
+        return
+      }
 
       const payload = {
         user_id: uid,
@@ -7055,7 +7093,7 @@ export default function Fitness() {
                   padding: '7px 14px',
                   whiteSpace: 'nowrap',
                 }}
-                onClick={() => openAddSchedule(selectedDate)}
+                onClick={() => openAddSchedule(activeCalendarDate)}
               >
                 + Add Schedule
               </button>
@@ -7064,18 +7102,13 @@ export default function Fitness() {
 
           <ScheduleCalendar
             schedules={calendarItems}
-            selectedDate={selectedDate}
-            onDayClick={key => setSelectedDate(selectedDate === key ? null : key)}
+            selectedDate={activeCalendarDate}
+            onDayClick={key => {
+              setSelectedDate(key)
+            }}
             onEditSchedule={openEditSchedule}
             onEditTraining={openEditTraining}
-            onCompleteSchedule={async item => {
-              if (item.source === 'coach_training') {
-                await completeScheduledTraining(item)
-                return
-              }
-
-              await completePlayerAddedSchedule(item)
-            }}
+            onCompleteSchedule={completePlayerAddedSchedule}
             onMissSchedule={markScheduledTrainingMissed}
             saving={saving}
           />
@@ -7110,10 +7143,10 @@ export default function Fitness() {
                 className={styles.cardTitle}
                 style={{ marginBottom: 0 }}
               >
-                Fitness Indicators
+                {showFitnessDevelopment ? 'Fitness Development' : 'Fitness Indicators'}
               </div>
 
-              <div
+              {!showFitnessDevelopment && <div
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -7231,7 +7264,7 @@ export default function Fitness() {
                     ))}
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
 
             <div
@@ -7243,7 +7276,10 @@ export default function Fitness() {
                 justifyContent: 'flex-end',
               }}
             >
-              {canSetInitialFitness && (
+              <button type="button" className={styles.btnOutline} onClick={() => { setShowFitnessDevelopment(value => !value); setShowFitnessInfo(false) }} style={{ fontSize: 13, padding: '7px 12px', whiteSpace: 'nowrap' }}>
+                ↻ {showFitnessDevelopment ? 'Back to indicators' : 'Flip'}
+              </button>
+              {!showFitnessDevelopment && canSetInitialFitness && (
                 <button
                   type="button"
                   className={styles.btnOutline}
@@ -7257,7 +7293,7 @@ export default function Fitness() {
                 </button>
               )}
 
-              <button
+              {!showFitnessDevelopment && <button
                 type="button"
                 className={styles.btnOutline}
                 style={{
@@ -7267,10 +7303,14 @@ export default function Fitness() {
                 onClick={openAddTest}
               >
                 Add fitness test
-              </button>
+              </button>}
             </div>
           </div>
 
+          {showFitnessDevelopment ? (
+            <FitnessDevelopmentTimeline tests={tests} />
+          ) : (
+            <>
           {indicators.map(item => {
             const displayLabel =
               item.name === 'Flexibility'
@@ -7308,6 +7348,8 @@ export default function Fitness() {
             is calculated from the latest recovery check-in. Coach assessments
             remain separate and are shown by the purple marker.
           </div>
+            </>
+          )}
         </div>
       </div>
 
