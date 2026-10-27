@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Html5Qrcode } from 'html5-qrcode'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
@@ -248,13 +249,168 @@ export default function CoachDashboard() {
   const [assessments, setAssessments] = useState([])
   const [coachReviews, setCoachReviews] = useState([])
   const [showAllReviews, setShowAllReviews] = useState(false)
+  const [feedbackPage, setFeedbackPage] = useState(0)
+  const [dismissedVerifiedBanner, setDismissedVerifiedBanner] = useState(false)
   const [verification, setVerification] = useState({
     status: 'pending',
     rejectionReason: '',
     verifiedAt: null,
   })
+  // Dismissal is personal to this coach and this verification approval.
+  const verifiedBannerStorageKey =
+    `shuttletrack-coach-verified-banner:${user?.id || 'unknown'}:${verification.verifiedAt || 'verified'}`
+
+  useEffect(() => {
+    if (verification.status !== 'verified') {
+      setDismissedVerifiedBanner(false)
+      return
+    }
+    try {
+      setDismissedVerifiedBanner(window.localStorage.getItem(verifiedBannerStorageKey) === 'dismissed')
+    } catch {
+      setDismissedVerifiedBanner(false)
+    }
+  }, [verification.status, verifiedBannerStorageKey])
+
+  const dismissVerifiedBanner = () => {
+    setDismissedVerifiedBanner(true)
+    try {
+      window.localStorage.setItem(verifiedBannerStorageKey, 'dismissed')
+    } catch {
+      // Closing the banner still works if browser storage is unavailable.
+    }
+  }
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
+  const [showQrScanner, setShowQrScanner] = useState(false)
+  const [qrError, setQrError] = useState('')
+  const [qrStarting, setQrStarting] = useState(false)
+  const qrScannerRef = useRef(null)
+  const qrProcessingRef = useRef(false)
+
+  const stopCoachDashboardScanner = useCallback(async () => {
+    const scanner = qrScannerRef.current
+    qrScannerRef.current = null
+    if (!scanner) return
+    try {
+      if (scanner.isScanning) await scanner.stop()
+    } catch (err) {
+      console.warn('Coach dashboard QR stop error:', err)
+    }
+    try {
+      scanner.clear()
+    } catch (err) {
+      console.warn('Coach dashboard QR clear error:', err)
+    }
+  }, [])
+
+  const closeCoachDashboardScanner = useCallback(() => {
+    setShowQrScanner(false)
+    setQrError('')
+    qrProcessingRef.current = false
+    void stopCoachDashboardScanner()
+  }, [stopCoachDashboardScanner])
+
+  useEffect(() => {
+    if (!showQrScanner) return undefined
+    let cancelled = false
+    const start = async () => {
+      setQrStarting(true)
+      setQrError('')
+      try {
+        const reader = document.getElementById('coach-dashboard-shuttletrack-qr-reader')
+        if (!reader) throw new Error('Scanner area is not ready.')
+        const scanner = new Html5Qrcode('coach-dashboard-shuttletrack-qr-reader', { verbose: false })
+        qrScannerRef.current = scanner
+        let camera = { facingMode: 'environment' }
+        try {
+          const cameras = await Html5Qrcode.getCameras()
+          if (cameras.length) {
+            camera = cameras.find(item => /rear|back|environment/i.test(item.label || ''))?.id || cameras[0].id
+          }
+        } catch (err) {
+          console.warn('Using default camera:', err)
+        }
+        if (cancelled) return
+        await scanner.start(camera, {
+          fps: 10,
+          qrbox: (width, height) => {
+            const side = Math.max(50, Math.min(220, Math.floor(Math.min(width, height) * 0.72) || 220))
+            return { width: side, height: side }
+          },
+        }, async scannedText => {
+          if (qrProcessingRef.current || cancelled) return
+          const raw = String(scannedText || '').trim()
+          let target = ''
+          let scannedAccountId = ''
+          if (raw.startsWith('SHUTTLETRACK_PLAYER:')) {
+            const id = raw.slice('SHUTTLETRACK_PLAYER:'.length).trim()
+            if (id) {
+              scannedAccountId = id
+              target = `/coach/players?player=${encodeURIComponent(id)}`
+            }
+          } else if (raw.startsWith('SHUTTLETRACK_COACH:')) {
+            const id = raw.slice('SHUTTLETRACK_COACH:'.length).trim()
+            if (id) {
+              scannedAccountId = id
+              target = `/players?tab=coach&coach=${encodeURIComponent(id)}`
+            }
+          } else {
+            try {
+              const url = new URL(raw, window.location.origin)
+              const parts = url.pathname.split('/').filter(Boolean)
+              const skillIndex = parts.indexOf('verify-skill')
+              if (skillIndex >= 0 && parts[skillIndex + 1]) {
+                target = `/verify-skill/${encodeURIComponent(decodeURIComponent(parts[skillIndex + 1]))}`
+              } else {
+                const coachId = url.searchParams.get('coach') || ''
+                const playerId = url.searchParams.get('player') || ''
+                if (coachId) {
+                  scannedAccountId = coachId
+                  target = `/players?tab=coach&coach=${encodeURIComponent(coachId)}`
+                } else {
+                  const playerIndex = parts.findIndex(item => ['player', 'p', 'scan'].includes(item))
+                  const candidate = playerId || (playerIndex >= 0 ? parts[parts.length - 1] : '')
+                  if (candidate) {
+                    scannedAccountId = candidate
+                    target = `/coach/players?player=${encodeURIComponent(candidate)}`
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn('Unrecognised QR content:', err)
+            }
+          }
+          if (!target) {
+            setQrError('This is not a valid ShuttleTrack Player, Coach, or Skill Verification QR code.')
+            return
+          }
+          // Do not navigate when the QR identifies the signed-in coach's own account.
+          if (scannedAccountId && user?.id && String(scannedAccountId) === String(user.id)) {
+            setQrError('This is your own QR code. Please scan another player or coach QR code.')
+            return
+          }
+          qrProcessingRef.current = true
+          setQrError('')
+          await stopCoachDashboardScanner()
+          if (!cancelled) {
+            setShowQrScanner(false)
+            navigate(target)
+          }
+        }, () => {})
+      } catch (err) {
+        if (!cancelled) setQrError(err?.message || 'Could not start the camera. Check camera permission.')
+      } finally {
+        if (!cancelled) setQrStarting(false)
+      }
+    }
+    const timer = window.setTimeout(start, 100)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      void stopCoachDashboardScanner()
+    }
+  }, [showQrScanner, navigate, stopCoachDashboardScanner, user?.id])
   const [error, setError] = useState('')
   const loadDashboard = useCallback(async () => {
     if (!user?.id) return
@@ -531,10 +687,13 @@ export default function CoachDashboard() {
         ),
     [students, progressMap, assessmentMap]
   )
-  const recentFeedbackAndPlans = useMemo(
-    () => feedbackAndPlans.slice(0, 3),
-    [feedbackAndPlans]
-  )
+  // Display one player's feedback at a time, with access to all players.
+  const activeFeedbackPage = feedbackAndPlans.length
+    ? feedbackPage % feedbackAndPlans.length
+    : 0
+  const visibleFeedbackAndPlans = feedbackAndPlans.length
+    ? [feedbackAndPlans[activeFeedbackPage]]
+    : []
   const reviewSummary = useMemo(() => {
     const reviews = Array.isArray(coachReviews) ? coachReviews : []
     const reviewCount = reviews.length
@@ -569,13 +728,56 @@ export default function CoachDashboard() {
         title="Coach Dashboard"
         subtitle="Manage your players, sessions and track progress"
         rightAction={
-          <CoachNotificationBell
-            supabase={supabase}
-            mode="all"
-            title="Notifications"
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={() => {
+                qrProcessingRef.current = false
+                setQrError('')
+                setShowQrScanner(true)
+              }}
+              aria-label="Scan ShuttleTrack QR"
+              title="Scan Player, Coach, or Skill Verification QR"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3M21 16v3a2 2 0 0 1-2 2h-3M4 12h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+              Scan QR
+            </button>
+            <CoachNotificationBell
+              supabase={supabase}
+              mode="all"
+              title="Notifications"
+            />
+          </div>
         }/>
-<div
+      {showQrScanner && (
+        <div
+          className={styles.modalOverlay}
+          onClick={event => {
+            if (event.target === event.currentTarget) closeCoachDashboardScanner()
+          }}
+          style={{ zIndex: 9999 }}
+        >
+          <div className={styles.modal} style={{ width: 'min(100%, 520px)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>Scan ShuttleTrack QR</div>
+              <button type="button" className={styles.modalClose} aria-label="Close QR scanner" onClick={closeCoachDashboardScanner}>✕</button>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted, #8892A4)', marginBottom: 12 }}>
+              Scan a Player QR, Coach QR, or Skill Verification QR.
+            </div>
+            <div id="coach-dashboard-shuttletrack-qr-reader" style={{ width: '100%', minHeight: 240, borderRadius: 12, overflow: 'hidden', background: '#111827' }} />
+            {qrStarting && <div style={{ fontSize: 13, marginTop: 10, color: 'var(--text-muted, #8892A4)' }}>Starting camera...</div>}
+            {qrError && <div role="alert" style={{ marginTop: 12, color: '#DC2626', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: 12, fontSize: 13 }}>{qrError}</div>}
+          </div>
+        </div>
+      )}
+
+      {(verification.status !== 'verified' || !dismissedVerifiedBanner) && (
+      <div
         className={styles.card}
         style={{
           marginBottom: 16,
@@ -643,6 +845,32 @@ export default function CoachDashboard() {
                   : 'Your profile is under admin review. Players cannot find your coach profile until it is verified.'}
             </div>
           </div>
+          {verification.status === 'verified' && (
+            <button
+              type="button"
+              onClick={dismissVerifiedBanner}
+              aria-label="Dismiss verified coach message"
+              title="Dismiss verified coach message"
+              style={{
+                marginLeft: 'auto',
+                width: 28,
+                height: 28,
+                padding: 0,
+                border: '1px solid #A7F3D0',
+                borderRadius: 8,
+                background: '#FFFFFF',
+                color: '#047857',
+                fontSize: 18,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              ×
+            </button>
+          )}
           {verification.status !== 'verified' && (
             <button
               className={styles.btnOutline}
@@ -657,6 +885,7 @@ export default function CoachDashboard() {
           )}
         </div>
       </div>
+      )}
       <CoachDashboardStats
         myPlayers={students}
         upcomingSessions={upcomingSessions}
@@ -894,10 +1123,50 @@ export default function CoachDashboard() {
           </button>
         </div>
         <div className={styles.card}>
-          <div className={styles.cardTitle}>
-            Recent feedback and action plans
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            flexWrap: 'wrap',
+            marginBottom: 12,
+          }}>
+            <div className={styles.cardTitle} style={{ marginBottom: 0 }}>
+              Recent feedback and action plans
+            </div>
+            {feedbackAndPlans.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)', whiteSpace: 'nowrap' }}>
+                  {activeFeedbackPage + 1} / {feedbackAndPlans.length}
+                </span>
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  aria-label="Previous player's feedback"
+                  title="Previous player"
+                  onClick={() => setFeedbackPage(current =>
+                    (current + feedbackAndPlans.length - 1) % feedbackAndPlans.length
+                  )}
+                  style={{ width: 32, height: 32, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  aria-label="Next player's feedback"
+                  title="Next player"
+                  onClick={() => setFeedbackPage(current =>
+                    (current + 1) % feedbackAndPlans.length
+                  )}
+                  style={{ width: 32, height: 32, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  ›
+                </button>
+              </div>
+            )}
           </div>
-          {recentFeedbackAndPlans.length === 0 ? (
+          {visibleFeedbackAndPlans.length === 0 ? (
             <div
               style={{
                 padding: '20px 0',
@@ -908,7 +1177,7 @@ export default function CoachDashboard() {
               No feedback or action plans yet.
             </div>
           ) : (
-            recentFeedbackAndPlans.map(planRow => {
+            visibleFeedbackAndPlans.map(planRow => {
               const player = studentMap.get(
                 String(planRow.player_user_id)
               )

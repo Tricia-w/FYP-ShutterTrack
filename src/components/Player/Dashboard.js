@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Html5Qrcode } from 'html5-qrcode'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
@@ -254,6 +255,119 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState([])
 
   const [showNotifications, setShowNotifications] = useState(false)
+
+  // Dashboard QR scanner shares the existing Player and Skill Verification routes.
+  const [showQrScanner, setShowQrScanner] = useState(false)
+  const [qrError, setQrError] = useState('')
+  const [qrStarting, setQrStarting] = useState(false)
+  const qrScannerRef = useRef(null)
+  const qrProcessingRef = useRef(false)
+
+  const stopDashboardQrScanner = useCallback(async () => {
+    const scanner = qrScannerRef.current
+    qrScannerRef.current = null
+    if (!scanner) return
+    try {
+      if (scanner.isScanning) await scanner.stop()
+    } catch (error) {
+      console.warn('Dashboard QR stop error:', error)
+    }
+    try {
+      scanner.clear()
+    } catch (error) {
+      console.warn('Dashboard QR clear error:', error)
+    }
+  }, [])
+
+  const closeDashboardQrScanner = useCallback(() => {
+    setShowQrScanner(false)
+    setQrError('')
+    qrProcessingRef.current = false
+    void stopDashboardQrScanner()
+  }, [stopDashboardQrScanner])
+
+  useEffect(() => {
+    if (!showQrScanner) return undefined
+    let cancelled = false
+    const start = async () => {
+      setQrStarting(true)
+      setQrError('')
+      try {
+        const reader = document.getElementById('dashboard-shuttletrack-qr-reader')
+        if (!reader) throw new Error('Scanner area is not ready.')
+        const scanner = new Html5Qrcode('dashboard-shuttletrack-qr-reader', { verbose: false })
+        qrScannerRef.current = scanner
+        let camera = { facingMode: 'environment' }
+        try {
+          const cameras = await Html5Qrcode.getCameras()
+          if (cameras.length) camera = cameras.find(item => /rear|back|environment/i.test(item.label || ''))?.id || cameras[0].id
+        } catch (error) {
+          console.warn('Camera list unavailable, using default camera:', error)
+        }
+        if (cancelled) return
+        await scanner.start(camera, {
+          fps: 10,
+          qrbox: (width, height) => {
+            const side = Math.max(50, Math.min(220, Math.floor(Math.min(width, height) * 0.72) || 220))
+            return { width: side, height: side }
+          },
+        }, async scannedText => {
+          if (qrProcessingRef.current || cancelled) return
+          const raw = String(scannedText || '').trim()
+          let target = ''
+          if (raw.startsWith('SHUTTLETRACK_COACH:')) {
+            const id = raw.slice('SHUTTLETRACK_COACH:'.length).trim()
+            if (id) target = `/players?tab=coach&coach=${encodeURIComponent(id)}`
+          } else if (raw.startsWith('SHUTTLETRACK_PLAYER:')) {
+            const id = raw.slice('SHUTTLETRACK_PLAYER:'.length).trim()
+            if (id) target = `/players?player=${encodeURIComponent(id)}`
+          } else {
+            try {
+              const url = new URL(raw, window.location.origin)
+              const parts = url.pathname.split('/').filter(Boolean)
+              const skillIndex = parts.indexOf('verify-skill')
+              if (skillIndex >= 0 && parts[skillIndex + 1]) {
+                target = `/verify-skill/${encodeURIComponent(decodeURIComponent(parts[skillIndex + 1]))}`
+              } else {
+                const coachId = url.searchParams.get('coach') || ''
+                const playerId = url.searchParams.get('player') || ''
+                if (coachId) {
+                  target = `/players?tab=coach&coach=${encodeURIComponent(coachId)}`
+                } else {
+                  const playerIndex = parts.findIndex(item => ['player', 'p', 'scan'].includes(item))
+                  const candidate = playerId || (playerIndex >= 0 ? parts[parts.length - 1] : '')
+                  if (candidate) target = `/players?player=${encodeURIComponent(candidate)}`
+                }
+              }
+            } catch (error) {
+              console.warn('Unrecognised QR content:', error)
+            }
+          }
+          if (!target) {
+            setQrError('This is not a valid ShuttleTrack Player, Coach, or Skill Verification QR code.')
+            return
+          }
+          qrProcessingRef.current = true
+          setQrError('')
+          await stopDashboardQrScanner()
+          if (!cancelled) {
+            setShowQrScanner(false)
+            navigate(target)
+          }
+        }, () => {})
+      } catch (error) {
+        if (!cancelled) setQrError(error?.message || 'Could not start the camera. Check camera permission.')
+      } finally {
+        if (!cancelled) setQrStarting(false)
+      }
+    }
+    const timer = window.setTimeout(start, 100)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      void stopDashboardQrScanner()
+    }
+  }, [showQrScanner, navigate, stopDashboardQrScanner])
 
   const getCurrentAuthUser = useCallback(async () => {
     if (user?.id) return user
@@ -864,6 +978,25 @@ export default function Dashboard() {
               position: 'relative',
             }}
           >
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={() => {
+                qrProcessingRef.current = false
+                setQrError('')
+                setShowQrScanner(true)
+              }}
+              title="Scan Player, Coach, or Skill Verification QR"
+              aria-label="Scan Player, Coach, or Skill Verification QR"
+              style={{ minHeight: 40, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, whiteSpace: 'nowrap' }}
+            >
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3M21 16v3a2 2 0 0 1-2 2h-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <path d="M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              Scan QR
+            </button>
+
             <button className={styles.btnPrimary} onClick={() => navigate('/performance')}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path
@@ -1127,6 +1260,29 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {showQrScanner && (
+        <div
+          className={styles.modalOverlay}
+          onClick={event => {
+            if (event.target === event.currentTarget) closeDashboardQrScanner()
+          }}
+          style={{ zIndex: 9999 }}
+        >
+          <div className={styles.modal} style={{ width: 'min(100%, 520px)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>Scan ShuttleTrack QR</div>
+              <button type="button" className={styles.modalClose} aria-label="Close QR scanner" onClick={closeDashboardQrScanner}>✕</button>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted, #8892A4)', marginBottom: 12 }}>
+              Scan a Player QR, Coach QR, or Skill Verification QR.
+            </div>
+            <div id="dashboard-shuttletrack-qr-reader" style={{ width: '100%', minHeight: 240, borderRadius: 12, overflow: 'hidden', background: '#111827' }} />
+            {qrStarting && <div style={{ fontSize: 13, marginTop: 10, color: 'var(--text-muted, #8892A4)' }}>Starting camera...</div>}
+            {qrError && <div role="alert" style={{ marginTop: 12, color: '#DC2626', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: 12, fontSize: 13 }}>{qrError}</div>}
+          </div>
+        </div>
+      )}
 
       <div className={styles.tip}>
         <strong>Training focus:</strong>{' '}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 //import { useNavigate } from 'react-router-dom'
+import { QRCodeCanvas } from 'qrcode.react'
 import NotificationBell from '../Notifications/NotificationBell'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
@@ -913,6 +914,7 @@ export default function Performance() {
   const [verificationAssessments, setVerificationAssessments] = useState([])
 
   const [showVerificationModal, setShowVerificationModal] = useState(false)
+  const [showVerificationQr, setShowVerificationQr] = useState(false)
   const [showVerificationDetailsModal, setShowVerificationDetailsModal] = useState(false)
   const [deletingVerificationId, setDeletingVerificationId] = useState(null)
   const [creatingVerification, setCreatingVerification] = useState(false)
@@ -1909,19 +1911,14 @@ export default function Performance() {
     }
   }
 
+  // Use the same verification address for both sharing methods.
+  const verificationShareUrl = verificationRequest?.token
+    ? `${String(window.location.origin || '').trim().replace(/\/$/, '')}/verify-skill/${encodeURIComponent(verificationRequest.token)}`
+    : ''
+
   const copyVerificationLink = async () => {
-    if (!verificationRequest?.token) return
-
-    // Always build the verification link from the address currently used
-    // to open ShuttleTrack. This prevents localhost and LAN-IP sessions
-    // from being mixed accidentally.
-    const currentOrigin =
-      String(window.location.origin || '')
-        .trim()
-        .replace(/\/$/, '')
-
-    const url =
-      `${currentOrigin}/verify-skill/${verificationRequest.token}`
+    if (!verificationShareUrl) return
+    const url = verificationShareUrl
 
     try {
       await navigator.clipboard.writeText(url)
@@ -5050,6 +5047,29 @@ export default function Performance() {
               }}
             >
               <button
+                type="button"
+                className={styles.btnOutline}
+                aria-label="Display skill verification QR code"
+                title="Display skill verification QR code"
+                onClick={() => setShowVerificationQr(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 38,
+                  height: 38,
+                  padding: 7,
+                  marginRight: 'auto',
+                }}
+              >
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+                  <path d="M5.5 5.5h2v2h-2zM16.5 5.5h2v2h-2zM5.5 16.5h2v2h-2z" fill="currentColor"/>
+                  <path d="M14 14h3v3h-3zM21 14v3h-2M14 20h3M20 20h1v1" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+              <button
                 className={styles.btnOutline}
                 onClick={() => setShowVerificationModal(false)}
               >
@@ -5062,6 +5082,58 @@ export default function Performance() {
               >
                 Copy verification link
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVerificationModal && showVerificationQr && verificationShareUrl && (
+        <div
+          className={styles.modalOverlay}
+          style={{ zIndex: 11000 }}
+          onClick={event => {
+            if (event.target === event.currentTarget) setShowVerificationQr(false)
+          }}
+        >
+          <div
+            className={styles.modal}
+            style={{
+              maxWidth: 350,
+              width: '100%',
+              padding: 24,
+              textAlign: 'center',
+              background: C.card,
+            }}
+          >
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>Skill Verification QR</div>
+              <button
+                type="button"
+                className={styles.modalClose}
+                aria-label="Close verification QR"
+                onClick={() => setShowVerificationQr(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{
+              display: 'inline-flex',
+              padding: 14,
+              borderRadius: 14,
+              background: '#FFFFFF',
+              border: `1px solid ${C.line}`,
+              margin: '14px auto',
+              maxWidth: '100%',
+            }}>
+              <QRCodeCanvas
+                value={verificationShareUrl}
+                size={225}
+                level="H"
+                includeMargin
+              />
+            </div>
+            <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.5 }}>
+              Ask another ShuttleTrack player or coach to scan this code to verify your skills.
             </div>
           </div>
         </div>

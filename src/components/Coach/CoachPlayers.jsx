@@ -2312,10 +2312,13 @@ export default function CoachPlayers() {
               part === 'scan'
           )
 
+          // Player QR codes use /players?player=<user-id>.
+          // Also retain support for legacy /player/<id>, /p/<id>, and /scan/<id> URLs.
           scannedUserId =
-            index >= 0
-              ? parts[index + 1] || parts[parts.length - 1] || ''
-              : ''
+            scannedUrl.searchParams.get('player') ||
+            (index >= 0
+              ? parts[index + 1] || ''
+              : '')
         } catch {
           scannedUserId = ''
         }

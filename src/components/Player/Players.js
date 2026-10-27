@@ -4621,7 +4621,7 @@ export default function Players() {
             </div>
 
             {scanError && <div style={{ marginTop: 12, padding: 12, borderRadius: 11, background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", fontSize: 12, lineHeight: 1.5 }}>{scanError}</div>}
-            <div style={{ marginTop: 12, padding: 12, borderRadius: 11, background: C.soft, color: C.muted, fontSize: 11, lineHeight: 1.6 }}>This scanner accepts player QR codes and coach QR codes. Camera access works on localhost and normally requires HTTPS after deployment. Chrome must also have camera permission enabled.</div>
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 11, background: C.soft, color: C.muted, fontSize: 11, lineHeight: 1.6 }}>This scanner accepts player QR codes and coach QR codes. Chrome must have camera permission enabled.</div>
           </div>
         </div>
       )}
