@@ -2210,7 +2210,7 @@ export default function Players() {
   const [showMobileCoachDetail, setShowMobileCoachDetail] = useState(false);
 
   const [partnerCriteria, setPartnerCriteria] = useState({
-    gameType: "Doubles",
+    gameType: "Singles",
     level: "Any",
     style: "Any",
     state: "Any",
@@ -3374,17 +3374,26 @@ export default function Players() {
 
     return players
       .filter((player) => {
-        // Mixed Doubles must use the opposite gender.
-        if (partnerCriteria.gameType === "Mixed Doubles") {
-          const candidateGender = normaliseMatchGender(
-            player.matchGender
-          );
+        // Apply event-specific partner eligibility before the existing match score.
+        // Gender is used for matching only; public profile visibility is unchanged.
+        const gameType = partnerCriteria.gameType;
+        if (gameType !== "Singles") {
+          const candidateGender = normaliseMatchGender(player.matchGender);
 
-          if (!currentGender || !candidateGender) {
+          // Men's and Women's Doubles are search categories, not restrictions
+          // based on the current user's own gender.
+          if (gameType === "Men's Doubles" && candidateGender !== "male") {
             return false;
           }
 
-          if (candidateGender === currentGender) {
+          if (gameType === "Women's Doubles" && candidateGender !== "female") {
+            return false;
+          }
+
+          // Mixed Doubles recommends someone of the opposite recorded gender.
+          // Do not guess gender if either player's gender is missing.
+          if (gameType === "Mixed Doubles" &&
+              (!currentGender || !candidateGender || candidateGender === currentGender)) {
             return false;
           }
         }
@@ -4210,7 +4219,12 @@ export default function Players() {
           <div>
             <div className={styles.card}>
               <div className={styles.cardTitle}>Find suitable partner</div>
-              <FormSelect label="Game type" value={partnerCriteria.gameType} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, gameType: value }))} options={["Singles", "Doubles", "Mixed Doubles"]} />
+              <FormSelect label="Game type" value={partnerCriteria.gameType} onChange={(value) => setPartnerCriteria((previous) => ({ ...previous, gameType: value }))} options={["Singles", "Men's Doubles", "Women's Doubles", "Mixed Doubles"]} />
+              {partnerCriteria.gameType === "Mixed Doubles" && !normaliseMatchGender(currentPlayerMatchProfile.gender) && (
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+                  Add your gender in My Profile to receive opposite-gender Mixed Doubles recommendations.
+                </div>
+              )}
               <FormSelect
                 label="Partner level"
                 value={partnerCriteria.level}
