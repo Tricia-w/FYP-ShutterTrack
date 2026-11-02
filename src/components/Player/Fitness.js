@@ -6539,8 +6539,19 @@ export default function Fitness() {
 
   return (
     <div className={styles.playerReadablePage}>
+      <style>{`@media (max-width: 900px) {
+        .fitness-header-content {
+          flex-direction: column !important;
+          align-items: flex-start !important;
+        }
+        .fitness-header-actions {
+          width: 100%;
+          justify-content: flex-start !important;
+          align-items: center;
+        }
+      }`}</style>
       <div className={styles.pageHead}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+        <div className="fitness-header-content" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div>
             <div className={styles.pageTitle}>Fitness</div>
             <div className={styles.pageSub}>
@@ -6555,6 +6566,7 @@ export default function Fitness() {
               flexWrap: 'wrap',
               justifyContent: 'flex-end',
             }}
+            className="fitness-header-actions"
           >
             <button
               type="button"

@@ -2586,7 +2586,7 @@ export default function Players() {
       if (user?.id) {
         const { data: ownSetupData, error: ownSetupError } = await supabase
           .from("player_setup")
-          .select("preferred_event, playing_level, play_style, current_weakness, biggest_weakness")
+          .select("preferred_event, playing_level, play_style, current_weakness")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -2620,7 +2620,6 @@ export default function Players() {
 
       const currentPlayerWeakness =
         ownSetup?.current_weakness ||
-        ownSetup?.biggest_weakness ||
         currentPlayerProfile?.current_weakness ||
         currentPlayerProfile?.weakness ||
         "";
@@ -4081,6 +4080,14 @@ export default function Players() {
         )}
       </div>
 
+      <style>{`@media (max-width: 900px) {
+        .players-directory-header-actions {
+          margin-left: 0 !important;
+          justify-content: flex-start !important;
+          width: 100%;
+        }
+      }`}</style>
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
         <div className={styles.tabs} style={{ marginBottom: 0, width: "fit-content", flex: "0 1 auto", minWidth: 0 }}>
           <button className={`${styles.tab} ${tab === "all" ? styles.tabActive : ""}`} onClick={() => switchTab("all")}>All players</button>
@@ -4091,6 +4098,7 @@ export default function Players() {
         </div>
 
         <div
+          className="players-directory-header-actions"
           style={{
             display: "flex",
             alignItems: "center",
