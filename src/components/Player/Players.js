@@ -3032,6 +3032,7 @@ export default function Players() {
               "Not specified",
             preferredEvent:
               setup?.preferred_event ||
+              player.court ||
               player.preferred_event ||
               player.player_category ||
               player.category ||
