@@ -9,7 +9,9 @@ export default function EmailVerified() {
   // This flag controls the success display; Supabase remains the authority.
   const fromSuccessfulOtp = location.state?.verifiedByOtp === true
   const [checking, setChecking] = useState(!fromSuccessfulOtp)
-  const [verified, setVerified] = useState(fromSuccessfulOtp)
+  const [verificationStatus, setVerificationStatus] = useState(
+    fromSuccessfulOtp ? 'verified' : 'unknown',
+  )
 
   // Follow the same theme selected on Login/Register.
   const [isDark] = useState(
@@ -22,45 +24,37 @@ export default function EmailVerified() {
 
     async function checkVerification() {
       try {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser()
+        const query = new URLSearchParams(window.location.search)
+        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+        const linkError = query.get('error') || hash.get('error')
 
-        if (error) {
-          console.error(
-            'Email verification check error:',
-            error,
-          )
-        }
-
-        if (!active) {
+        if (linkError) {
+          if (active) setVerificationStatus('unavailable')
           return
         }
 
-        if (
-          user?.id &&
-          user?.email_confirmed_at
-        ) {
-          setVerified(true)
+        // Supabase may have verified the email before redirecting here.
+        // Email links opened in a different browser often have no session,
+        // which is not evidence that verification failed.
+        const { data: { user }, error } = await supabase.auth.getUser()
+        if (!active) return
+
+        if (!error && user?.id && user?.email_confirmed_at) {
+          setVerificationStatus('verified')
+        } else {
+          // We cannot verify the outcome in this browser. Do not report failure.
+          setVerificationStatus('unknown')
         }
       } catch (error) {
-        console.error(
-          'Email verification check failed:',
-          error,
-        )
+        console.error('Email verification status check failed:', error)
+        if (active) setVerificationStatus('unknown')
       } finally {
-        if (active) {
-          setChecking(false)
-        }
+        if (active) setChecking(false)
       }
     }
 
     checkVerification()
-
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [fromSuccessfulOtp])
 
   const screenStyle = {
@@ -200,7 +194,8 @@ export default function EmailVerified() {
     )
   }
 
-  if (!verified) {
+  if (verificationStatus !== 'verified') {
+    const hasLinkError = verificationStatus === 'unavailable'
     return (
       <div
         className={styles.screen}
@@ -219,14 +214,14 @@ export default function EmailVerified() {
               borderRadius: '50%',
               margin: '0 auto 20px',
               background: isDark
-                ? 'linear-gradient(180deg, rgba(45,27,27,0.96), rgba(35,22,22,0.96))'
-                : '#FEF2F2',
+                ? (hasLinkError ? 'linear-gradient(180deg, rgba(45,27,27,0.96), rgba(35,22,22,0.96))' : 'rgba(26,95,255,0.12)')
+                : (hasLinkError ? '#FEF2F2' : '#EEF4FF'),
               border: isDark
-                ? '1px solid rgba(248,113,113,0.35)'
-                : '1px solid #FECACA',
+                ? (hasLinkError ? '1px solid rgba(248,113,113,0.35)' : '1px solid rgba(76,131,255,0.35)')
+                : (hasLinkError ? '1px solid #FECACA' : '1px solid #BDD2FF'),
               color: isDark
-                ? '#F87171'
-                : '#DC2626',
+                ? (hasLinkError ? '#F87171' : '#75A0FF')
+                : (hasLinkError ? '#DC2626' : '#1A5FFF'),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -237,7 +232,7 @@ export default function EmailVerified() {
                 : '0 14px 34px rgba(220,38,38,0.08), 0 0 0 8px rgba(220,38,38,0.03)',
             }}
           >
-            !
+            {hasLinkError ? '!' : '?'}
           </div>
 
           <h1
@@ -249,7 +244,7 @@ export default function EmailVerified() {
               color: titleColor,
             }}
           >
-            Verification Unavailable
+            {hasLinkError ? 'Verification Unavailable' : 'Confirmation Status Unavailable'}
           </h1>
 
           <p
@@ -262,8 +257,9 @@ export default function EmailVerified() {
               lineHeight: 1.7,
             }}
           >
-            We could not confirm that your email was verified.
-            Please use the verification link sent to your email.
+            {hasLinkError
+              ? 'The confirmation link was rejected or has expired. Please request a new link if your email has not changed.'
+              : 'We cannot check the confirmation result in this browser. Your email may already be verified. Sign in to check your account email before requesting another link.'}
           </p>
 
           <Link

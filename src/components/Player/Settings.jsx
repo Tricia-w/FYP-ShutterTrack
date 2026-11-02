@@ -934,10 +934,7 @@ export default function Settings() {
     setEmailChangeMessage('')
     try {
       await getAuthUser()
-      const redirectUrl =
-        typeof window !== 'undefined'
-          ? `${window.location.origin}${window.location.pathname}`
-          : undefined
+      const redirectUrl = 'https://fyp-shutter-track.vercel.app/email-verified'
       const { error } = await supabase.auth.updateUser(
         {
           email: cleanEmail,
