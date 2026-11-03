@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { calculateFitnessSummary } from '../../utils/fitnessScore'
 import { useAuth } from '../../context/AuthContext'
@@ -11,6 +11,31 @@ import TestModal from '../Player/fitness/components/FitnessTestModal'
 import FitnessDevelopmentTimeline from '../Player/fitness/components/FitnessDevelopmentTimeline'
 
 const DEFAULT_SCORE = 50
+
+const MATCH_CATEGORIES = ['Competition', 'Friendly Match', 'Sparring']
+const getMatchCategory = match => match?.category || '-'
+
+// Scores are entered from the selected player's perspective.
+// A result is only final when one side has won more recorded sets.
+const calculateCoachMatchResult = ({ score1, score2, score3 }) => {
+  const scores = [score1, score2, score3].map(value => String(value ?? '').trim())
+  const recorded = scores.filter(Boolean)
+  if (!recorded.length) return ''
+
+  let won = 0
+  let lost = 0
+  for (const score of recorded) {
+    const parsed = /^(\d+)\s*-\s*(\d+)$/.exec(score)
+    if (!parsed) return ''
+    const own = Number(parsed[1])
+    const opponent = Number(parsed[2])
+    if (!Number.isSafeInteger(own) || !Number.isSafeInteger(opponent) || own === opponent) return ''
+    if (own > opponent) won += 1
+    else lost += 1
+  }
+  // No ties or pending records in Match History.
+  return won > lost ? 'Win' : lost > won ? 'Loss' : ''
+}
 
 const ACTION_PLAN_META_PREFIX = '__SHUTTLETRACK_ACTION_PLAN__:'
 
@@ -495,6 +520,12 @@ const mapPlayerMatch = (row, coachNote = null) => ({
   playerId: row.player_id,
   date: row.match_date,
   type: row.match_type || 'Singles',
+  category: row.match_category || null,
+  coachMirrorGroupId: row.coach_mirror_group_id || null,
+  coachAddedByUserId: row.coach_added_by_user_id || null,
+  opponentUserId: row.opponent_user_id || null,
+  opponentUserId2: row.opponent_user_id2 || null,
+  partnerUserId: row.partner_user_id || null,
   opponentName: row.opponent_name || '',
   opponentName2: row.opponent_name2 || '',
   opponent: getMatchOpponent(row),
@@ -1622,6 +1653,7 @@ export default function CoachProgress() {
   const [historyError, setHistoryError] = useState('')
   const [matchModalOpen, setMatchModalOpen] =
     useState(false)
+  const [editingMatchId, setEditingMatchId] = useState(null)
   const [matchDetailOpen, setMatchDetailOpen] =
     useState(false)
   const [matchNoteOpen, setMatchNoteOpen] =
@@ -1649,6 +1681,42 @@ export default function CoachProgress() {
   const [matchNote, setMatchNote] = useState('')
   const [savingMatch, setSavingMatch] =
     useState(false)
+  const [duplicatePrompt, setDuplicatePrompt] = useState(false)
+  const duplicateResolverRef = useRef(null)
+  const askDuplicatePrompt = () => new Promise(resolve => {
+    duplicateResolverRef.current = resolve
+    setDuplicatePrompt(true)
+  })
+  const answerDuplicatePrompt = accepted => {
+    setDuplicatePrompt(false)
+    const resolve = duplicateResolverRef.current
+    duplicateResolverRef.current = null
+    resolve?.(accepted)
+  }
+  const [deleteMatchTarget, setDeleteMatchTarget] = useState(null)
+  const [deletingMatch, setDeletingMatch] = useState(false)
+  const DELETE_MESSAGE = deleteMatchTarget?.coachMirrorGroupId
+    ? 'This coach-added match is mirrored. Deleting it will permanently remove both players’ linked records. This cannot be undone.'
+    : 'This match will be permanently removed from the player’s history. This cannot be undone.'
+  const confirmDeleteMatch = async () => {
+    if (!deleteMatchTarget || deletingMatch) return
+    setDeletingMatch(true)
+    setError('')
+    try {
+      const { error: deleteError } = await supabase.rpc('delete_owned_match', { p_match_id: deleteMatchTarget.id })
+      if (deleteError) throw deleteError
+      setDeleteMatchTarget(null)
+      setMatchDetailOpen(false)
+      setSelectedMatch(null)
+      await loadProgress()
+      setSuccess('Match deleted successfully. Any linked mirrored record was also deleted.')
+    } catch (deleteError) {
+      setError(deleteError.message || 'Unable to delete the match.')
+      setDeleteMatchTarget(null)
+    } finally {
+      setDeletingMatch(false)
+    }
+  }
   const [savingMatchNote, setSavingMatchNote] =
     useState(false)
   const [matchForm, setMatchForm] = useState({
@@ -1656,6 +1724,7 @@ export default function CoachProgress() {
       .toISOString()
       .split('T')[0],
     type: 'Singles',
+    category: '',
     opponent: '',
     opponentUserId: null,
     opponent2: '',
@@ -1668,6 +1737,7 @@ export default function CoachProgress() {
     result: 'Win',
     notes: '',
   })
+  const calculatedCoachMatchResult = calculateCoachMatchResult(matchForm)
   const [fitnessTestForm, setFitnessTestForm] = useState({
     date: new Date().toISOString().split('T')[0],
     indicator: '',
@@ -2897,6 +2967,7 @@ export default function CoachProgress() {
         .toISOString()
         .split('T')[0],
       type: 'Singles',
+      category: '',
       opponent: '',
       opponentUserId: null,
       opponent2: '',
@@ -3277,11 +3348,42 @@ export default function CoachProgress() {
     }
   }
   const openAddMatch = () => {
+    setEditingMatchId(null)
     resetMatchForm()
     setMatchModalOpen(true)
     setError('')
     setSuccess('')
   }
+  // Match ownership comes from the database, not a guessed coach relationship.
+  const canEditCoachMatch = match =>
+    Boolean(match?.coachAddedByUserId &&
+      String(match.coachAddedByUserId) === String(user?.id))
+
+  const openEditCoachMatch = match => {
+    if (!canEditCoachMatch(match)) return
+    setEditingMatchId(match.id)
+    setMatchForm({
+      date: match.date || new Date().toISOString().split('T')[0],
+      type: match.type || 'Singles',
+      category: match.category || '',
+      opponent: match.opponentName || '',
+      opponentUserId: match.opponentUserId || null,
+      opponent2: match.opponentName2 || '',
+      opponentUserId2: match.opponentUserId2 || null,
+      partnerName: match.partnerName || '',
+      partnerUserId: match.partnerUserId || null,
+      score1: match.score1 || '',
+      score2: match.score2 || '',
+      score3: match.score3 || '',
+      result: match.result || 'Win',
+      notes: match.playerNotes || '',
+    })
+    setMatchDetailOpen(false)
+    setMatchModalOpen(true)
+    setError('')
+    setSuccess('')
+  }
+
   const saveMatch = async () => {
     if (
       !user?.id ||
@@ -3306,6 +3408,10 @@ export default function CoachProgress() {
       )
       return
     }
+    if (!calculatedCoachMatchResult) {
+      alert('Enter valid set scores such as 21-18 (player score first). The overall result must be Win or Loss; tied or incomplete scores cannot be saved.')
+      return
+    }
     const isSingles =
       matchForm.type === 'Singles'
     if (
@@ -3321,11 +3427,36 @@ export default function CoachProgress() {
     setError('')
     setSuccess('')
     try {
+      // Detect likely duplicate matches before any insert or mirrored update.
+      const { data: duplicateCheck, error: duplicateError } = await supabase.rpc(
+        'check_possible_duplicate_match',
+        { p_match: {
+          player_id: selectedStudent.profileId,
+          match_type: matchForm.type,
+          match_date: matchForm.date,
+          opponent_name: matchForm.opponent.trim(),
+          opponent_user_id: matchForm.opponentUserId || null,
+          opponent_name2: matchForm.opponent2.trim(),
+          partner_name: matchForm.partnerName.trim(),
+          score1: matchForm.score1.trim(),
+          score2: matchForm.score2.trim() || null,
+          score3: matchForm.score3.trim() || null,
+          exclude_match_id: editingMatchId || null,
+        } }
+      )
+      if (duplicateError) throw new Error(`Could not check possible duplicate matches: ${duplicateError.message}`)
+      if (Number(duplicateCheck?.count || 0) > 0) {
+        const proceed = await askDuplicatePrompt()
+        if (!proceed) return
+      }
+
       const payload = {
         player_id:
           selectedStudent.profileId,
         match_type:
           matchForm.type,
+        match_category:
+          matchForm.category || null,
         match_date:
           matchForm.date,
         partner_name: isSingles
@@ -3356,45 +3487,67 @@ export default function CoachProgress() {
           matchForm.score3.trim() ||
           null,
         result:
-          matchForm.result,
+          calculatedCoachMatchResult,
         notes:
           matchForm.notes.trim() ||
           null,
         updated_at:
           new Date().toISOString(),
       }
-      const {
-        data,
-        error: saveError,
-      } = await supabase
-        .from('player_matches')
-        .insert(payload)
-        .select('*')
-        .single()
-      if (saveError) {
-        throw saveError
-      }
-      const newMatch =
-        mapPlayerMatch(data)
-      setStudents(current =>
-        current.map(student =>
-          student.id ===
-          selectedStudent.id
-            ? {
-                ...student,
-                matches: [
-                  newMatch,
-                  ...(student.matches ||
-                    []),
-                ],
-              }
-            : student
+      if (editingMatchId) {
+        // SQL checks the original coach and updates a linked mirrored pair
+        // in one transaction, including reversed scores and result.
+        const { error: updateError } = await supabase.rpc(
+          'coach_update_match_with_mirror', {
+            p_match_id: editingMatchId,
+            p_changes: {
+              match_date: payload.match_date,
+              match_category: payload.match_category,
+              score1: payload.score1,
+              score2: payload.score2,
+              score3: payload.score3,
+              result: payload.result,
+              notes: payload.notes,
+            },
+          }
         )
+        if (updateError) throw updateError
+        setMatchModalOpen(false)
+        setEditingMatchId(null)
+        resetMatchForm()
+        await loadProgress()
+        setSuccess('Coach match updated. Any mirrored record was updated too.')
+        return
+      }
+      // One atomic server operation handles the coach's record and, for
+      // Singles and doubles mirror to all other registered assigned participants.
+      // The server verifies BOTH accepted coach-player relationships.
+      const { data, error: saveError } = await supabase.rpc(
+        'coach_add_match_with_mirror',
+        {
+          p_match: {
+            ...payload,
+            opponent_user_id: matchForm.opponentUserId || null,
+          },
+        }
       )
+      if (saveError) throw saveError
+      if (!data?.primary) throw new Error('The match was not saved.')
+
+      // Include every eligible teammate/opponent returned by the atomic RPC.
+      const savedMatches = [data.primary, ...(Array.isArray(data.mirrors)
+        ? data.mirrors : data.mirror ? [data.mirror] : [])].map(row => mapPlayerMatch(row))
+      setStudents(current => current.map(student => {
+        const added = savedMatches.filter(match => match.playerId === student.profileId)
+        return added.length ? { ...student, matches: [...added, ...(student.matches || [])] } : student
+      }))
       setMatchModalOpen(false)
+      setEditingMatchId(null)
       resetMatchForm()
       setSuccess(
-        `Match record added for ${selectedStudent.name}.`
+        savedMatches.length > 1
+          ? `Match saved and mirrored to ${savedMatches.length - 1} assigned participant(s).`
+          : `Match record added for ${selectedStudent.name}.`
       )
     } catch (saveError) {
       console.error(
@@ -5272,6 +5425,8 @@ export default function CoachProgress() {
                                 {formatDate(match.date)}
                                 {' • '}
                                 {match.type}
+                                {' • '}
+                                {getMatchCategory(match)}
                                 {match.score ? ` • ${match.score}` : ''}
                               </div>
                               {match.playerNotes && (
@@ -6221,6 +6376,8 @@ export default function CoachProgress() {
                         {formatDate(match.date)}
                         {' • '}
                         {match.type}
+                        {' • '}
+                        {getMatchCategory(match)}
                         {match.score ? ` • ${match.score}` : ''}
                       </div>
                       {match.coachNote && (
@@ -6739,6 +6896,7 @@ export default function CoachProgress() {
             {[
               ['Opponent', selectedMatch.opponent],
               ['Match type', selectedMatch.type],
+              ['Match category', getMatchCategory(selectedMatch)],
               ['Date', formatDate(selectedMatch.date)],
               ['Set 1', selectedMatch.score1 || '—'],
               ['Set 2', selectedMatch.score2 || '—'],
@@ -6854,6 +7012,24 @@ export default function CoachProgress() {
               >
                 Close
               </button>
+              {canEditCoachMatch(selectedMatch) && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteMatchTarget(selectedMatch)}
+                  style={{ border: '1px solid #FCA5A5', borderRadius: 8, padding: '9px 13px', background: 'transparent', color: '#DC2626', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  Delete Match
+                </button>
+              )}
+              {canEditCoachMatch(selectedMatch) && (
+                <button
+                  type="button"
+                  className={styles.btnOutline}
+                  onClick={() => openEditCoachMatch(selectedMatch)}
+                >
+                  Edit Match
+                </button>
+              )}
               <button
                 type="button"
                 className={styles.btnPrimary}
@@ -6892,12 +7068,12 @@ export default function CoachProgress() {
           >
             <div className={styles.modalHead}>
               <div className={styles.modalTitle}>
-                Add match for {selectedStudent.name}
+                {editingMatchId ? 'Edit match' : 'Add match'} for {selectedStudent.name}
               </div>
               <button
                 type="button"
                 className={styles.modalClose}
-                onClick={() => setMatchModalOpen(false)}
+                onClick={() => { setMatchModalOpen(false); setEditingMatchId(null) }}
                 disabled={savingMatch}
               >
                 ×
@@ -6957,7 +7133,7 @@ export default function CoachProgress() {
                           : current.opponentUserId2,
                     }))
                   }
-                  disabled={savingMatch}
+                  disabled={savingMatch || Boolean(editingMatchId)}
                 >
                   <option>Singles</option>
                   <option>Mixed Doubles</option>
@@ -6965,6 +7141,25 @@ export default function CoachProgress() {
                   <option>Mens Double</option>
                 </select>
               </div>
+            </div>
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>Match category</label>
+              <select
+                className={styles.formSelect}
+                value={matchForm.category}
+                onChange={event =>
+                  setMatchForm(current => ({
+                    ...current,
+                    category: event.target.value,
+                  }))
+                }
+                disabled={savingMatch}
+              >
+                <option value="">-</option>
+                {MATCH_CATEGORIES.map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
             </div>
             {matchForm.type !== 'Singles' && (
               <div className={styles.formRow}>
@@ -6982,14 +7177,14 @@ export default function CoachProgress() {
                       partnerUserId: null,
                     }))
                   }
-                  disabled={savingMatch}
+                  disabled={savingMatch || Boolean(editingMatchId)}
                 />
-                <MatchPlayerSuggestions
+                {!editingMatchId && <MatchPlayerSuggestions
                   items={partnerSuggestions}
                   onSelect={player =>
                     selectMatchPlayer('partner', player)
                   }
-                />
+                />}
               </div>
             )}
 
@@ -7020,14 +7215,14 @@ export default function CoachProgress() {
                       opponentUserId: null,
                     }))
                   }
-                  disabled={savingMatch}
+                  disabled={savingMatch || Boolean(editingMatchId)}
                 />
-                <MatchPlayerSuggestions
+                {!editingMatchId && <MatchPlayerSuggestions
                   items={opponent1Suggestions}
                   onSelect={player =>
                     selectMatchPlayer('opponent1', player)
                   }
-                />
+                />}
               </div>
               {matchForm.type !== 'Singles' && (
                 <div className={styles.formRow}>
@@ -7045,18 +7240,23 @@ export default function CoachProgress() {
                         opponentUserId2: null,
                       }))
                     }
-                    disabled={savingMatch}
+                    disabled={savingMatch || Boolean(editingMatchId)}
                   />
-                  <MatchPlayerSuggestions
+                  {!editingMatchId && <MatchPlayerSuggestions
                     items={opponent2Suggestions}
                     onSelect={player =>
                       selectMatchPlayer('opponent2', player)
                     }
-                  />
+                  />}
                 </div>
               )}
             </div>
 
+            {editingMatchId && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)', marginBottom: 12 }}>
+                Opponent and match type are locked for existing coach matches. Editing a mirrored match also updates the other player's scores, result and category.
+              </div>
+            )}
             <div className={styles.formRow}>
               <label className={styles.formLabel}>Game score</label>
               <div
@@ -7102,21 +7302,22 @@ export default function CoachProgress() {
             </div>
 
             <div className={styles.formRow}>
-              <label className={styles.formLabel}>Result</label>
-              <select
-                className={styles.formSelect}
-                value={matchForm.result}
-                onChange={event =>
-                  setMatchForm(current => ({
-                    ...current,
-                    result: event.target.value,
-                  }))
-                }
-                disabled={savingMatch}
-              >
-                <option>Win</option>
-                <option>Loss</option>
-              </select>
+              <label className={styles.formLabel}>Result (automatic)</label>
+              <input
+                className={styles.formInput}
+                value={calculatedCoachMatchResult}
+                placeholder="Enter set scores to calculate Win/Loss"
+                readOnly
+                aria-label="Automatically calculated match result"
+                style={{
+                  fontWeight: 700,
+                  color: calculatedCoachMatchResult === 'Win'
+                    ? '#059669'
+                    : calculatedCoachMatchResult === 'Loss'
+                      ? '#DC2626'
+                      : undefined,
+                }}
+              />
             </div>
 
             <div className={styles.formRow}>
@@ -7147,7 +7348,7 @@ export default function CoachProgress() {
               <button
                 type="button"
                 className={styles.btnOutline}
-                onClick={() => setMatchModalOpen(false)}
+                onClick={() => { setMatchModalOpen(false); setEditingMatchId(null) }}
                 disabled={savingMatch}
               >
                 Cancel
@@ -7158,7 +7359,7 @@ export default function CoachProgress() {
                 onClick={saveMatch}
                 disabled={savingMatch}
               >
-                {savingMatch ? 'Saving...' : 'Add match'}
+                {savingMatch ? 'Saving...' : editingMatchId ? 'Save changes' : 'Add match'}
               </button>
             </div>
           </div>
@@ -8122,6 +8323,37 @@ export default function CoachProgress() {
                 </button>
 
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {duplicatePrompt && (
+        <div className={styles.modalOverlay} style={{ zIndex: 10050 }}>
+          <div className={styles.modal} role="alertdialog" aria-modal="true" aria-label="Possible duplicate match" style={{ maxWidth: 460, padding: 24 }}>
+            <h3 style={{ margin: '0 0 12px', color: 'var(--text, #0D1B3E)' }}>Possible duplicate match</h3>
+            <p style={{ color: 'var(--text-muted, #8892A4)', lineHeight: 1.6 }}>
+              A match involving these players, with similar scores and a date within one day, may already exist. Check the history before saving another record.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 20 }}>
+              <button type="button" className={styles.btnOutline} onClick={() => answerDuplicatePrompt(false)}>Review match</button>
+              <button type="button" className={styles.btnPrimary} onClick={() => answerDuplicatePrompt(true)}>Save anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteMatchTarget && (
+        <div className={styles.modalOverlay} style={{ zIndex: 10050 }}>
+          <div className={styles.modal} role="alertdialog" aria-modal="true" aria-label="Delete match" style={{ maxWidth: 460, padding: 24 }}>
+            <h3 style={{ margin: '0 0 12px', color: 'var(--text, #0D1B3E)' }}>Delete match?</h3>
+            <p style={{ color: 'var(--text-muted, #8892A4)', lineHeight: 1.6 }}>
+              {DELETE_MESSAGE}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 20 }}>
+              <button type="button" className={styles.btnOutline} disabled={deletingMatch} onClick={() => setDeleteMatchTarget(null)}>Cancel</button>
+              <button type="button" disabled={deletingMatch} onClick={confirmDeleteMatch} style={{ background: '#DC2626', color: '#fff', border: 0, borderRadius: 9, padding: '10px 16px', cursor: deletingMatch ? 'wait' : 'pointer', fontWeight: 700 }}>
+                {deletingMatch ? 'Deleting...' : 'Delete match'}
+              </button>
             </div>
           </div>
         </div>

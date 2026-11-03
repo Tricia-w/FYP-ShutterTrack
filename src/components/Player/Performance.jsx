@@ -53,6 +53,8 @@ const getMetricColor = label => {
 }
 
 const MATCH_TYPES = ['Singles', 'Mixed Doubles', 'Womens Doubles', 'Mens Double']
+const MATCH_CATEGORIES = ['Competition', 'Friendly Match', 'Sparring']
+const getMatchCategory = match => match?.match_category || (match?.is_upcoming ? match?.schedule_type : null) || '-'
 const isSingles = type => type === 'Singles'
 
 // The number before '-' is the player's score; the number after it is
@@ -307,6 +309,7 @@ const mapUpcomingSchedule = row => {
     is_upcoming: true,
     match_date: row.event_date,
     schedule_type: row.schedule_type || 'Competition',
+    match_category: row.schedule_type || '-',
     match_type: meta.matchType || 'Singles',
     title: row.title || meta.activity || row.schedule_type || 'Upcoming match',
     venue: row.location || '',
@@ -362,6 +365,7 @@ const getEquipmentLabel = equipment => {
 
 const emptyForm = {
   type: 'Singles',
+  category: '',
   date: new Date().toISOString().split('T')[0],
   partnerName: '',
   partnerUserId: null,
@@ -505,6 +509,7 @@ const getDisplayName = match => {
 const mapDbMatch = (row, coachNotes = []) => ({
   id: row.id,
   match_type: row.match_type || 'Singles',
+  match_category: row.match_category || null,
   match_date: row.match_date,
   partner_name: row.partner_name || '',
   partner_user_id: row.partner_user_id || null,
@@ -528,6 +533,9 @@ const mapDbMatch = (row, coachNotes = []) => ({
   video_file_name: row.video_file_name || '',
   created_at: row.created_at || '',
   added_by_role: row.added_by_role || '',
+  coach_mirror_group_id: row.coach_mirror_group_id || null,
+  player_partner_group_id: row.player_partner_group_id || null,
+  player_partner_mirror_source_id: row.player_partner_mirror_source_id || null,
   coach_notes: coachNotes,
 })
 
@@ -707,6 +715,8 @@ function PerformanceComparisonRow({
 }
 
 const PERFORMANCE_NOTIFICATION_TYPES = [
+  'doubles_partner_match_request',
+  'doubles_partner_match_response',
   'skill_verification_received',
   'coach_performance_assessment',
   'coach_performance_feedback',
@@ -920,6 +930,7 @@ export default function Performance() {
   const [creatingVerification, setCreatingVerification] = useState(false)
 
   const [filterType, setFilterType] = useState('All')
+  const [filterCategory, setFilterCategory] = useState('All categories')
   const [sortOrder, setSortOrder] = useState('Latest')
   const [showAllMatches, setShowAllMatches] = useState(false)
 
@@ -931,6 +942,61 @@ export default function Performance() {
   const [showSkillModal, setShowSkillModal] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [duplicatePrompt, setDuplicatePrompt] = useState(false)
+  const duplicateResolverRef = useRef(null)
+  const askDuplicatePrompt = () => new Promise(resolve => {
+    duplicateResolverRef.current = resolve
+    setDuplicatePrompt(true)
+  })
+  const answerDuplicatePrompt = accepted => {
+    setDuplicatePrompt(false)
+    const resolve = duplicateResolverRef.current
+    duplicateResolverRef.current = null
+    resolve?.(accepted)
+  }
+  const [pendingPartnerMatches, setPendingPartnerMatches] = useState([])
+  const [showPartnerInvitationModal, setShowPartnerInvitationModal] = useState(true)
+  const [respondingPartnerId, setRespondingPartnerId] = useState(null)
+  const respondToPartnerMatch = async (requestId, accepted) => {
+    if (respondingPartnerId) return
+    setRespondingPartnerId(requestId)
+    try {
+      const { error } = await supabase.rpc('respond_partner_match_request', {
+        p_request_id: requestId, p_accept: accepted,
+      })
+      if (error) throw error
+      await loadPageData()
+    } catch (error) {
+      console.error('Partner match response failed:', error)
+      alert(error.message || 'Unable to respond to partner invitation.')
+    } finally {
+      setRespondingPartnerId(null)
+    }
+  }
+  const [deleteMatchTarget, setDeleteMatchTarget] = useState(null)
+  const [deletingMatch, setDeletingMatch] = useState(false)
+  const DELETE_MESSAGE = deleteMatchTarget?.player_partner_group_id
+    ? 'Deleting this match also removes the partner-confirmed copy from your partner’s history. This cannot be undone.'
+    : 'This match will be permanently removed from your history. This cannot be undone.'
+  const confirmDeleteMatch = async () => {
+    if (!deleteMatchTarget || deletingMatch) return
+    setDeletingMatch(true)
+    try {
+      const { error: deleteError } = await supabase.rpc('delete_owned_match', { p_match_id: deleteMatchTarget.id })
+      if (deleteError) throw deleteError
+      setDeleteMatchTarget(null)
+      setShowViewModal(false)
+      setViewMatch(null)
+      await loadPageData()
+    } catch (deleteError) {
+      console.error('Delete match error:', deleteError)
+      alert(deleteError.message || 'Unable to delete match.')
+      setDeleteMatchTarget(null)
+    } finally {
+      setDeletingMatch(false)
+    }
+  }
+
   const [viewMatch, setViewMatch] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const calculatedResult = calculateMatchResult(form)
@@ -1191,6 +1257,15 @@ export default function Performance() {
         )
       )
 
+      const { data: partnerInvitations, error: partnerInvitationError } = await supabase.rpc(
+        'list_pending_partner_match_requests'
+      )
+      if (partnerInvitationError) {
+        console.error('Unable to load partner match invitations:', partnerInvitationError)
+      } else {
+        setPendingPartnerMatches(Array.isArray(partnerInvitations) ? partnerInvitations : [])
+      }
+
       const today = new Date().toISOString().split('T')[0]
 
       const { data: upcomingRows, error: upcomingError } = await supabase
@@ -1404,6 +1479,7 @@ export default function Performance() {
 
     return combined
       .filter(match => {
+        if (filterCategory !== 'All categories' && getMatchCategory(match) !== filterCategory) return false
         if (filterType === 'All') return true
         if (match.is_upcoming) return false
         return match.match_type === filterType
@@ -1416,15 +1492,9 @@ export default function Performance() {
           ? dateB - dateA
           : dateA - dateB
       })
-  }, [matches, upcomingMatches, filterType, sortOrder])
+  }, [matches, upcomingMatches, filterType, filterCategory, sortOrder])
 
-  const displayedMatches = useMemo(
-    () =>
-      showAllMatches
-        ? visibleMatches
-        : visibleMatches.slice(0, 5),
-    [visibleMatches, showAllMatches]
-  )
+  const displayedMatches = useMemo(() => visibleMatches.slice(0, 5), [visibleMatches])
 
   const recommendations = useMemo(() => {
     // Do not generate recommendations from placeholder/default values.
@@ -1521,6 +1591,7 @@ export default function Performance() {
     setForm({
       ...emptyForm,
       type: matchType,
+      category: MATCH_CATEGORIES.includes(item?.schedule_type) ? item.schedule_type : '',
       date,
       roundName: getSuggestedNextRound(item?.schedule_id),
       notes: '',
@@ -1671,6 +1742,7 @@ export default function Performance() {
     setEditingId(match.id)
     setForm({
       type: match.match_type,
+      category: match.match_category || '',
       date: match.match_date || new Date().toISOString().split('T')[0],
       partnerName: match.partner_name || '',
       partnerUserId: match.partner_user_id || null,
@@ -1740,6 +1812,12 @@ export default function Performance() {
   }
 
   const handleSaveMatch = async () => {
+    if (editingId && matches.some(match =>
+      match.id === editingId && (match.added_by_role === 'coach' || match.coach_mirror_group_id || match.player_partner_mirror_source_id)
+    )) {
+      alert('Coach-added matches are read-only for players.')
+      return
+    }
     if (!form.opponentName.trim()) {
       alert('Please enter opponent name.')
       return
@@ -1770,6 +1848,30 @@ export default function Performance() {
 
       setProfileId(currentProfileId)
 
+      // Warn before saving when this looks like a previously recorded match.
+      // The server also checks the registered Singles opponent's perspective.
+      const { data: duplicateCheck, error: duplicateError } = await supabase.rpc(
+        'check_possible_duplicate_match',
+        { p_match: {
+          player_id: currentProfileId,
+          match_type: form.type,
+          match_date: form.date,
+          opponent_name: form.opponentName.trim(),
+          opponent_user_id: form.opponentUserId || null,
+          opponent_name2: form.opponentName2.trim(),
+          partner_name: form.partnerName.trim(),
+          score1: form.score1.trim(),
+          score2: form.score2.trim() || null,
+          score3: form.score3.trim() || null,
+          exclude_match_id: editingId || null,
+        } }
+      )
+      if (duplicateError) throw new Error(`Could not check possible duplicate matches: ${duplicateError.message}`)
+      if (Number(duplicateCheck?.count || 0) > 0) {
+        const proceed = await askDuplicatePrompt()
+        if (!proceed) return
+      }
+
       let finalVideoUrl = removeVideo ? null : form.videoUrl || null
       let finalVideoFileName = removeVideo ? null : form.videoFileName || null
 
@@ -1781,6 +1883,7 @@ export default function Performance() {
       const payload = {
         player_id: currentProfileId,
         match_type: form.type,
+        match_category: form.category || null,
         match_date: form.date,
         partner_name: isSingles(form.type)
           ? null
@@ -1822,11 +1925,22 @@ export default function Performance() {
 
         if (error) throw error
       } else {
-        const { error } = await supabase
+        const { data: newRow, error } = await supabase
           .from('player_matches')
           .insert(payload)
+          .select('id')
+          .single()
 
         if (error) throw error
+        if (!isSingles(form.type) && form.partnerUserId && newRow?.id) {
+          const { error: invitationError } = await supabase.rpc(
+            'request_player_partner_match_mirror', { p_match_id: newRow.id }
+          )
+          if (invitationError) {
+            console.error('Partner invitation could not be sent:', invitationError)
+            alert('Your match was saved, but the partner confirmation request could not be created: ' + invitationError.message)
+          }
+        }
       }
 
       setShowMatchModal(false)
@@ -2246,6 +2360,260 @@ export default function Performance() {
     )
   }
 
+  // Shared match table for the 5-row preview and full history popup.
+  const renderMatchTable = rows => (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th style={{ width: 100 }}>Date</th>
+                <th>Opponent</th>
+                <th style={{ width: 135 }}>Type</th>
+                <th style={{ width: 130 }}>Category</th>
+                <th style={{ width: 180 }}>Score</th>
+                <th style={{ width: 80, textAlign: 'center' }}>Result</th>
+                <th style={{ width: 60 }}>Video</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan="7">
+                    <div
+                      style={{
+                        padding: 38,
+                        textAlign: 'center',
+                        color: C.muted,
+                      }}
+                    >
+                      <div style={{ fontSize: 34, marginBottom: 10 }}>🏸</div>
+                      <div style={{ fontWeight: 700, color: C.text }}>
+                        No matches logged yet
+                      </div>
+                      <div style={{ marginTop: 6, fontSize: 14 }}>
+                        Start by adding your first match to see your win rate and progress.
+                      </div>
+                      <button
+                        className={styles.btnPrimary}
+                        style={{ marginTop: 14 }}
+                        onClick={openAdd}
+                      >
+                        Log First Match
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                rows.map(match => {
+                  if (match.is_upcoming) {
+                    return (
+                      <tr
+                        key={match.id}
+                        onClick={() => openUpcomingEdit(match)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td style={{ color: C.muted, fontSize: 14 }}>
+                          {fmtDate(match.match_date)}
+                        </td>
+
+                        <td>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              minWidth: 0,
+                            }}
+                          >
+                            <div
+                              className={styles.av}
+                              style={{
+                                width: 28,
+                                height: 28,
+                                fontSize: 12,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {getInitials(match.title)}
+                            </div>
+
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, color: C.text }}>
+                                {match.title}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop: 2,
+                                  fontSize: 12,
+                                  color: C.muted,
+                                }}
+                              >
+                                {match.schedule_type}
+                                {match.venue ? ` • ${match.venue}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td>
+                          <span
+                            className={
+                              match.match_type?.includes('Double')
+                                ? styles.badgePurple
+                                : styles.badgeBlue
+                            }
+                          >
+                            {match.match_type || 'Singles'}
+                          </span>
+                        </td>
+
+                        <td><span className={styles.badgeBlue}>{getMatchCategory(match)}</span></td>
+
+                        <td style={{ fontSize: 14, color: C.muted }}>—</td>
+
+                        <td style={{ textAlign: 'center' }}>
+                          <span className={styles.badgeBlue}>Upcoming</span>
+                        </td>
+
+                        <td style={{ textAlign: 'center', color: C.muted }}>
+                          —
+                        </td>
+
+                      </tr>
+                    )
+                  }
+
+                  return (
+                    <tr
+                      key={match.id}
+                      onClick={() => {
+                        setViewMatch(match)
+                        setShowViewModal(true)
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td style={{ color: C.muted, fontSize: 14 }}>
+                          {fmtDate(match.match_date)}
+                        </td>
+
+                      <td>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <div
+                            className={styles.av}
+                            style={{
+                              width: 28,
+                              height: 28,
+                              fontSize: 12,
+                            }}
+                          >
+                            {getInitials(getDisplayName(match))}
+                          </div>
+
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, color: C.text }}>
+                              {getDisplayName(match)}
+                            </div>
+
+                            {match.round_name && (
+                              <div
+                                style={{
+                                  marginTop: 2,
+                                  fontSize: 12,
+                                  color: C.muted,
+                                }}
+                              >
+                                {match.round_name}
+                              </div>
+                            )}
+                          </div>
+
+                          {match.coach_notes?.length > 0 && (
+                            <span
+                              title="Coach note available"
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                color: '#7C3AED',
+                                background:
+                                  'color-mix(in srgb, #7C3AED 12%, var(--card, #FFFFFF))',
+                                borderRadius: 999,
+                                padding: '2px 6px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Coach note
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td>
+                        <span
+                          className={
+                            match.match_type.includes('Double')
+                              ? styles.badgePurple
+                              : styles.badgeBlue
+                          }
+                        >
+                          {match.match_type}
+                        </span>
+                      </td>
+
+                      <td><span className={styles.badgeBlue}>{getMatchCategory(match)}</span></td>
+
+                      <td
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 14,
+                          color: C.text,
+                        }}
+                      >
+                        {scoreText(match)}
+                      </td>
+
+                      <td style={{ textAlign: 'center' }}>
+                        <span
+                          className={
+                            match.result === 'Win'
+                              ? styles.badgeGreen
+                              : match.result === 'Tied'
+                                ? styles.badgeBlue
+                                : styles.badgeRed
+                          }
+                        >
+                          {match.result}
+                        </span>
+                      </td>
+
+                      <td style={{ textAlign: 'center' }}>
+                        {match.video_url ? (
+                          <span style={{ fontSize: 16 }} title="Has video">
+                            🎬
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 14, color: C.muted }}>
+                            —
+                          </span>
+                        )}
+                      </td>
+
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+  )
+
   if (isLoading && !showLoader) {
     return null
   }
@@ -2575,14 +2943,12 @@ export default function Performance() {
             type="button"
             onClick={() => {
               if (visibleMatches.length > 5) {
-                setShowAllMatches(current => !current)
+                setShowAllMatches(true)
               }
             }}
             title={
               visibleMatches.length > 5
-                ? showAllMatches
-                  ? 'Show latest 5 matches'
-                  : 'View all matches'
+                ? 'View all matches'
                 : undefined
             }
             style={{
@@ -2611,9 +2977,7 @@ export default function Performance() {
                   fontWeight: 500,
                 }}
               >
-                {showAllMatches
-                  ? `Showing all ${visibleMatches.length} matches`
-                  : `Showing latest 5 of ${visibleMatches.length} matches`}
+                {`Showing latest 5 of ${visibleMatches.length} matches`}
               </div>
             )}
           </button>
@@ -2624,7 +2988,7 @@ export default function Performance() {
                 type="button"
                 className={styles.btnOutline}
                 onClick={() =>
-                  setShowAllMatches(current => !current)
+                  setShowAllMatches(true)
                 }
                 style={{
                   height: 36,
@@ -2632,7 +2996,7 @@ export default function Performance() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {showAllMatches ? 'Latest 5' : 'View all'}
+                View all
               </button>
             )}
 
@@ -2650,6 +3014,17 @@ export default function Performance() {
 
             <select
               className={styles.formSelect}
+              aria-label="Match category filter"
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              style={{ width: 155, height: 36 }}
+            >
+              <option>All categories</option>
+              {[...MATCH_CATEGORIES, '-'].map(category => <option key={category}>{category}</option>)}
+            </select>
+
+            <select
+              className={styles.formSelect}
               value={sortOrder}
               onChange={e => setSortOrder(e.target.value)}
               style={{ width: 120, height: 36 }}
@@ -2660,252 +3035,28 @@ export default function Performance() {
           </div>
         </div>
 
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th style={{ width: 100 }}>Date</th>
-                <th>Opponent</th>
-                <th style={{ width: 135 }}>Type</th>
-                <th style={{ width: 180 }}>Score</th>
-                <th style={{ width: 80, textAlign: 'center' }}>Result</th>
-                <th style={{ width: 60 }}>Video</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {visibleMatches.length === 0 ? (
-                <tr>
-                  <td colSpan="6">
-                    <div
-                      style={{
-                        padding: 38,
-                        textAlign: 'center',
-                        color: C.muted,
-                      }}
-                    >
-                      <div style={{ fontSize: 34, marginBottom: 10 }}>🏸</div>
-                      <div style={{ fontWeight: 700, color: C.text }}>
-                        No matches logged yet
-                      </div>
-                      <div style={{ marginTop: 6, fontSize: 14 }}>
-                        Start by adding your first match to see your win rate and progress.
-                      </div>
-                      <button
-                        className={styles.btnPrimary}
-                        style={{ marginTop: 14 }}
-                        onClick={openAdd}
-                      >
-                        Log First Match
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                displayedMatches.map(match => {
-                  if (match.is_upcoming) {
-                    return (
-                      <tr
-                        key={match.id}
-                        onClick={() => openUpcomingEdit(match)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <td style={{ color: C.muted, fontSize: 14 }}>
-                          {fmtDate(match.match_date)}
-                        </td>
-
-                        <td>
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 8,
-                              minWidth: 0,
-                            }}
-                          >
-                            <div
-                              className={styles.av}
-                              style={{
-                                width: 28,
-                                height: 28,
-                                fontSize: 12,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {getInitials(match.title)}
-                            </div>
-
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontWeight: 600, color: C.text }}>
-                                {match.title}
-                              </div>
-
-                              <div
-                                style={{
-                                  marginTop: 2,
-                                  fontSize: 12,
-                                  color: C.muted,
-                                }}
-                              >
-                                {match.schedule_type}
-                                {match.venue ? ` • ${match.venue}` : ''}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td>
-                          <span
-                            className={
-                              match.match_type?.includes('Double')
-                                ? styles.badgePurple
-                                : styles.badgeBlue
-                            }
-                          >
-                            {match.match_type || 'Singles'}
-                          </span>
-                        </td>
-
-                        <td style={{ fontSize: 14, color: C.muted }}>—</td>
-
-                        <td style={{ textAlign: 'center' }}>
-                          <span className={styles.badgeBlue}>Upcoming</span>
-                        </td>
-
-                        <td style={{ textAlign: 'center', color: C.muted }}>
-                          —
-                        </td>
-
-                      </tr>
-                    )
-                  }
-
-                  return (
-                    <tr
-                      key={match.id}
-                      onClick={() => {
-                        setViewMatch(match)
-                        setShowViewModal(true)
-                      }}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td style={{ color: C.muted, fontSize: 14 }}>
-                          {fmtDate(match.match_date)}
-                        </td>
-
-                      <td>
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                          }}
-                        >
-                          <div
-                            className={styles.av}
-                            style={{
-                              width: 28,
-                              height: 28,
-                              fontSize: 12,
-                            }}
-                          >
-                            {getInitials(getDisplayName(match))}
-                          </div>
-
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, color: C.text }}>
-                              {getDisplayName(match)}
-                            </div>
-
-                            {match.round_name && (
-                              <div
-                                style={{
-                                  marginTop: 2,
-                                  fontSize: 12,
-                                  color: C.muted,
-                                }}
-                              >
-                                {match.round_name}
-                              </div>
-                            )}
-                          </div>
-
-                          {match.coach_notes?.length > 0 && (
-                            <span
-                              title="Coach note available"
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                color: '#7C3AED',
-                                background:
-                                  'color-mix(in srgb, #7C3AED 12%, var(--card, #FFFFFF))',
-                                borderRadius: 999,
-                                padding: '2px 6px',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              Coach note
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td>
-                        <span
-                          className={
-                            match.match_type.includes('Double')
-                              ? styles.badgePurple
-                              : styles.badgeBlue
-                          }
-                        >
-                          {match.match_type}
-                        </span>
-                      </td>
-
-                      <td
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 14,
-                          color: C.text,
-                        }}
-                      >
-                        {scoreText(match)}
-                      </td>
-
-                      <td style={{ textAlign: 'center' }}>
-                        <span
-                          className={
-                            match.result === 'Win'
-                              ? styles.badgeGreen
-                              : match.result === 'Tied'
-                                ? styles.badgeBlue
-                                : styles.badgeRed
-                          }
-                        >
-                          {match.result}
-                        </span>
-                      </td>
-
-                      <td style={{ textAlign: 'center' }}>
-                        {match.video_url ? (
-                          <span style={{ fontSize: 16 }} title="Has video">
-                            🎬
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 14, color: C.muted }}>
-                            —
-                          </span>
-                        )}
-                      </td>
-
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        {renderMatchTable(displayedMatches)}
       </div>
+
+      {showAllMatches && (
+        <div className={styles.modalOverlay} onClick={event => {
+          if (event.target === event.currentTarget) setShowAllMatches(false)
+        }}>
+          <div className={styles.modal} style={{ width: 'min(1100px, 96vw)', maxWidth: '96vw', maxHeight: '88vh', overflowY: 'auto' }}>
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>All Match History</div>
+              <button type="button" className={styles.modalClose} aria-label="Close all match history" onClick={() => setShowAllMatches(false)}>✕</button>
+            </div>
+            <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>
+              Showing {visibleMatches.length} match{visibleMatches.length === 1 ? '' : 'es'} · Use the filters on the Performance page to refine this list.
+            </div>
+            {renderMatchTable(visibleMatches)}
+            <div style={{ marginTop: 18, textAlign: 'right' }}>
+              <button type="button" className={styles.btnOutline} onClick={() => setShowAllMatches(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="performanceTimelineGrid">
         <div className={styles.card}>
@@ -4107,6 +4258,19 @@ export default function Performance() {
               </div>
             </div>
 
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>Match category</label>
+              <select
+                className={styles.formSelect}
+                value={form.category}
+                onChange={set('category')}
+                style={{ width: '100%' }}
+              >
+                <option value="">-</option>
+                {MATCH_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </div>
+
             {sourceUpcomingMatch && !editingId && (
               <div className={styles.formRow}>
                 <label className={styles.formLabel}>Round</label>
@@ -4666,6 +4830,11 @@ export default function Performance() {
             </div>
 
             <div className={styles.statRow}>
+              <span className={styles.statLabel}>Match category</span>
+              <span className={styles.statVal}>{getMatchCategory(viewMatch)}</span>
+            </div>
+
+            <div className={styles.statRow}>
               <span className={styles.statLabel}>Date</span>
               <span className={styles.statVal}>
                 {fmtDate(viewMatch.match_date)}
@@ -4873,15 +5042,28 @@ export default function Performance() {
                 marginTop: 20,
               }}
             >
-              <button
-                className={styles.btnOutline}
-                onClick={() => {
-                  setShowViewModal(false)
-                  openEdit(viewMatch)
-                }}
-              >
-                Edit Match
-              </button>
+              {viewMatch.added_by_role !== 'coach' && !viewMatch.coach_mirror_group_id && !viewMatch.coach_added_by_user_id && !viewMatch.player_partner_mirror_source_id && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteMatchTarget(viewMatch)}
+                  style={{ border: '1px solid #FCA5A5', borderRadius: 8, padding: '9px 13px', background: 'transparent', color: '#DC2626', cursor: 'pointer', fontWeight: 700 }}
+                >Delete Match</button>
+              )}
+              {viewMatch.added_by_role !== 'coach' && !viewMatch.coach_mirror_group_id && !viewMatch.player_partner_mirror_source_id ? (
+                <button
+                  className={styles.btnOutline}
+                  onClick={() => {
+                    setShowViewModal(false)
+                    openEdit(viewMatch)
+                  }}
+                >
+                  Edit Match
+                </button>
+              ) : (
+                <span style={{ color: C.muted, fontSize: 12, alignSelf: 'center' }}>
+                  Coach-added or partner-confirmed match · Read-only
+                </span>
+              )}
 
               <button
                 className={styles.btnPrimary}
@@ -5540,6 +5722,64 @@ export default function Performance() {
                 disabled={isSaving}
               >
                 {isSaving ? 'Saving...' : 'Save Skills'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingPartnerMatches.length > 0 && !showPartnerInvitationModal && (
+        <button type="button" onClick={() => setShowPartnerInvitationModal(true)} style={{ position: 'fixed', bottom: 22, right: 22, zIndex: 10040, background: '#194D91', color: '#fff', border: 0, padding: '12px 16px', borderRadius: 12, fontWeight: 700, cursor: 'pointer' }}>
+          Partner match requests ({pendingPartnerMatches.length})
+        </button>
+      )}
+      {pendingPartnerMatches.length > 0 && showPartnerInvitationModal && (
+        <div className={styles.modalOverlay} style={{ zIndex: 10045 }}>
+          <div className={styles.modal} role="dialog" aria-modal="true" aria-label="Doubles partner match confirmation" style={{ maxWidth: 500, padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <h3 style={{ margin: '0 0 12px' }}>Confirm doubles match</h3>
+              <button type="button" aria-label="Close partner match requests" onClick={() => setShowPartnerInvitationModal(false)} className={styles.btnOutline}>Close</button>
+            </div>
+            <p style={{ lineHeight: 1.6 }}>Your partner recorded a doubles match involving you. Confirm before a copy appears in your Match History.</p>
+            {pendingPartnerMatches.map(item => (
+              <div key={item.id} style={{ borderTop: '1px solid #DCE3EE', padding: '12px 0' }}>
+                <div><strong>{item.requester_name}</strong> invited you for {item.match_type} on {item.match_date}.</div>
+                <div>Against: {[item.opponent_name, item.opponent_name2].filter(Boolean).join(' & ')}</div>
+                <div>Scores: {[item.score1, item.score2, item.score3].filter(Boolean).join(', ')} — {item.result}</div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                  <button type="button" className={styles.btnOutline} disabled={Boolean(respondingPartnerId)} onClick={() => respondToPartnerMatch(item.id, false)}>Reject</button>
+                  <button type="button" className={styles.btnPrimary} disabled={Boolean(respondingPartnerId)} onClick={() => respondToPartnerMatch(item.id, true)}>Accept match</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {duplicatePrompt && (
+        <div className={styles.modalOverlay} style={{ zIndex: 10050 }}>
+          <div className={styles.modal} role="alertdialog" aria-modal="true" aria-label="Possible duplicate match" style={{ maxWidth: 460, padding: 24 }}>
+            <h3 style={{ margin: '0 0 12px', color: 'var(--text, #0D1B3E)' }}>Possible duplicate match</h3>
+            <p style={{ color: 'var(--text-muted, #8892A4)', lineHeight: 1.6 }}>
+              A match involving these players, with similar scores and a date within one day, may already exist. Check the history before saving another record.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 20 }}>
+              <button type="button" className={styles.btnOutline} onClick={() => answerDuplicatePrompt(false)}>Review match</button>
+              <button type="button" className={styles.btnPrimary} onClick={() => answerDuplicatePrompt(true)}>Save anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteMatchTarget && (
+        <div className={styles.modalOverlay} style={{ zIndex: 10050 }}>
+          <div className={styles.modal} role="alertdialog" aria-modal="true" aria-label="Delete match" style={{ maxWidth: 460, padding: 24 }}>
+            <h3 style={{ margin: '0 0 12px', color: 'var(--text, #0D1B3E)' }}>Delete match?</h3>
+            <p style={{ color: 'var(--text-muted, #8892A4)', lineHeight: 1.6 }}>
+              {DELETE_MESSAGE}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 20 }}>
+              <button type="button" className={styles.btnOutline} disabled={deletingMatch} onClick={() => setDeleteMatchTarget(null)}>Cancel</button>
+              <button type="button" disabled={deletingMatch} onClick={confirmDeleteMatch} style={{ background: '#DC2626', color: '#fff', border: 0, borderRadius: 9, padding: '10px 16px', cursor: deletingMatch ? 'wait' : 'pointer', fontWeight: 700 }}>
+                {deletingMatch ? 'Deleting...' : 'Delete match'}
               </button>
             </div>
           </div>
