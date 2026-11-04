@@ -1,70 +1,43 @@
-# Getting Started with Create React App
+Login
+https://shuttletrack.vercel.app/
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+User Roles & Permissions
 
-## Available Scripts
+1. Admin
+- Can manage user accounts, including players, coaches, and administrators.
+- Can view and manage registered badminton clubs.
+- Can approve, reject, and manage account deletion requests.
+- Can monitor user activity and account status.
+- Can suspend, reactivate, or terminate user accounts.
+- Can manage club status, including Active, Paused, and Terminated.
+- Can view administrative activity logs.
+- Can manage account re-verification requirements.
+  
+2. Player
+- Can manage personal profiles and badminton information.
+- Can record and monitor match history, performance statistics, and skill assessments.
+- Can track fitness indicators, recovery check-ins, injuries, and training activities.
+- Can manage training schedules and synchronize events with Google Calendar.
+- Can find suitable badminton partners based on matching criteria.
+- Can connect with coaches and receive feedback, assessments, and action plans.
+- Can join badminton clubs and manage club membership requests.
+- Can manage badminton equipment and expenses.
+- Can scan QR codes to find players and verify skill assessments.
+- Can view notifications and manage account settings.
+  
+3. Coach
+- Can manage personal profiles and coaching information.
+- Can send and accept coach-player connection requests.
+- Can view assigned players' performance, fitness records, and skill assessments.
+- Can conduct fitness tests and provide skill assessments for assigned players.
+- Can provide feedback, training focus, and action plans with deadlines.
+- Can create and manage training sessions for assigned players.
+- Can record match results for assigned players.
+- Can monitor players' action plan completion and training progress.
+- Can manage training attendance and session status.
+- Can view player reviews and ratings.
+- Can join badminton clubs as a coach.
+- Can scan QR codes to find and connect with players.
+- Can view notifications and manage account settings.
 
-In the project directory, you can run:
-
-### `npm start`
-
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
-
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Note: Users with both Player and Coach roles can switch between the Player Portal and Coach Portal using the role-switching function.
