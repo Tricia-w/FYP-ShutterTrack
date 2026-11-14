@@ -279,6 +279,7 @@ export default function NotificationBell({
   limit = 20,
   localItems = null,
   localOnly = false,
+  includeLocalItems = false,
   onLocalMarkAllRead,
   onLocalClear,
   onLocalItemClick,
@@ -589,6 +590,11 @@ export default function NotificationBell({
         .eq("user_id", uid)
         .order("created_at", { ascending: false })
         .limit(limit);
+      // In Expenses, filter at the database before LIMIT, otherwise older
+      // group events disappear behind unrelated dashboard notifications.
+      if (includeLocalItems && Array.isArray(sourceTypes) && sourceTypes.length > 0) {
+        query = query.in("source_type", sourceTypes);
+      }
       const requestsQuery = includePartnerRequests
         ? supabase
             .from("player_partner_requests")
@@ -632,6 +638,7 @@ export default function NotificationBell({
     }
   }, [
     includePartnerRequests,
+    includeLocalItems,
     ensureActionPlanReminders,
     limit,
     localOnly,
@@ -819,9 +826,13 @@ export default function NotificationBell({
     document.addEventListener("mousedown", closeOutside);
     return () => document.removeEventListener("mousedown", closeOutside);
   }, []);
-  const displayedItems = Array.isArray(localItems)
-    ? localItems
-    : items;
+  // Support both kinds in the Expenses bell without affecting other bells.
+  const localDisplayItems = Array.isArray(localItems) ? localItems : [];
+  const displayedItems = localOnly
+    ? localDisplayItems
+    : includeLocalItems
+      ? [...localDisplayItems.map(item => ({ ...item, __expenseLocal: true })), ...items]
+      : Array.isArray(localItems) ? localItems : items;
   const unread =
     displayedItems.filter(item => !item.is_read).length +
     partnerRequests.length;
@@ -831,6 +842,7 @@ export default function NotificationBell({
       onLocalMarkAllRead?.();
       return;
     }
+    if (includeLocalItems) onLocalMarkAllRead?.();
     const uid = await resolveUserId();
     if (!uid || items.length === 0) return;
     const ids = items
@@ -856,6 +868,7 @@ export default function NotificationBell({
       onLocalClear?.();
       return;
     }
+    if (includeLocalItems) onLocalClear?.();
     const uid = await resolveUserId();
     if (!uid || items.length === 0) return;
     const ids = items.map(item => item.id);
@@ -872,7 +885,7 @@ export default function NotificationBell({
   };
   const deleteOne = async (event, id) => {
     event.stopPropagation();
-    if (localOnly) {
+    if (localOnly || (includeLocalItems && localDisplayItems.some(item => item.id === id))) {
       onLocalClear?.(id);
       return;
     }
@@ -887,7 +900,7 @@ export default function NotificationBell({
     }
   };
   const openNotification = async item => {
-    if (localOnly) {
+    if (localOnly || item.__expenseLocal) {
       onLocalItemClick?.(item);
       setOpen(false);
       return;

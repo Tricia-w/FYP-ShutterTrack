@@ -886,6 +886,165 @@ function PerformanceTimeline({ records }) {
   )
 }
 
+// Compact, data-grounded AI overview: statistics and ratings come from ShuttleTrack,
+// while the training advice comes from Gemini. No HTML injection or saved output.
+const stripAIFormatting = value => String(value || '')
+  .replace(/^#{1,6}\s*/gm, '')
+  .replace(/\*\*/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+function getAISection(content, section) {
+  const headings = ['Performance Summary', 'Areas for Improvement', 'Badminton Training Suggestions']
+  const lines = String(content || '').split(/\r?\n/)
+  let active = ''
+  const selected = []
+  for (const raw of lines) {
+    const clean = stripAIFormatting(raw)
+    const heading = clean.match(/^(?:[1-3]\s*[.)]\s*)?(Performance Summary|Areas for Improvement|Badminton Training Suggestions)\s*:?$/i)
+    if (heading) {
+      active = headings.find(title => title.toLowerCase() === heading[1].toLowerCase()) || ''
+      continue
+    }
+    if (active === section && clean) selected.push(raw.trim())
+  }
+  return selected
+}
+
+// Use the actual Gemini recommendation to choose a short, descriptive label.
+// The label is presentation-only: it never substitutes or invents AI advice.
+function getAITrainingTitle(detail) {
+  const text = String(detail || '').toLowerCase()
+  if (/drop[ -]?shot|\bdrop[s]?\b/.test(text) && /\bnet\b|net.kill/.test(text)) return 'Drop Shot & Net Play'
+  if (/footwork|shadow.badminton|court coverage|court movement/.test(text)) return 'Footwork & Court Coverage'
+  if (/endurance|stamina|conditioning|cardio/.test(text)) return 'Endurance & Conditioning'
+  if (/\bnet\b|net.kill|net shot/.test(text)) return 'Net Play Control'
+  if (/drop[ -]?shot|\bdrop[s]?\b/.test(text)) return 'Drop Shot Control'
+  if (/defen[sc]e|returning smash|defensive/.test(text)) return 'Defensive Skills'
+  if (/smash|attack|power/.test(text)) return 'Attacking Skills'
+  if (/serv(e|ing|ice)/.test(text)) return 'Serving Practice'
+  if (/recover|injur|rest|stretch|fatigue/.test(text)) return 'Recovery & Rest'
+  if (/racket|technique|shot accuracy|precision/.test(text)) return 'Racket Technique'
+  return 'Badminton Skill Practice'
+}
+
+function getAITrainingItems(content) {
+  const lines = getAISection(content, 'Badminton Training Suggestions')
+  // Gemini sometimes uses bullets, numbered lists, or plain lines.
+  // Keep the full recommendation; never truncate it or invent extra items.
+  const bullets = lines.filter(line => /^\s*(?:[-*•]|\d+[.)])\s+/.test(line))
+  const candidates = bullets.length ? bullets : lines
+  return candidates.map(line => {
+    const cleaned = stripAIFormatting(line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, ''))
+    if (!cleaned) return null
+    const colon = cleaned.indexOf(':')
+    const hasTitle = colon > 2 && colon < 55 && !/[.!?]/.test(cleaned.slice(0, colon))
+    const suggestedTitle = hasTitle ? cleaned.slice(0, colon).trim() : ''
+    const detail = hasTitle ? cleaned.slice(colon + 1).trim() : cleaned
+    if (!detail) return null
+    const genericTitle = /^(recommended practice|training focus(?: \d+)?|suggestion(?: \d+)?|practice)$/i.test(suggestedTitle)
+    const title = suggestedTitle && !genericTitle ? suggestedTitle : getAITrainingTitle(detail)
+    return { title, detail }
+  }).filter(Boolean).slice(0, 3)
+}
+
+// Match the daily counter's Asia/Kuala_Lumpur reset, not the browser's timezone.
+function getMalaysiaUsageDate() {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const part = type => parts.find(item => item.type === type)?.value || ''
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+function AIInsightContent({ content, skills, matches }) {
+  const recent = [...matches]
+    .sort((a, b) => String(b.match_date || '').localeCompare(String(a.match_date || '')))
+    .slice(0, 5)
+  const wins = recent.filter(match => match.result === 'Win').length
+  const losses = recent.filter(match => match.result === 'Loss').length
+  const rankedSkills = [...skills]
+    .filter(skill => Number.isFinite(Number(skill.val)))
+    .sort((a, b) => Number(b.val) - Number(a.val))
+  const strengths = rankedSkills.slice(0, 2)
+  const improvements = [...rankedSkills].reverse().slice(0, 3)
+  const trainingItems = getAITrainingItems(content)
+  const improvementLines = getAISection(content, 'Areas for Improvement')
+  const improvementMessage = stripAIFormatting(improvementLines.join(' '))
+  const recoveryNote = /injur|recover|fatigue|soreness|rest|light|conservative/i.test(improvementMessage)
+    ? 'Consider your current recovery and any monitored injuries before training.'
+    : ''
+  const statStyle = { flex: '1 1 100px', minWidth: 0, padding: '12px 9px', borderRadius: 12, background: 'var(--soft, #F6F8FF)', textAlign: 'center' }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 17, color: C.text, fontSize: 14 }}>
+      <div style={{ display: 'flex', gap: 9 }}>
+        {[
+          { label: 'Recent matches', value: recent.length, color: '#2563EB' },
+          { label: 'Wins', value: wins, color: '#059669' },
+          { label: 'Losses', value: losses, color: '#D97706' },
+        ].map(item => (
+          <div key={item.label} style={statStyle}>
+            <div style={{ fontSize: 25, fontWeight: 700, lineHeight: 1.2, color: item.color }}>{item.value}</div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 5 }}>{item.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <section style={{ padding: '14px 15px', border: `1px solid ${C.line}`, borderRadius: 13 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 11, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span aria-hidden="true" style={{ color: '#059669' }}>↗</span> Your strengths
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {strengths.length ? strengths.map(skill => (
+            <span key={skill.name} style={{ background: '#ECFDF5', color: '#047857', borderRadius: 999, padding: '7px 11px', fontWeight: 700, fontSize: 12 }}>
+              {skill.name} · {skill.val}
+            </span>
+          )) : <span style={{ color: C.muted }}>No skill self-assessment yet.</span>}
+        </div>
+        <div style={{ color: C.muted, fontSize: 12, marginTop: 9 }}>Highest self-assessed badminton skills</div>
+      </section>
+
+      <section style={{ padding: '14px 15px', border: `1px solid ${C.line}`, borderRadius: 13 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 11, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span aria-hidden="true" style={{ color: '#D97706' }}>◎</span> Focus on improving
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {improvements.length ? improvements.map(skill => (
+            <span key={skill.name} style={{ background: '#FFFBEB', color: '#92400E', borderRadius: 999, padding: '7px 11px', fontWeight: 700, fontSize: 12 }}>
+              {skill.name} · {skill.val}
+            </span>
+          )) : <span style={{ color: C.muted }}>No skill self-assessment yet.</span>}
+        </div>
+        <div style={{ color: C.muted, fontSize: 12, marginTop: 9 }}>Lowest self-assessed badminton skills</div>
+      </section>
+
+      <section style={{ padding: '14px 15px', border: `1px solid ${C.line}`, borderRadius: 13 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span aria-hidden="true" style={{ color: '#2563EB' }}>✦</span> Your next training focus
+        </div>
+        {trainingItems.length ? trainingItems.map((item, index) => (
+          <div key={`${index}-${item.title}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, padding: '10px 0', borderTop: index ? `1px solid ${C.line}` : 'none' }}>
+            <div aria-hidden="true" style={{ width: 28, height: 28, flexShrink: 0, borderRadius: 9, display: 'grid', placeItems: 'center', color: '#2563EB', background: '#EFF6FF', fontWeight: 700, fontSize: 12 }}>{index + 1}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{item.title}</div>
+              <div style={{ color: C.muted, lineHeight: 1.55, fontSize: 13 }}>{item.detail}</div>
+            </div>
+          </div>
+        )) : (
+          <div style={{ color: C.muted, lineHeight: 1.55 }}>No specific training suggestions were returned. Try regenerating your insights.</div>
+        )}
+      </section>
+
+      {recoveryNote && (
+        <div style={{ display: 'flex', gap: 8, background: '#FFFBEB', borderRadius: 11, padding: '11px 13px', color: '#92400E', fontSize: 12, lineHeight: 1.5 }}>
+          <span aria-hidden="true">ⓘ</span><span>{recoveryNote} Older recovery logs may not reflect today's condition.</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Performance() {
   const { user } = useAuth()
   const videoRef = useRef(null)
@@ -895,6 +1054,102 @@ export default function Performance() {
   const [isLoading, setIsLoading] = useState(true)
   const showLoader = useLoadingDelay(isLoading, 350)
   const [isSaving, setIsSaving] = useState(false)
+  // AI insights are held only in React state (not persisted).
+  const [showAIInsights, setShowAIInsights] = useState(false)
+  const [generatingAI, setGeneratingAI] = useState(false)
+  const [aiInsight, setAiInsight] = useState('')
+  const [aiError, setAiError] = useState('')
+  const [aiRemaining, setAiRemaining] = useState(null)
+  const [aiUsageLoading, setAiUsageLoading] = useState(true)
+  const [aiUsageDate, setAiUsageDate] = useState('')
+
+  const refreshAIAllowance = useCallback(async () => {
+    if (!user?.id) {
+      setAiRemaining(null)
+      setAiUsageLoading(false)
+      return
+    }
+    setAiUsageLoading(true)
+    const usageDate = getMalaysiaUsageDate()
+    const { data, error } = await supabase
+      .from('ai_generation_usage')
+      .select('generation_count')
+      .eq('user_id', user.id)
+      .eq('usage_date', usageDate)
+      .maybeSingle()
+    if (error) {
+      console.error('Could not load AI generation allowance:', error)
+      setAiRemaining(null)
+    } else {
+      setAiRemaining(Math.max(0, 5 - Number(data?.generation_count || 0)))
+    }
+    setAiUsageDate(usageDate)
+    setAiUsageLoading(false)
+  }, [user?.id])
+
+  useEffect(() => {
+    refreshAIAllowance()
+  }, [refreshAIAllowance])
+
+  const openAIInsights = () => {
+    setShowAIInsights(true)
+    // Refresh on reopening, including after the Malaysia midnight reset.
+    if (aiUsageDate !== getMalaysiaUsageDate() || aiRemaining === null) {
+      refreshAIAllowance()
+    }
+  }
+
+  const generateAIInsights = async () => {
+    if (generatingAI) return
+    if (aiRemaining === 0 && aiUsageDate === getMalaysiaUsageDate()) {
+      setAiError('You have used all 5 AI generations today. Please try again tomorrow (Malaysia time).')
+      return
+    }
+    setGeneratingAI(true)
+    setAiError('')
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        'shuttletrack-ai-insights',
+        { method: 'POST', body: {} }
+      )
+
+      if (error) {
+        let apiError = null
+        let status = 0
+        if (error.context instanceof Response) {
+          status = error.context.status
+          try { apiError = await error.context.json() } catch { /* keep generic message */ }
+        }
+        if (typeof apiError?.remaining === 'number') {
+          setAiRemaining(Math.max(0, apiError.remaining))
+          setAiUsageDate(getMalaysiaUsageDate())
+        }
+        if (status === 429 && apiError?.error === 'Daily AI generation limit reached') {
+          setAiRemaining(0)
+          setAiUsageDate(getMalaysiaUsageDate())
+          throw new Error(apiError.message || 'Daily limit reached. Try again tomorrow (Malaysia time).')
+        }
+        throw new Error(apiError?.message || apiError?.error || error.message || 'Unable to contact the AI service.')
+      }
+
+      if (!data?.insight) throw new Error('No insight was returned.')
+      setAiInsight(data.insight)
+      if (typeof data.remaining === 'number') {
+        setAiRemaining(Math.max(0, data.remaining))
+        setAiUsageDate(getMalaysiaUsageDate())
+      } else {
+        // No-data responses may not consume a request; confirm using the usage table.
+        await refreshAIAllowance()
+      }
+    } catch (error) {
+      console.error('Generate AI insights error:', error)
+      setAiError(error.message || 'Unable to generate AI insights.')
+    } finally {
+      setGeneratingAI(false)
+    }
+  }
+
   const [matches, setMatches] = useState([])
   const [upcomingMatches, setUpcomingMatches] = useState([])
   const [equipmentOptions, setEquipmentOptions] = useState([])
@@ -3326,6 +3581,14 @@ export default function Performance() {
                   </span>
                 </div>
               ))}
+            </div>
+            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+                ✦ View AI Insights to get a detailed breakdown.
+              </span>
+              <button type="button" className={styles.btnPrimary} onClick={openAIInsights}>
+                ✨ {aiInsight ? 'View AI Insights' : 'Generate AI Insights'}
+              </button>
             </div>
           </div>
         ) : (
@@ -5765,6 +6028,97 @@ export default function Performance() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 20 }}>
               <button type="button" className={styles.btnOutline} onClick={() => answerDuplicatePrompt(false)}>Review match</button>
               <button type="button" className={styles.btnPrimary} onClick={() => answerDuplicatePrompt(true)}>Save anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showAIInsights && (
+        <div
+          className={styles.modalOverlay}
+          style={{ zIndex: 10060, padding: '12px', boxSizing: 'border-box' }}
+          onClick={event => {
+            if (event.target === event.currentTarget && !generatingAI) setShowAIInsights(false)
+          }}
+        >
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-label="AI Performance Insights"
+            style={{
+              width: 'min(760px, 96vw)',
+              maxWidth: '96vw',
+              maxHeight: 'min(90vh, 850px)',
+              padding: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              background: 'var(--card, #FFFFFF)',
+            }}
+          >
+            {/* Fixed header: does not scroll away with long AI responses. */}
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '18px 20px', borderBottom: '1px solid var(--line, #E5EAF3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                <span aria-hidden="true" style={{ width: 42, height: 42, flexShrink: 0, display: 'grid', placeItems: 'center', background: '#EAF1FF', borderRadius: 12, color: '#2563EB', fontSize: 22 }}>✦</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.3, color: C.text }}>AI Performance Insights</div>
+                  <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>Personalized badminton analysis · Gemini AI</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className={styles.modalClose}
+                aria-label="Close AI insights"
+                onClick={() => setShowAIInsights(false)}
+                disabled={generatingAI}
+                style={{ flexShrink: 0 }}
+              >✕</button>
+            </div>
+
+            {/* Only the content area scrolls. */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '18px 20px', overscrollBehavior: 'contain' }}>
+              {aiInsight ? <AIInsightContent content={aiInsight} skills={hasSkillRecord ? skills : []} matches={matches} /> : !generatingAI && !aiError ? (
+                <div style={{ padding: '28px 16px', textAlign: 'center', borderRadius: 14, background: 'var(--soft, #F6F8FF)', border: '1px solid var(--line, #E5EAF3)' }}>
+                  <div aria-hidden="true" style={{ fontSize: 29, color: '#2563EB', marginBottom: 9 }}>✦</div>
+                  <div style={{ color: C.text, fontWeight: 700, fontSize: 16, marginBottom: 7 }}>Ready to analyze your performance?</div>
+                  <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.6 }}>Generate a summary, areas to improve, and badminton training suggestions based on your recorded data.</div>
+                </div>
+              ) : null}
+
+              {generatingAI && (
+                <div role="status" style={{ marginTop: 13, padding: 16, borderRadius: 12, background: 'var(--soft, #F6F8FF)', color: C.muted, textAlign: 'center', fontSize: 14 }}>
+                  Generating insights from your ShuttleTrack records...
+                </div>
+              )}
+              {aiError && (
+                <div role="alert" style={{ marginTop: 13, padding: 12, borderRadius: 10, background: '#FFF3D6', color: '#92400E', overflowWrap: 'anywhere', fontSize: 14 }}>
+                  {aiError}
+                </div>
+              )}
+              <div style={{ marginTop: 16, padding: '10px 12px', borderRadius: 10, background: 'var(--soft, #F6F8FF)', border: '1px solid var(--line, #E5EAF3)', color: C.text, fontSize: 13, lineHeight: 1.55 }}>
+                <strong style={{ fontWeight: 700 }}>Daily AI allowance:</strong>{' '}
+                {aiUsageLoading ? 'Checking remaining generations...' : aiRemaining === null
+                  ? 'Allowance unavailable. You can try generating; the server will enforce the limit.'
+                  : aiRemaining === 0
+                    ? '0 of 5 generations remaining today. New generations are available tomorrow (Malaysia time).'
+                    : `${aiRemaining} of 5 generations remaining today.`}
+                {' '}Reopening an existing result does not use another generation.
+              </div>
+              <div style={{ marginTop: 12, color: C.muted, fontSize: 12, lineHeight: 1.65 }}>
+                AI-generated guidance may be inaccurate and is not medical advice. Generating insights sends selected match, skill, fitness, recovery and training data to Google Gemini. Insights are not saved to ShuttleTrack's database.
+              </div>
+            </div>
+
+            {/* Fixed actions: accessible even for long AI responses. */}
+            <div style={{ flexShrink: 0, padding: '13px 20px', borderTop: '1px solid var(--line, #E5EAF3)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 10, background: 'var(--card, #FFFFFF)' }}>
+              <button type="button" className={styles.btnOutline} onClick={() => setShowAIInsights(false)} disabled={generatingAI}>
+                Close
+              </button>
+              <button type="button" className={styles.btnPrimary} onClick={generateAIInsights}
+                disabled={generatingAI || (aiRemaining === 0 && aiUsageDate === getMalaysiaUsageDate())}>
+                {generatingAI ? 'Generating...' : aiRemaining === 0 && aiUsageDate === getMalaysiaUsageDate()
+                  ? 'Daily Limit Reached' : aiInsight ? '↻ Regenerate Insights' : '✦ Generate AI Insights'}
+              </button>
             </div>
           </div>
         </div>

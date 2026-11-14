@@ -9,6 +9,7 @@ import useLoadingDelay from '../Loader/LoadingDelay'
 const categoryInfo = {
   Court: { label: 'Court rental', badge: 'blue', color: '#1A5FFF' },
   Equipment: { label: 'Equipment', badge: 'green', color: '#00C48C' },
+  Shuttlecocks: { label: 'Shuttlecocks', badge: 'green', color: '#00C48C' },
   Stringing: { label: 'Stringing', badge: 'purple', color: '#7C3AED' },
   Transport: { label: 'Transport', badge: 'amber', color: '#F59E0B' },
   Other: { label: 'Other', badge: 'gray', color: '#8892A4' },
@@ -435,93 +436,740 @@ function BudgetModal({
   )
 }
 
-function RuleSuggestionsCard({ suggestions }) {
+
+// Quick calculator for badminton expenses. Calculations stay local and are not saved.
+function ExpenseCalculator({ onClose }) {
+  const [display, setDisplay] = useState('0')
+  const [storedValue, setStoredValue] = useState(null)
+  const [operator, setOperator] = useState(null)
+  const [startNewNumber, setStartNewNumber] = useState(false)
+  const [error, setError] = useState('')
+
+  const calculate = (left, right, operation) => {
+    if (operation === '+') return left + right
+    if (operation === '−') return left - right
+    if (operation === '×') return left * right
+    if (operation === '÷') return right === 0 ? null : left / right
+    return right
+  }
+
+  const formatResult = value => {
+    if (value === null || !Number.isFinite(value)) return null
+    return String(Number(value.toPrecision(12)))
+  }
+
+  const pressKey = key => {
+    if (key === 'C') {
+      setDisplay('0')
+      setStoredValue(null)
+      setOperator(null)
+      setStartNewNumber(false)
+      setError('')
+      return
+    }
+    if (error) return
+
+    if (key === '⌫') {
+      if (startNewNumber) return
+      setDisplay(previous => previous.length <= 1 || (previous.length === 2 && previous.startsWith('-')) ? '0' : previous.slice(0, -1))
+      return
+    }
+    if (/^[0-9]$/.test(key) || key === '.' || key === '00') {
+      if (startNewNumber) {
+        setDisplay(key === '.' ? '0.' : key)
+        setStartNewNumber(false)
+      } else if (key === '.') {
+        if (!display.includes('.')) setDisplay(previous => `${previous}.`)
+      } else {
+        setDisplay(previous => previous === '0' ? (key === '00' ? '0' : key) : previous.length + key.length > 16 ? previous : `${previous}${key}`)
+      }
+      return
+    }
+    if (key === '%') {
+      const result = formatResult(Number(display) / 100)
+      if (result !== null) setDisplay(result)
+      return
+    }
+    if (['+', '−', '×', '÷'].includes(key)) {
+      const currentValue = Number(display)
+      if (operator && storedValue !== null && !startNewNumber) {
+        const result = formatResult(calculate(storedValue, currentValue, operator))
+        if (result === null) {
+          setError('Cannot divide by zero')
+          return
+        }
+        setDisplay(result)
+        setStoredValue(Number(result))
+      } else {
+        setStoredValue(currentValue)
+      }
+      setOperator(key)
+      setStartNewNumber(true)
+      return
+    }
+    if (key === '=' && operator && storedValue !== null) {
+      const result = formatResult(calculate(storedValue, Number(display), operator))
+      if (result === null) {
+        setError('Cannot divide by zero')
+        return
+      }
+      setDisplay(result)
+      setStoredValue(null)
+      setOperator(null)
+      setStartNewNumber(true)
+    }
+  }
+
+  const keys = [
+    'C', '⌫', '%', '÷',
+    '7', '8', '9', '×',
+    '4', '5', '6', '−',
+    '1', '2', '3', '+',
+    '0', '00', '.', '=',
+  ]
 
   return (
-    <div className={styles.card}>
-      <div className={styles.cardTitle}>Suggestions</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {suggestions.map((s, i) => {
-          const meta = getSuggestionMeta(s.type)
-          return (
-            <div
-              key={i}
-              style={{
-                padding: 12,
-                borderRadius: 10,
-                background:
-                  s.type === 'danger'
-                    ? 'rgba(239, 68, 68, 0.12)'
-                    : s.type === 'warning'
-                    ? 'rgba(245, 158, 11, 0.14)'
-                    : s.type === 'success'
-                    ? 'rgba(0, 196, 140, 0.12)'
-                    : C.soft,
-                border:
-                  s.type === 'danger'
-                    ? '1px solid #EF4444'
-                    : s.type === 'warning'
-                    ? '1px solid #F59E0B'
-                    : s.type === 'success'
-                    ? '1px solid #00C48C'
-                    : `1px solid ${C.line}`,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 10,
-                minHeight: 62,
-              }}
-            >
-              <span
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  background: meta.background,
-                  color: meta.color,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <ExpenseIcon
-                  type={meta.icon}
-                  color={meta.color}
-                  size={15}
-                />
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 800,
-                    color: meta.color,
-                    marginBottom: 4,
-                  }}
-                >
-                  {s.title}
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: C.text,
-                    lineHeight: 1.5,
-                    fontWeight: 500,
-                  }}
-                >
-                  {s.text}
-                </div>
-              </div>
-            </div>
-          )
-        })}
+    <div className={styles.modalOverlay} onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className={styles.modal} role="dialog" aria-modal="true" aria-label="Expense calculator"
+        style={{ width: 'min(360px, 92vw)', maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
+        <div className={styles.modalHead}>
+          <div className={styles.modalTitle}>Calculator</div>
+          <button type="button" className={styles.modalClose} aria-label="Close calculator" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '14px 12px', borderRadius: 12, background: C.soft, textAlign: 'right', marginBottom: 12, minHeight: 77 }}>
+          <div style={{ fontSize: 12, color: C.muted, minHeight: 18 }}>
+            {storedValue !== null && operator ? `${storedValue} ${operator}` : 'Calculator · RM'}
+          </div>
+          <div aria-live="polite" style={{ fontSize: 29, fontWeight: 700, color: error ? '#DC2626' : C.text, overflowWrap: 'anywhere' }}>
+            {error || display}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+          {keys.map(key => (
+            <button key={key} type="button" onClick={() => pressKey(key)}
+              style={{ height: 48, borderRadius: 10, border: `1px solid ${C.line}`,
+                background: key === '=' ? '#16A34A' : ['+', '−', '×', '÷'].includes(key) ? '#E8EFFE' : C.card,
+                color: key === '=' ? '#FFFFFF' : C.text, fontSize: 18, fontWeight: 700, cursor: 'pointer' }}>
+              {key}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginTop: 12, fontSize: 12, color: C.muted, textAlign: 'center' }}>
+          For quick calculations only. Results are not added to expenses.
+        </div>
       </div>
     </div>
   )
 }
 
+const groupPanelCss = {
+  label: { fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 5, display: 'block' },
+  row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
+  small: { fontSize: 12, color: C.muted },
+  chip: { padding: '4px 9px', borderRadius: 20, background: C.soft, fontSize: 11, fontWeight: 700 },
+}
+
+function GroupExpenseManager({ currentUserId, onGroupChanged }) {
+  const [items, setItems] = useState([])
+  const [savedGroups, setSavedGroups] = useState([])
+  const [loadingGroups, setLoadingGroups] = useState(true)
+  const [section, setSection] = useState('active')
+  const [creating, setCreating] = useState(false)
+  const [editingExpenseId, setEditingExpenseId] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [groupModal, setGroupModal] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [editingGroupId, setEditingGroupId] = useState(null)
+  const [title, setTitle] = useState('')
+  const [category, setCategory] = useState('Court')
+  const [amount, setAmount] = useState('')
+  const [date, setDate] = useState(getTodayISO())
+  const [notes, setNotes] = useState('')
+  const [players, setPlayers] = useState([])
+  const [manualName, setManualName] = useState('')
+  const [playerQuery, setPlayerQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [playerSearchError, setPlayerSearchError] = useState('')
+  const [expandedId, setExpandedId] = useState(null)
+  const [busyId, setBusyId] = useState(null)
+
+  const load = useCallback(async () => {
+    if (!currentUserId) return
+    setLoadingGroups(true)
+    const [expenseRes, savedRes] = await Promise.all([
+      supabase.from('group_expenses')
+        .select('*,group_expense_participants(*)')
+        .order('expense_date', { ascending: false }),
+      supabase.from('expense_saved_groups')
+        .select('*,expense_saved_group_members(*)')
+        .order('group_name', { ascending: true }),
+    ])
+    if (expenseRes.error) console.error('Group expense load:', expenseRes.error)
+    if (savedRes.error) console.error('Saved group load:', savedRes.error)
+    setItems(expenseRes.data || [])
+    setSavedGroups(savedRes.data || [])
+    setLoadingGroups(false)
+  }, [currentUserId])
+
+  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (!playerQuery.trim() || playerQuery.trim().length < 2) {
+      setSearchResults([])
+      setSearching(false)
+      setPlayerSearchError('')
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setSearching(true)
+      const { data, error } = await supabase.rpc('search_group_expense_players', { p_query: playerQuery.trim() })
+      if (!cancelled) {
+        setSearchResults(error ? [] : (data || []))
+        setSearching(false)
+        setPlayerSearchError(error ? 'Unable to search players. Run Group_Expense_Search_All_Players.sql in Supabase.' : '')
+        if (error) console.error('Player search:', error)
+      }
+    }, 300)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [playerQuery])
+
+  const addPlayer = player => {
+    const id = player.user_id || null
+    const name = String(player.player_name || '').trim()
+    if (!name) return
+    if (id && players.some(p => p.user_id === id)) return
+    if (!id && players.some(p => !p.user_id && p.player_name.toLowerCase() === name.toLowerCase())) return
+    setPlayers(prev => [...prev, { user_id: id, player_name: name }])
+    setManualName('')
+    setPlayerQuery('')
+    setSearchResults([])
+  }
+  const applySavedGroup = id => {
+    const group = savedGroups.find(s => s.id === id)
+    if (group) setPlayers((group.expense_saved_group_members || []).map(p => ({
+      user_id: p.user_id || null, player_name: p.player_name,
+    })))
+  }
+  const resetForm = () => {
+    setEditingExpenseId(null)
+    setCreating(false); setTitle(''); setAmount(''); setCategory('Court')
+    setDate(getTodayISO()); setNotes(''); setPlayers([])
+    setManualName(''); setPlayerQuery('')
+  }
+  const canEditExpense = item => (
+    item.created_by === currentUserId &&
+    item.status === 'active' &&
+    (item.group_expense_participants || []).length > 0 &&
+    (item.group_expense_participants || []).every(p =>
+      p.request_status === 'pending' && p.payment_status === 'unpaid'
+    )
+  )
+  const beginEditExpense = item => {
+    if (!canEditExpense(item)) return
+    setGroupModal(false)
+    setEditingExpenseId(item.id)
+    setTitle(item.title || '')
+    setCategory(item.category || 'Court')
+    setAmount(String(item.total_amount ?? ''))
+    setDate(item.expense_date || getTodayISO())
+    setNotes(item.notes || '')
+    setPlayers((item.group_expense_participants || []).map(p => ({
+      user_id: p.user_id || null,
+      player_name: p.player_name,
+    })))
+    setManualName('')
+    setPlayerQuery('')
+    setSearchResults([])
+    setCreating(true)
+  }
+  const createExpense = async () => {
+    const parsed = Number(amount)
+    if (!title.trim() || !Number.isFinite(parsed) || parsed <= 0 || Math.abs(Math.round(parsed * 100) - parsed * 100) > 0.000001) {
+      alert('Enter a title and a valid amount with at most 2 decimal places.'); return
+    }
+    if (!players.length) { alert('Add at least one other player.'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('create_group_expense', {
+      p_title: title.trim(), p_category: category, p_total_amount: parsed,
+      p_players: players, p_expense_date: date, p_notes: notes.trim() || null,
+    })
+    setSaving(false)
+    if (error) { alert(error.message || 'Unable to create group expense.'); return }
+    resetForm()
+    await load()
+    await onGroupChanged()
+  }
+  const updateExpense = async () => {
+    if (!editingExpenseId) return
+    const parsed = Number(amount)
+    if (!title.trim() || !Number.isFinite(parsed) || parsed <= 0 ||
+        Math.abs(Math.round(parsed * 100) - parsed * 100) > 0.000001) {
+      alert('Enter a title and a valid amount with at most 2 decimal places.')
+      return
+    }
+    if (!players.length) { alert('Add at least one other player.'); return }
+    if (parsed * 100 < players.length + 1) {
+      alert('Total is too small to give every player a share.'); return
+    }
+    setSaving(true)
+    const { error } = await supabase.rpc('edit_group_expense', {
+      p_expense_id: editingExpenseId,
+      p_title: title.trim(),
+      p_category: category,
+      p_total_amount: parsed,
+      p_players: players,
+      p_expense_date: date,
+      p_notes: notes.trim() || null,
+    })
+    setSaving(false)
+    if (error) { alert(error.message || 'Unable to update group expense.'); return }
+    resetForm()
+    await load()
+    await onGroupChanged()
+  }
+  const saveGroup = async () => {
+    if (!groupName.trim() || !players.length) { alert('Enter a group name and add at least one other player.'); return }
+    setSaving(true)
+    const { error } = await supabase.rpc('save_expense_group', {
+      p_group_name: groupName.trim(), p_players: players, p_group_id: editingGroupId,
+    })
+    setSaving(false)
+    if (error) { alert(error.message || 'Unable to save the group.'); return }
+    setGroupModal(false); setEditingGroupId(null); setGroupName(''); setPlayers([])
+    await load()
+  }
+  const deleteSavedGroup = async group => {
+    if (!window.confirm(`Delete saved group "${group.group_name}"? Previous expenses will stay in History.`)) return
+    const { error } = await supabase.rpc('delete_expense_saved_group', { p_group_id: group.id })
+    if (error) { alert(error.message); return }
+    await load()
+  }
+  const handlePayment = async (participant, action) => {
+    setBusyId(participant.id)
+    const { error } = await supabase.rpc('update_group_expense_payment', {
+      p_participant_id: participant.id, p_action: action,
+    })
+    setBusyId(null)
+    if (error) { alert(error.message || 'Unable to update payment.'); return }
+    await load()
+    await onGroupChanged()
+  }
+  // Player-only personal view: archive an unpaid request or restore it to Active.
+  // Paid requests move to History automatically and cannot be restored.
+  const changeMyExpenseHistory = async (participant, shouldArchive) => {
+    if (!participant || busyId) return
+    setBusyId(participant.id)
+    const { error } = await supabase.rpc('set_group_expense_archived', {
+      p_participant_id: participant.id,
+      p_archived: shouldArchive,
+    })
+    setBusyId(null)
+    if (error) {
+      alert(error.message || 'Could not update your expense history.')
+      return
+    }
+    await load()
+  }
+
+  const cancelExpense = async item => {
+    if (!window.confirm(`Cancel "${item.title}"? This will remove its personal spending shares.`)) return
+    setBusyId(item.id)
+    const { error } = await supabase.rpc('cancel_group_expense', { p_expense_id: item.id })
+    setBusyId(null)
+    if (error) { alert(error.message || 'Unable to cancel expense.'); return }
+    await load()
+    await onGroupChanged()
+  }
+  const buttons = (participant, owned, active) => {
+    // The creator sees one compact tick per participant. Only eligible
+    // payments can be confirmed, and a confirmed tick is read-only.
+    if (owned && participant.payment_status === 'paid') {
+      return <span role="img" aria-label={`${participant.player_name}: payment received`}
+        title="Payment received"
+        style={{ width: 25, height: 25, display: 'inline-grid', placeItems: 'center',
+          border: '1.5px solid #16A34A', borderRadius: 7, background: '#DCFCE7',
+          color: '#15803D', fontSize: 16, fontWeight: 700 }}>✓</span>
+    }
+    if (!active || participant.payment_status === 'paid') return null
+    if (owned) {
+      if (!participant.user_id || (participant.request_status === 'accepted' && participant.payment_status === 'awaiting_confirmation')) {
+        return <button type="button" disabled={busyId === participant.id}
+          aria-label={`Confirm payment received from ${participant.player_name}`}
+          title="Tick to confirm payment received"
+          onClick={() => handlePayment(participant, 'confirm_received')}
+          style={{ width: 25, height: 25, display: 'inline-grid', placeItems: 'center',
+            border: `1.5px solid ${C.muted}`, borderRadius: 7, background: C.card,
+            color: C.text, fontSize: 16, fontWeight: 700, cursor: 'pointer',
+            opacity: busyId === participant.id ? 0.55 : 1 }}>
+          ✓
+        </button>
+      }
+      return null
+    }
+    if (participant.user_id !== currentUserId) return null
+    if (participant.request_status === 'pending') return <span style={{ display: 'flex', gap: 6 }}>
+      <button type="button" className={styles.btnPrimary} disabled={busyId === participant.id}
+        style={{ fontSize: 11, padding: '5px 9px' }} onClick={() => handlePayment(participant, 'accept')}>Accept</button>
+      <button type="button" className={styles.btnOutline} disabled={busyId === participant.id}
+        style={{ fontSize: 11, padding: '5px 9px' }} onClick={() => handlePayment(participant, 'decline')}>Decline</button>
+    </span>
+    if (participant.request_status === 'accepted' && participant.payment_status === 'unpaid') {
+      return <button type="button" className={styles.btnPrimary} disabled={busyId === participant.id}
+        onClick={() => handlePayment(participant, 'mark_sent')} style={{ fontSize: 11, padding: '5px 9px' }}>I've Paid</button>
+    }
+    return null
+  }
+  const displayStatus = participant => {
+    if (participant.payment_status === 'paid') return 'Paid'
+    if (participant.request_status === 'declined') return 'Declined'
+    if (participant.payment_status === 'awaiting_confirmation') return 'Awaiting confirmation'
+    if (participant.request_status === 'pending' && participant.user_id) return 'Awaiting acceptance'
+    return 'Pending'
+  }
+  const modal = (heading, onSave, onClose) => <div className={styles.modalOverlay}
+    onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className={styles.modal} style={{ width: 'min(95vw, 560px)', maxHeight: '88vh', overflowY: 'auto' }}>
+      <div className={styles.modalHead}><div className={styles.modalTitle}>{heading}</div>
+        <button type="button" className={styles.modalClose} onClick={onClose}>✕</button></div>
+      {!groupModal && <>
+        <div className={styles.formRow}><label className={styles.formLabel}>Expense title</label>
+          <input className={styles.formInput} value={title} maxLength={120} onChange={e => setTitle(e.target.value)} placeholder="e.g. Friday badminton court" /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+          <div className={styles.formRow}><label className={styles.formLabel}>Category</label>
+            <select className={styles.formSelect} value={category} onChange={e => setCategory(e.target.value)}>
+              <option value="Court">Court rental</option><option value="Shuttlecocks">Shuttlecocks</option><option value="Other">Other</option>
+            </select></div>
+          <div className={styles.formRow}><label className={styles.formLabel}>Date</label>
+            <input className={styles.formInput} type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
+        </div>
+        <div className={styles.formRow}><label className={styles.formLabel}>Total paid by you (RM)</label>
+          <input className={styles.formInput} type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="60.00" /></div>
+        <div className={styles.formRow}><label className={styles.formLabel}>Notes (optional)</label>
+          <input className={styles.formInput} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Court or session details" /></div>
+      </>}
+      {groupModal && <div className={styles.formRow}><label className={styles.formLabel}>Saved group name</label>
+        <input className={styles.formInput} value={groupName} maxLength={80} onChange={e => setGroupName(e.target.value)} placeholder="e.g. Friday Badminton" /></div>}
+      {!groupModal && savedGroups.length > 0 && <div className={styles.formRow}>
+        <label className={styles.formLabel}>Use saved players (optional)</label>
+        <select className={styles.formSelect} defaultValue="" onChange={e => { if (e.target.value) applySavedGroup(e.target.value) }}>
+          <option value="">Select a saved group...</option>
+          {savedGroups.map(group => <option key={group.id} value={group.id}>{group.group_name}</option>)}
+        </select></div>}
+      <div className={styles.formRow}>
+        <label className={styles.formLabel}>Search players (registered or public)</label>
+        <input className={styles.formInput} value={playerQuery} onChange={e => setPlayerQuery(e.target.value)} spellCheck={false} autoCorrect="off" autoCapitalize="off" placeholder="Search player name (at least 2 letters)" />
+        {searching && <div style={groupPanelCss.small}>Searching...</div>}
+        {playerSearchError && <div style={{ ...groupPanelCss.small, color: '#DC2626' }}>{playerSearchError}</div>}
+        {!searching && !playerSearchError && playerQuery.trim().length >= 2 && searchResults.length === 0 && <div style={groupPanelCss.small}>No matching players found. You can enter a name manually below.</div>}
+        {searchResults.filter(result => !players.some(p => result.user_id ? p.user_id === result.user_id : (!p.user_id && p.player_name.toLowerCase() === result.player_name.toLowerCase()))).map(result =>
+          <button type="button" key={`${result.player_type}-${result.user_id || result.player_name}`} onClick={() => addPlayer(result)}
+            style={{ display: 'block', width: '100%', padding: 9, textAlign: 'left', border: `1px solid ${C.line}`, background: C.card, color: C.text, cursor: 'pointer' }}>
+            + {result.player_name} <span style={{ color: C.muted, fontSize: 11 }}>· {result.player_type === 'registered' ? 'Registered · payment request' : 'Public directory · manual payment tracking'}</span>
+          </button>)}
+      </div>
+      <div className={styles.formRow}><label className={styles.formLabel}>Or add player without an account</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input className={styles.formInput} value={manualName} maxLength={120}
+            onChange={e => setManualName(e.target.value)} placeholder="Player name" />
+          <button type="button" className={styles.btnOutline} onClick={() => addPlayer({ player_name: manualName })}>Add</button>
+        </div></div>
+      <div style={{ padding: 12, background: C.soft, borderRadius: 10, marginBottom: 14 }}>
+        <div style={groupPanelCss.row}><strong style={{ fontSize: 12 }}>Players (you + {players.length})</strong>
+          {!groupModal && Number(amount) > 0 && <strong style={{ fontSize: 12 }}>Approx. {formatRM(Number(amount) / (players.length + 1))} each</strong>}</div>
+        {players.length === 0 && <p style={groupPanelCss.small}>No other players added yet.</p>}
+        {players.map((player, i) => <div key={`${player.user_id || player.player_name}-${i}`} style={{ ...groupPanelCss.row, marginTop: 8, fontSize: 12 }}>
+          <span>{player.player_name}</span>
+          <button type="button" onClick={() => setPlayers(prev => prev.filter((_, j) => j !== i))}
+            style={{ border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer' }}>Remove</button>
+        </div>)}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button type="button" className={styles.btnOutline} onClick={onClose}>Cancel</button>
+        <button type="button" className={styles.btnPrimary} disabled={saving} onClick={onSave}>
+          {saving ? 'Saving...' : groupModal ? 'Save Group' : editingExpenseId ? 'Save Changes' : 'Create Expense'}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  // Creator: History only when the entire group is completed/cancelled.
+  // Tagged player: History as soon as THEIR payment is confirmed, or when
+  // they close their own card; other participants' statuses do not matter.
+  const isInHistory = item => {
+    if (item.created_by === currentUserId) return item.status !== 'active'
+    const mine = (item.group_expense_participants || []).find(p => p.user_id === currentUserId)
+    return item.status !== 'active' || mine?.payment_status === 'paid' || Boolean(mine?.archived_by_player_at)
+  }
+  const active = items.filter(item => !isInHistory(item))
+  const history = items.filter(isInHistory)
+  const listed = section === 'active' ? active : history
+
+  const paymentStatusStyle = status => {
+    if (status === 'Paid') return { color: '#15803D', background: '#DCFCE7' }
+    if (status === 'Declined') return { color: '#B91C1C', background: '#FEE2E2' }
+    if (status === 'Awaiting confirmation') return { color: '#B45309', background: '#FEF3C7' }
+    if (status === 'Awaiting acceptance') return { color: '#475569', background: '#F1F5F9' }
+    return { color: '#64748B', background: '#F1F5F9' }
+  }
+
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className={styles.card} style={{ padding: '17px 20px' }}>
+      <div style={groupPanelCss.row}>
+        <div>
+          <div className={styles.cardTitle} style={{ marginBottom: 4 }}>Group Expenses</div>
+          <div style={groupPanelCss.small}>Share costs, reuse players and track reimbursements.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className={styles.btnOutline}
+            onClick={() => { setPlayers([]); setEditingGroupId(null); setGroupName(''); setGroupModal(true) }}>
+            Manage Saved Groups
+          </button>
+          <button type="button" className={styles.btnPrimary}
+            onClick={() => { resetForm(); setCreating(true) }}>+ Create Group Expense</button>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        {['active', 'history'].map(value => <button key={value} type="button"
+          className={section === value ? styles.btnPrimary : styles.btnOutline}
+          onClick={() => setSection(value)}
+          style={{ padding: '7px 14px', borderRadius: 9, fontSize: 12 }}>
+          {value === 'active' ? `Active (${active.length})` : `History (${history.length})`}
+        </button>)}
+      </div>
+    </div>
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 14, alignItems: 'start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+    {loadingGroups ? <div className={styles.card}>Loading group expenses...</div> : listed.length === 0 ?
+      <div className={styles.card} style={{ textAlign: 'center', padding: 28, color: C.muted }}>
+        {section === 'active'
+          ? 'No active group expenses. Create one to start tracking shared costs.'
+          : 'No completed or cancelled group expenses yet.'}
+      </div> : listed.map(item => {
+        const owned = item.created_by === currentUserId
+        const participants = item.group_expense_participants || []
+        const paidParticipants = participants.filter(p => p.payment_status === 'paid')
+        const received = paidParticipants.reduce((sum, p) => sum + Number(p.amount_owed), 0)
+        const due = owned ? Number(item.total_amount) - Number(item.creator_share) :
+          participants.reduce((sum, p) => sum + Number(p.amount_owed), 0)
+        const myPayment = participants.find(p => p.user_id === currentUserId)
+        // The creator sees every participant. For invited users, RLS may expose
+        // only their own row, so infer the equal-split count from the creator's
+        // share rather than incorrectly showing '2 players'.
+        const totalAmount = Number(item.total_amount)
+        const creatorShare = Number(item.creator_share)
+        const playerCount = owned
+          ? participants.length + 1
+          : creatorShare > 0
+            ? Math.max(2, Math.round(totalAmount / creatorShare))
+            : 0
+        const outstanding = Math.max(0, due - received)
+        const progress = due > 0 ? Math.min(100, Math.max(0, (received / due) * 100)) : 100
+        const expanded = expandedId === item.id
+        const statusText = item.status === 'cancelled' ? 'Cancelled'
+          : item.status === 'completed' || (!owned && myPayment?.payment_status === 'paid') ? 'Completed'
+          : !owned && myPayment?.archived_by_player_at ? 'Closed' : 'Active'
+        const statusColor = statusText === 'Completed' || statusText === 'Closed'
+          ? { background: '#DCFCE7', color: '#15803D' }
+          : item.status === 'cancelled'
+            ? { background: '#FEE2E2', color: '#B91C1C' }
+            : { background: '#EEF2FF', color: '#1D4ED8' }
+
+        return <div key={item.id} className={styles.card} style={{ padding: '16px 20px' }}>
+          <button type="button" aria-expanded={expanded}
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} payment tracking for ${item.title}`}
+            onClick={() => setExpandedId(expanded ? null : item.id)}
+            style={{ width: '100%', border: 0, background: 'transparent', padding: 0,
+              textAlign: 'left', color: C.text, cursor: 'pointer' }}>
+            <div style={groupPanelCss.row}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{item.title}</div>
+                <div style={{ ...groupPanelCss.small, lineHeight: 1.4 }}>
+                  {item.expense_date} · {item.category} · {owned ? 'You paid upfront' : 'Someone else paid'}
+                </div>
+              </div>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+                <span style={{ ...statusColor, padding: '5px 11px', borderRadius: 20,
+                  fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', lineHeight: 1.4 }}>
+                  {statusText}
+                </span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                  aria-hidden="true"
+                  style={{ color: C.muted, transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease', flexShrink: 0 }}>
+                  <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: owned ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))',
+              gap: 12, marginTop: 14 }}>
+              <div>
+                <div style={{ ...groupPanelCss.small, fontSize: 10, fontWeight: 700, letterSpacing: '.04em' }}>TOTAL</div>
+                <strong style={{ fontSize: 16, fontWeight: 700 }}>{formatRM(item.total_amount)}</strong>
+              </div>
+              <div>
+                <div style={{ ...groupPanelCss.small, fontSize: 10, fontWeight: 700, letterSpacing: '.04em' }}>
+                  {owned ? 'YOUR SHARE' : 'YOU OWE'}
+                </div>
+                <strong style={{ fontSize: 16, fontWeight: 700, color: '#1A5FFF' }}>
+                  {formatRM(owned ? item.creator_share : myPayment?.amount_owed || 0)}
+                </strong>
+                {playerCount > 0 && (
+                  <div style={{ marginTop: 4, fontSize: 11, fontWeight: 400, color: C.muted, lineHeight: 1.45 }}>
+                    {formatRM(totalAmount)} ÷ {playerCount} players
+                  </div>
+                )}
+              </div>
+              {owned && <div style={{ textAlign: 'right' }}>
+                <div style={{ ...groupPanelCss.small, fontSize: 10, fontWeight: 700, letterSpacing: '.04em' }}>STILL OWED</div>
+                <strong style={{ fontSize: 16, fontWeight: 700, color: outstanding === 0 ? '#15803D' : C.text }}>
+                  {formatRM(outstanding)}
+                </strong>
+              </div>}
+            </div>
+          </button>
+
+          {owned && expanded && canEditExpense(item) && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <button type="button" className={styles.btnOutline}
+                style={{ fontSize: 11, padding: '6px 12px', borderRadius: 8 }}
+                onClick={() => beginEditExpense(item)}>
+                Edit Expense
+              </button>
+            </div>
+          )}
+          {owned && <div style={{ marginTop: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8,
+              fontSize: 11, color: C.muted, marginBottom: 6 }}>
+              <span>{paidParticipants.length} of {participants.length} payments received</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <div role="progressbar" aria-label="Reimbursement progress" aria-valuemin={0}
+              aria-valuemax={100} aria-valuenow={Math.round(progress)}
+              style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: '#E8EDF5' }}>
+              <div style={{ height: '100%', width: `${progress}%`, borderRadius: 999,
+                background: '#16A34A', transition: 'width 180ms ease' }} />
+            </div>
+          </div>}
+
+          {expanded && <div style={{ marginTop: 14, paddingTop: 13, borderTop: `1px solid ${C.line}` }}>
+            {item.notes?.trim() && (
+              <div style={{ padding: '12px 14px', marginBottom: 14, background: C.soft,
+                borderRadius: 10, border: `1px solid ${C.line}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 5 }}>
+                  Notes
+                </div>
+                <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6,
+                  whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                  {item.notes}
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 7 }}>Payment Tracking</div>
+            {participants.map(p => {
+              const status = displayStatus(p)
+              const statusStyle = paymentStatusStyle(status)
+              return <div key={p.id} style={{ display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between', flexWrap: 'wrap', gap: 10,
+                padding: '10px 0', borderBottom: `1px solid ${C.line}` }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{p.player_name}</div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ ...statusStyle, fontSize: 10, padding: '3px 8px',
+                      borderRadius: 20, fontWeight: 700 }}>{status}</span>
+                    {p.payment_confirmed_at && <span style={{ fontSize: 10, color: C.muted }}>
+                      {new Date(p.payment_confirmed_at).toLocaleDateString()}
+                    </span>}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13, whiteSpace: 'nowrap' }}>{formatRM(p.amount_owed)}</strong>
+                  {buttons(p, owned, item.status === 'active')}
+                </div>
+              </div>
+            })}
+            {owned && <div style={{ ...groupPanelCss.row, marginTop: 13, fontSize: 12 }}>
+              <span>Received: <strong style={{ color: '#15803D' }}>{formatRM(received)}</strong>
+                <span style={{ color: C.muted }}> · Outstanding: {formatRM(outstanding)}</span>
+              </span>
+              {item.status === 'active' && received === 0 && <button type="button"
+                className={styles.btnOutline} disabled={busyId === item.id}
+                onClick={() => cancelExpense(item)}
+                style={{ fontSize: 11, color: '#DC2626' }}>Cancel Expense</button>}
+            </div>}
+            {!owned && <div style={{ ...groupPanelCss.row, marginTop: 12 }}>
+              <span style={groupPanelCss.small}>
+                {myPayment?.payment_status === 'paid'
+                  ? 'Payment confirmed. This record is saved in your History.'
+                  : 'Only your payment request is visible to you. The payer confirms receipt.'}
+              </span>
+              {myPayment && item.status === 'active' && myPayment.payment_status !== 'paid' && (
+                <button type="button" className={styles.btnOutline}
+                  disabled={busyId === myPayment.id}
+                  onClick={() => changeMyExpenseHistory(myPayment, !myPayment.archived_by_player_at)}
+                  style={{ fontSize: 11, borderRadius: 8, padding: '7px 12px' }}>
+                  {myPayment.archived_by_player_at ? 'Move to Active' : 'Close for Me'}
+                </button>
+              )}
+            </div>}
+            {item.status === 'completed' && <p style={{ ...groupPanelCss.small, marginTop: 10 }}>
+              Completed expenses are saved in History and cannot be edited.
+            </p>}
+          </div>}
+        </div>
+      })}
+
+      </div>
+      <div style={{ minWidth: 0 }}>
+    <div className={styles.card} style={{ padding: '16px 20px' }}>
+      <div className={styles.cardTitle} style={{ marginBottom: 10 }}>Saved Player Groups</div>
+      {savedGroups.length === 0 && <div style={{ ...groupPanelCss.small, padding: '10px 0' }}>No saved groups yet. Create one to reuse players for future expenses.</div>}
+      {savedGroups.map(group => <div key={group.id}
+        style={{ ...groupPanelCss.row, padding: '10px 0', borderBottom: `1px solid ${C.line}` }}>
+        <div>
+          <strong style={{ fontSize: 13 }}>{group.group_name}</strong>
+          <div style={groupPanelCss.small}>
+            {(group.expense_saved_group_members || []).length + 1} players including you
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" className={styles.btnOutline} style={{ fontSize: 11 }} onClick={() => {
+            setGroupName(group.group_name); setEditingGroupId(group.id)
+            setPlayers((group.expense_saved_group_members || []).map(p => ({ user_id: p.user_id, player_name: p.player_name })))
+            setGroupModal(true)
+          }}>Edit</button>
+          <button type="button" className={styles.btnOutline} style={{ fontSize: 11 }}
+            onClick={() => deleteSavedGroup(group)}>Delete</button>
+        </div>
+      </div>)}
+    </div>
+      </div>
+    </div>
+    {creating && modal(editingExpenseId ? 'Edit Group Expense' : 'Create Group Expense', editingExpenseId ? updateExpense : createExpense, resetForm)}
+    {groupModal && modal(editingGroupId ? 'Edit Saved Group' : 'Create Saved Group', saveGroup,
+      () => { setGroupModal(false); setEditingGroupId(null); setGroupName(''); setPlayers([]) })}
+  </div>
+}
+
+// Only group-expense events are shown alongside local budget alerts on the Expenses page.
+// Stable reference prevents notification subscriptions from repeatedly reloading.
+const GROUP_EXPENSE_NOTIFICATION_TYPES = [
+  'group_expense_request',
+  'group_expense_accepted',
+  'group_expense_declined',
+  'group_expense_sent',
+  'group_expense_confirmed',
+]
+
 export default function Expenses() {
   const [expenses, setExpenses] = useState([])
+  const [expenseTab, setExpenseTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('tab') === 'group' ? 'group' : 'personal'
+  })
+  const [currentUserId, setCurrentUserId] = useState(null)
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
@@ -531,6 +1179,8 @@ export default function Expenses() {
   const [monthlyBudget, setMonthlyBudget] = useState(0)
   const [hasMonthlyBudget, setHasMonthlyBudget] = useState(false)
   const [showBudgetModal, setShowBudgetModal] = useState(false)
+  const [showBudgetAlert, setShowBudgetAlert] = useState(false)
+  const [showCalculator, setShowCalculator] = useState(false)
   const [showAllExpenses, setShowAllExpenses] = useState(false)
   // Expense-page notification bell.
   // These notifications are calculated from the selected month's budget,
@@ -546,30 +1196,41 @@ export default function Expenses() {
       setLoading(false)
       return
     }
-    const { data, error } = await supabase
-      .from('expenses')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('date', { ascending: false })
-    if (error) {
-      console.log(error)
-      setLoading(false)
-      return
-    }
-    const formatted = (data || []).map(item => {
+    setCurrentUserId(user.id)
+    // Personal spending includes each accepted group share ONCE. Group shares
+    // are read-only projections; they are NOT inserted into public.expenses.
+    const [normalResult, groupResult] = await Promise.all([
+      supabase.from('expenses').select('*').eq('user_id', user.id).order('date', { ascending: false }),
+      supabase.from('group_expenses').select('id,created_by,expense_date,category,title,creator_share,status,group_expense_participants(id,user_id,amount_owed,request_status)')
+    ])
+    if (normalResult.error) console.error('Personal expense fetch:', normalResult.error)
+    if (groupResult.error) console.error('Group share fetch:', groupResult.error)
+    const formatted = (normalResult.data || []).map(item => {
       const { dateStr, monthKey } = isoToDisplay(item.date)
       const cat = categoryInfo[item.category] || categoryInfo.Other
       return {
-        id: item.id,
-        isoDate: item.date,
-        month: monthKey,
-        date: dateStr,
-        category: item.category,
-        desc: item.description || 'No description',
-        amount: Number(item.amount),
-        color: cat.badge,
+        id: item.id, isoDate: item.date, month: monthKey, date: dateStr,
+        category: item.category, desc: item.description || 'No description',
+        amount: Number(item.amount), color: cat.badge, source: 'personal',
       }
     })
+    for (const group of (groupResult.data || [])) {
+      if (group.status === 'cancelled') continue
+      const own = group.created_by === user.id
+      const share = own ? Number(group.creator_share) :
+        (group.group_expense_participants || [])
+          .filter(p => p.user_id === user.id && p.request_status === 'accepted')
+          .reduce((sum, p) => sum + Number(p.amount_owed), 0)
+      if (share <= 0) continue
+      const { dateStr, monthKey } = isoToDisplay(group.expense_date)
+      const cat = categoryInfo[group.category] || categoryInfo.Other
+      formatted.push({
+        id: `group-${group.id}`, isoDate: group.expense_date,
+        month: monthKey, date: dateStr, category: group.category,
+        desc: `${group.title} · Group share`, amount: share,
+        color: cat.badge, source: 'group',
+      })
+    }
     setExpenses(formatted)
     setLoading(false)
   }, [])
@@ -679,18 +1340,18 @@ export default function Expenses() {
     current: month === selectedMonth,
   }))
 
-  const selectedMonthIndex = availableMonths.indexOf(selectedMonth)
-  const previousMonthName = selectedMonthIndex > 0 ? availableMonths[selectedMonthIndex - 1] : null
-  const previousMonthTotal = previousMonthName
-    ? monthly.find(m => m.month === previousMonthName)?.amt || 0
-    : 0
-
+  // Compare against the immediately preceding calendar month, including across years.
+  // Months without records must not be treated as proof that spending improved.
+  const previousMonthDate = new Date(selectedYear, selectedMonthParts.monthIdx - 1, 1)
+  const previousMonthName = `${MONTH_NAMES_LONG[previousMonthDate.getMonth()]} ${previousMonthDate.getFullYear()}`
+  const previousMonthExpenses = expenses.filter(expense => expense.month === previousMonthName)
+  const previousMonthTotal = previousMonthExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
+  const hasPreviousMonthData = previousMonthExpenses.length > 0
+  const hasSelectedMonthData = filteredExpenses.length > 0
   const savedAmount = previousMonthTotal - selectedMonthTotal
-
-  const savedPercent =
-    previousMonthTotal > 0
-      ? Math.abs((savedAmount / previousMonthTotal) * 100).toFixed(1)
-      : 0
+  const savedPercent = previousMonthTotal > 0
+    ? Math.abs((savedAmount / previousMonthTotal) * 100).toFixed(1)
+    : 0
   const thisYearTotal = monthly
     .filter(m => {
       const parsed = parseMonth(m.month)
@@ -708,7 +1369,8 @@ export default function Expenses() {
     hasMonthlyBudget ? monthlyBudget - selectedMonthTotal : null
 
   let budgetStatus = 'Not Set'
-  if (hasMonthlyBudget && budgetUsedPercent >= 100) budgetStatus = 'Exceeded'
+  if (hasMonthlyBudget && selectedMonthTotal > monthlyBudget) budgetStatus = 'Exceeded'
+  else if (hasMonthlyBudget && selectedMonthTotal >= monthlyBudget) budgetStatus = 'Reached'
   else if (hasMonthlyBudget && budgetUsedPercent >= 80) budgetStatus = 'Near Limit'
   else if (hasMonthlyBudget) budgetStatus = 'Safe'
 
@@ -722,11 +1384,11 @@ export default function Expenses() {
       )} over your ${formatRM(monthlyBudget)} budget for ${selectedMonth}.`,
       type: 'danger',
     })
-  } else if (hasMonthlyBudget && budgetStatus === 'Near Limit') {
+  } else if (hasMonthlyBudget && ['Near Limit', 'Reached'].includes(budgetStatus)) {
     expenseNotifications.push({
       key: `budget-near-limit-${selectedMonth}`,
-      title: 'Monthly budget almost reached',
-      message: `You have used ${budgetUsedPercent}% of your budget for ${selectedMonth}. Only ${formatRM(
+      title: budgetStatus === 'Reached' ? 'Monthly budget reached' : 'Monthly budget almost reached',
+      message: `You have used ${budgetUsedPercent}% of your budget for ${selectedMonth}. ${formatRM(
         Math.max(remainingBudget, 0)
       )} remains.`,
       type: 'warning',
@@ -798,6 +1460,82 @@ export default function Expenses() {
       ? byCategory.reduce((max, e) => (e.val > max.val ? e : max), byCategory[0])
       : null
 
+  // Transparent, rule-based insights calculated entirely from saved player expenses.
+  // No Gemini requests, new tables, or additional personal-data sharing are required.
+  const previousCategoryTotals = Object.fromEntries(
+    Object.keys(categoryInfo).map(category => [
+      category,
+      previousMonthExpenses
+        .filter(expense => expense.category === category)
+        .reduce((sum, expense) => sum + Number(expense.amount), 0),
+    ])
+  )
+  const categoryIncrease = hasPreviousMonthData && hasSelectedMonthData
+    ? byCategory
+      .map(item => ({ ...item, increase: item.val - (previousCategoryTotals[item.category] || 0) }))
+      .filter(item => item.increase > 0)
+      .sort((a, b) => b.increase - a.increase)[0] || null
+    : null
+  const categoryAdvice = {
+    Court: 'Consider sharing court rental costs with training partners when practical.',
+    Equipment: 'Review whether new equipment is necessary before your next purchase.',
+    Shuttlecocks: 'Consider sharing shuttlecock costs with your regular badminton group.',
+    Stringing: 'Check your restringing schedule and avoid replacing strings earlier than needed.',
+    Transport: 'Consider combining trips or sharing transport when convenient.',
+    Other: 'Review the descriptions in this category to identify optional expenses.',
+  }
+  // Only actionable, non-duplicated recommendations belong here.
+  // Trends stay in Monthly Trend; amounts and thresholds stay in Budget Alert.
+  const smartInsights = []
+  if (!hasSelectedMonthData) {
+    smartInsights.push({
+      type: 'info',
+      title: 'Start tracking your spending',
+      text: 'Add an expense to see personalized ways to manage badminton costs.',
+    })
+  } else {
+    if (highestCategory) {
+      const adviceTitles = {
+        Court: 'Consider sharing court costs',
+        Equipment: 'Plan equipment purchases',
+        Shuttlecocks: 'Share shuttlecock costs',
+        Stringing: 'Review your stringing schedule',
+        Transport: 'Reduce transport costs',
+        Other: 'Review miscellaneous spending',
+      }
+      smartInsights.push({
+        type: 'info',
+        title: adviceTitles[highestCategory.category],
+        text: categoryAdvice[highestCategory.category],
+      })
+    }
+
+    if (categoryIncrease && categoryIncrease.category !== highestCategory?.category) {
+      smartInsights.push({
+        type: 'warning',
+        title: `Review ${categoryIncrease.label.toLowerCase()} expenses`,
+        text: `Check whether recent ${categoryIncrease.label.toLowerCase()} costs were necessary before making similar purchases.`,
+      })
+    } else if (hasMonthlyBudget) {
+      smartInsights.push({
+        type: budgetStatus === 'Exceeded' || budgetStatus === 'Reached' ? 'warning' : 'info',
+        title: budgetStatus === 'Exceeded' || budgetStatus === 'Reached'
+          ? 'Prioritize essential training costs'
+          : 'Plan upcoming badminton sessions',
+        text: budgetStatus === 'Exceeded' || budgetStatus === 'Reached'
+          ? 'Review optional purchases and upcoming bookings before adding more expenses.'
+          : 'Consider planned sessions and equipment needs before committing to more expenses this month.',
+      })
+    } else if (!highestCategory || highestCategory.category !== 'Other') {
+      smartInsights.push({
+        type: 'info',
+        title: 'Plan future badminton costs',
+        text: 'Estimate upcoming court, transport, and equipment costs before scheduling activities.',
+      })
+    }
+  }
+  const visibleSmartInsights = smartInsights.slice(0, 2)
+
   const budgetAlertMessage = (() => {
     if (!hasMonthlyBudget) {
       return `No monthly budget has been set for ${selectedMonth}. Set a budget to receive expense notifications.`
@@ -808,77 +1546,21 @@ export default function Expenses() {
     if (budgetStatus === 'Exceeded') {
       return `You have spent ${formatRM(selectedMonthTotal)}, which is over your monthly budget of ${formatRM(monthlyBudget)}.`
     }
-    if (budgetStatus === 'Near Limit') {
+    if (budgetStatus === 'Near Limit' || budgetStatus === 'Reached') {
       return `You have used ${budgetUsedPercent}% of your monthly budget. Remaining budget is ${formatRM(remainingBudget)}.`
     }
     return `You are within budget. Remaining budget for ${selectedMonth} is ${formatRM(remainingBudget)}.`
   })()
-  const ruleSuggestions = []
-  if (selectedMonthTotal <= 0) {
-    ruleSuggestions.push({
-      type: 'info',
-      title: 'Start recording expenses',
-      text: `No expenses are recorded for ${selectedMonth}. Add expenses to generate spending suggestions.`,
-    })
-  }
-  if (budgetStatus === 'Exceeded') {
-    ruleSuggestions.push({
-      type: 'danger',
-      title: 'Budget exceeded',
-      text: 'Your spending has exceeded the monthly budget. Try to reduce non-essential badminton expenses for the rest of the month.',
-    })
-  } else if (budgetStatus === 'Near Limit') {
-    ruleSuggestions.push({
-      type: 'warning',
-      title: 'Budget near limit',
-      text: 'Your spending is close to the monthly budget limit. Review upcoming court, transport, or equipment costs.',
-    })
-  } else if (hasMonthlyBudget && selectedMonthTotal > 0) {
-    ruleSuggestions.push({
-      type: 'success',
-      title: 'Spending under control',
-      text: 'Your current spending is still within the monthly budget. Continue monitoring expenses regularly.',
-    })
-  } else if (!hasMonthlyBudget && selectedMonthTotal > 0) {
-    ruleSuggestions.push({
-      type: 'info',
-      title: 'Set a monthly budget',
-      text: `You have recorded ${formatRM(selectedMonthTotal)} in spending for ${selectedMonth}. Set a budget to track how much remains.`,
-    })
-  }
-  if (highestCategory && highestCategory.pct >= 35) {
-    ruleSuggestions.push({
-      type: 'warning',
-      title: `${highestCategory.label} is the highest cost`,
-      text: `${highestCategory.label} takes up ${highestCategory.pct}% of this month’s spending. Review this category if you want to reduce cost.`,
-    })
-  }
-  if (avgMonth > 0 && selectedMonthTotal > avgMonth) {
-    ruleSuggestions.push({
-      type: 'warning',
-      title: 'Above average monthly spending',
-      text: `This month’s spending is higher than your average monthly spending this year of ${formatRM(avgMonth)}.`,
-    })
-  }
-  if (byCategory.length >= 3) {
-    ruleSuggestions.push({
-      type: 'info',
-      title: 'Multiple spending categories',
-      text: 'Your expenses are spread across several categories. Check which category affects your budget the most.',
-    })
-  }
-
-  const visibleRuleSuggestions =
-    selectedMonthTotal > 0
-      ? ruleSuggestions.slice(0, 3)
-      : []
-
   const openAddExpense = () => {
     setExpenseForm(createEmptyExpenseForm())
     setShowAddExpense(true)
   }
 
   const openEditExpense = expense => {
+    if (expense.source === 'group') {
+      setExpenseTab('group')
+      return
+    }
     setEditingExpense(expense)
     setExpenseForm({
       date: expense.isoDate,
@@ -996,6 +1678,15 @@ export default function Expenses() {
             <div className={styles.pageSub}>Record and monitor all badminton-related spending</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button type="button" className={styles.btnOutline}
+              onClick={() => setShowCalculator(true)} title="Open calculator" aria-label="Open expense calculator"
+              style={{ minHeight: 38, padding: '0 12px', borderRadius: 9, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" strokeWidth="1.8" />
+                <rect x="8" y="5" width="8" height="4" rx="1" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M9 13h1M14 13h1M9 17h1M14 17h1" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+            </button>
             <button
               className={styles.btnPrimary}
               onClick={openAddExpense}
@@ -1009,7 +1700,8 @@ export default function Expenses() {
             <NotificationBell
               supabase={supabase}
               title="Expense notifications"
-              localOnly
+              sourceTypes={GROUP_EXPENSE_NOTIFICATION_TYPES}
+              includeLocalItems
               localItems={visibleExpenseNotifications}
               onLocalMarkAllRead={markAllExpenseNotificationsRead}
               onLocalClear={clearExpenseNotifications}
@@ -1018,6 +1710,14 @@ export default function Expenses() {
           </div>
         </div>
       </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <button type="button" className={expenseTab === 'personal' ? styles.btnPrimary : styles.btnOutline}
+          onClick={() => setExpenseTab('personal')} style={{ borderRadius: 9 }}>Personal Expenses</button>
+        <button type="button" className={expenseTab === 'group' ? styles.btnPrimary : styles.btnOutline}
+          onClick={() => setExpenseTab('group')} style={{ borderRadius: 9 }}>Group Expenses</button>
+      </div>
+      {expenseTab === 'group' && <GroupExpenseManager currentUserId={currentUserId} onGroupChanged={fetchExpenses} />}
+      {expenseTab === 'personal' && <>
       <div className={styles.g4} style={{ marginBottom: 16 }}>
         <div className={styles.metricHighlight}>
           <div
@@ -1048,7 +1748,18 @@ export default function Expenses() {
             {selectedMonth}
           </div>
         </div>
-        <div className={styles.metric}>
+        <div className={styles.metric}
+          role="button"
+          tabIndex={0}
+          aria-label="Open monthly budget alert"
+          onClick={() => setShowBudgetAlert(true)}
+          onKeyDown={event => {
+            if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+              event.preventDefault()
+              setShowBudgetAlert(true)
+            }
+          }}
+          style={{ cursor: 'pointer' }}>
           <div
             style={{
               width: 40,
@@ -1067,22 +1778,35 @@ export default function Expenses() {
           <div
             className={styles.metricVal}
             style={{
-              color: '#1A5FFF',
-              WebkitTextFillColor: '#1A5FFF',
+              color: !hasMonthlyBudget ? '#1A5FFF' : budgetStatus === 'Exceeded' ? '#DC2626' : ['Near Limit', 'Reached'].includes(budgetStatus) ? '#D97706' : '#059669',
+              WebkitTextFillColor: !hasMonthlyBudget ? '#1A5FFF' : budgetStatus === 'Exceeded' ? '#DC2626' : ['Near Limit', 'Reached'].includes(budgetStatus) ? '#D97706' : '#059669',
             }}
           >
             {hasMonthlyBudget
-              ? formatRMNoDecimal(monthlyBudget)
+              ? formatRMNoDecimal(Math.abs(remainingBudget))
               : 'Not set'}
           </div>
-          <div className={styles.metricLbl}>Monthly budget</div>
-          <button
-            className={styles.btnOutline}
-            style={{ marginTop: 10, fontSize: 11, padding: '6px 10px', borderRadius: 8 }}
-            onClick={() => setShowBudgetModal(true)}
-          >
-            {hasMonthlyBudget ? 'Edit Budget' : 'Set Budget'}
-          </button>
+          <div className={styles.metricLbl}>
+            {hasMonthlyBudget && remainingBudget < 0 ? 'Over budget' : 'Remaining budget'}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 10 }}>
+            <button
+              type="button"
+              className={styles.btnOutline}
+              style={{ fontSize: 11, padding: '6px 10px', borderRadius: 8, color: '#1A5FFF', borderColor: '#B9CAFD', fontWeight: 700 }}
+              onClick={event => { event.stopPropagation(); setShowBudgetAlert(true) }}
+            >
+              View Budget
+            </button>
+            <button
+              type="button"
+              className={styles.btnOutline}
+              style={{ fontSize: 11, padding: '6px 10px', borderRadius: 8, color: '#1A5FFF', borderColor: '#B9CAFD', fontWeight: 700 }}
+              onClick={event => { event.stopPropagation(); setShowBudgetModal(true) }}
+            >
+              {hasMonthlyBudget ? 'Edit Budget' : 'Set Budget'}
+            </button>
+          </div>
         </div>
         <div className={styles.metric}>
           <div
@@ -1210,7 +1934,7 @@ export default function Expenses() {
                       width: 92,
                       textAlign: 'center',
                       fontSize: 12,
-                      fontWeight: 800,
+                      fontWeight: 700,
                       color: e.color,
                       WebkitTextFillColor: e.color,
                       whiteSpace: 'nowrap',
@@ -1341,14 +2065,14 @@ export default function Expenses() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
                       {formatRM(expense.amount)}
                     </span>
-                    {pencilIcon}
+                    {expense.source !== 'group' && pencilIcon}
                   </div>
                 </div>
               ))
             )}
             <div style={{ borderTop: `2px solid ${C.line}`, marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>Total</span>
-              <span style={{ fontSize: 18, fontWeight: 800, color: C.text }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: C.text }}>
                 {formatRM(selectedMonthTotal)}
               </span>
             </div>
@@ -1375,125 +2099,61 @@ export default function Expenses() {
             >
               <MonthlyTrendLineChart monthly={monthly} />
             </div>
-            {previousMonthName && previousMonthTotal > 0 ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 10,
-                  background: savedAmount >= 0 ? '#E0FAF3' : '#FEF3C7',
-                  borderRadius: 10,
-                  fontSize: 12,
-                  color: savedAmount >= 0 ? '#00976C' : '#92400E',
-                  fontWeight: 600,
-                }}
-              >
-                {savedAmount >= 0
-                  ? `↓ ${savedPercent}% less than previous month — good job!`
-                  : `↑ ${savedPercent}% more than previous month — review spending.`}
-              </div>
-            ) : (
-              <div style={{ marginTop: 12, padding: 10, background: C.soft, borderRadius: 10, fontSize: 12, color: C.muted, fontWeight: 600 }}>
-                No previous month data available for comparison.
-              </div>
-            )}
-          </div>
-          <div
-            className={styles.card}
-            style={{
-              background: C.card,
-              border:
-                budgetStatus === 'Exceeded'
-                  ? '1.5px solid #EF4444'
-                  : budgetStatus === 'Near Limit'
-                  ? '1.5px solid #F59E0B'
-                  : budgetStatus === 'Safe'
-                  ? '1.5px solid #00C48C'
-                  : `1.5px solid ${C.line}`,
-            }}
-          >
             <div
-              className={styles.cardTitle}
               style={{
-                color:
-                  budgetStatus === 'Exceeded'
-                    ? '#EF4444'
-                    : budgetStatus === 'Near Limit'
-                    ? '#F59E0B'
-                    : budgetStatus === 'Safe'
-                    ? '#00C48C'
-                    : C.muted,
+                marginTop: 12,
+                padding: 10,
+                background: hasSelectedMonthData && hasPreviousMonthData
+                  ? savedAmount > 0 ? '#E0FAF3' : savedAmount < 0 ? '#FEF3C7' : C.soft
+                  : C.soft,
+                borderRadius: 10,
+                fontSize: 12,
+                color: hasSelectedMonthData && hasPreviousMonthData
+                  ? savedAmount > 0 ? '#00976C' : savedAmount < 0 ? '#92400E' : C.muted
+                  : C.muted,
+                fontWeight: 600,
               }}
             >
-              Budget Alert
+              {!hasSelectedMonthData
+                ? `No expenses recorded for ${selectedMonth}. A spending reduction cannot be confirmed.`
+                : !hasPreviousMonthData
+                  ? `No recorded expenses for ${previousMonthName} to compare against.`
+                  : savedAmount > 0
+                    ? `↓ ${savedPercent}% lower recorded spending than ${previousMonthName} (${formatRM(savedAmount)} less).`
+                    : savedAmount < 0
+                      ? `↑ ${savedPercent}% higher recorded spending than ${previousMonthName} (${formatRM(Math.abs(savedAmount))} more).`
+                      : `Recorded spending is unchanged from ${previousMonthName}.`}
             </div>
-            <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, fontWeight: 600 }}>
-              {budgetAlertMessage}
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <div className={styles.statRow}>
-                <span className={styles.statLabel}>Budget used</span>
-                <span
-                  className={styles.statVal}
-                  style={{
-                    color:
-                      budgetStatus === 'Exceeded'
-                        ? '#EF4444'
-                        : budgetStatus === 'Near Limit'
-                        ? '#F59E0B'
-                        : budgetStatus === 'Safe'
-                        ? '#00C48C'
-                        : C.muted,
-                  }}
-                >
-                  {hasMonthlyBudget ? `${budgetUsedPercent}%` : '—'}
-                </span>
-              </div>
-              <div className={styles.statRow}>
-                <span className={styles.statLabel}>Remaining</span>
-                <span
-                  className={styles.statVal}
-                  style={{
-                    color:
-                      !hasMonthlyBudget
-                        ? C.muted
-                        : remainingBudget < 0
-                        ? '#EF4444'
-                        : '#00C48C',
-                  }}
-                >
-                  {hasMonthlyBudget ? formatRM(remainingBudget) : '—'}
-                </span>
-              </div>
-              <div className={styles.statRow}>
-                <span className={styles.statLabel}>Status</span>
-                <span className={styles.statVal}>
-                  <span
-                    className={
-                      budgetStatus === 'Exceeded'
-                        ? styles.badgeRed
-                        : budgetStatus === 'Near Limit'
-                        ? styles.badgeAmber
-                        : budgetStatus === 'Safe'
-                        ? styles.badgeGreen
-                        : styles.badgeGray
-                    }
-                  >
-                    {budgetStatus}
-                  </span>
-                </span>
-              </div>
-            </div>
-            {highestCategory && (
-              <div style={{ marginTop: 10, fontSize: 12, color: C.muted, fontWeight: 600 }}>
-                Highest category: {highestCategory.label} — {formatRM(highestCategory.val)} ({highestCategory.pct}%)
-              </div>
-            )}
           </div>
-          {visibleRuleSuggestions.length > 0 && (
-            <RuleSuggestionsCard suggestions={visibleRuleSuggestions} />
-          )}
+          <div className={styles.card}>
+            <div className={styles.cardTitle} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span aria-hidden="true" style={{ color: '#1A5FFF' }}>✦</span>
+              Smart Spending Insights
+            </div>
+            <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
+              Practical tips based on your recorded expenses
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {visibleSmartInsights.map((insight, index) => {
+                const meta = getSuggestionMeta(insight.type)
+                return (
+                  <div key={`${insight.title}-${index}`} style={{ display: 'flex', gap: 10, padding: '10px 12px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.card }}>
+                    <span style={{ width: 26, height: 26, borderRadius: 8, background: meta.background, flexShrink: 0, display: 'grid', placeItems: 'center' }}>
+                      <ExpenseIcon type={meta.icon} color={meta.color} size={15} />
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, color: C.text, fontSize: 13, marginBottom: 4 }}>{insight.title}</div>
+                      <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.55 }}>{insight.text}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
         </div>
       </div>
+      </>}
       {showAllExpenses && (
         <div
           className={styles.modalOverlay}
@@ -1611,7 +2271,7 @@ export default function Expenses() {
                       style={{
                         flexShrink: 0,
                         fontSize: 13,
-                        fontWeight: 800,
+                        fontWeight: 700,
                         color: C.text,
                         whiteSpace: 'nowrap',
                       }}
@@ -1625,6 +2285,90 @@ export default function Expenses() {
           </div>
         </div>
       )}
+      {showBudgetAlert && (
+        <div className={styles.modalOverlay}
+          onClick={event => event.target === event.currentTarget && setShowBudgetAlert(false)}>
+          <div className={styles.modal} role="dialog" aria-modal="true" aria-label={`Budget Alert for ${selectedMonth}`}
+            style={{ width: 'min(94vw, 780px)', maxWidth: 780, maxHeight: '86vh', overflowY: 'auto' }}>
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>Monthly Budget — {selectedMonth}</div>
+              <button type="button" className={styles.modalClose} aria-label="Close budget alert"
+                onClick={() => setShowBudgetAlert(false)}>✕</button>
+            </div>
+          <div
+            className={styles.card}
+            style={{
+              background: C.card,
+              border:
+                budgetStatus === 'Exceeded'
+                  ? '1.5px solid #EF4444'
+                  : (budgetStatus === 'Near Limit' || budgetStatus === 'Reached')
+                  ? '1.5px solid #F59E0B'
+                  : budgetStatus === 'Safe'
+                  ? '1.5px solid #00C48C'
+                  : `1.5px solid ${C.line}`,
+            }}
+          >
+            <div
+              className={styles.cardTitle}
+              style={{
+                color:
+                  budgetStatus === 'Exceeded'
+                    ? '#EF4444'
+                    : (budgetStatus === 'Near Limit' || budgetStatus === 'Reached')
+                    ? '#F59E0B'
+                    : budgetStatus === 'Safe'
+                    ? '#00C48C'
+                    : C.muted,
+              }}
+            >
+              Budget Alert
+            </div>
+            <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, fontWeight: 600 }}>
+              {budgetAlertMessage}
+            </div>
+            {hasMonthlyBudget && (
+              <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 11, background: 'color-mix(in srgb, #E8EEF8 70%, var(--card, #FFFFFF))', border: `1px solid ${C.line}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Monthly budget progress</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: budgetStatus === 'Exceeded' ? '#EF4444' : (budgetStatus === 'Near Limit' || budgetStatus === 'Reached') ? '#D97706' : '#059669' }}>
+                    {budgetUsedPercent}% used
+                  </span>
+                </div>
+                <div role="progressbar" aria-label="Monthly budget used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, budgetUsedPercent)} style={{ height: 9, background: '#DDE5F2', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.min(100, Math.max(0, budgetUsedPercent))}%`, height: '100%', borderRadius: 999, background: budgetStatus === 'Exceeded' ? '#EF4444' : (budgetStatus === 'Near Limit' || budgetStatus === 'Reached') ? '#F59E0B' : '#10B981', transition: 'width 0.2s ease' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 8, color: C.muted, fontSize: 12 }}>
+                  <span>{formatRM(selectedMonthTotal)} spent</span>
+                  <span>{remainingBudget >= 0 ? `${formatRM(remainingBudget)} remaining` : `${formatRM(Math.abs(remainingBudget))} over budget`}</span>
+                </div>
+              </div>
+            )}
+            <div style={{ marginTop: 12 }}>
+              <div className={styles.statRow}>
+                <span className={styles.statLabel}>Status</span>
+                <span className={styles.statVal}>
+                  <span
+                    className={
+                      budgetStatus === 'Exceeded'
+                        ? styles.badgeRed
+                        : (budgetStatus === 'Near Limit' || budgetStatus === 'Reached')
+                        ? styles.badgeAmber
+                        : budgetStatus === 'Safe'
+                        ? styles.badgeGreen
+                        : styles.badgeGray
+                    }
+                  >
+                    {budgetStatus}
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+          </div>
+        </div>
+      )}
+      {showCalculator && <ExpenseCalculator onClose={() => setShowCalculator(false)} />}
       {showAddExpense && (
         <ExpenseModal
           title="Add Expense"
