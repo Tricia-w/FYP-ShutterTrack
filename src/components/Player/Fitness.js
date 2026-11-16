@@ -6562,6 +6562,7 @@ export default function Fitness() {
           <div
             style={{
               display: 'flex',
+              alignItems: 'center',
               gap: 10,
               flexWrap: 'wrap',
               justifyContent: 'flex-end',
@@ -6571,7 +6572,7 @@ export default function Fitness() {
             <button
               type="button"
               className={styles.btnPrimary}
-              style={{ background: '#10B981' }}
+              style={{ background: '#10B981', height: 36, minHeight: 36, padding: '0 14px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}
               onClick={openAddTest}
             >
               + Fitness Test
@@ -6580,7 +6581,7 @@ export default function Fitness() {
             <button
               type="button"
               className={styles.btnPrimary}
-              style={{ background: '#7C3AED' }}
+              style={{ background: '#7C3AED', height: 36, minHeight: 36, padding: '0 14px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}
               onClick={openAddRecovery}
             >
               + Recovery Check-in
@@ -6589,6 +6590,7 @@ export default function Fitness() {
             <button
               type="button"
               className={styles.btnOutline}
+              style={{ height: 36, minHeight: 36, padding: '0 14px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}
               onClick={openAddInjury}
             >
               + Log Injury

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 
 const MODE_TITLES = {
   all: "Notifications",
@@ -246,9 +247,12 @@ export default function CoachNotificationBell({
   title,
   limit = 50,
   onNotificationOpened,
+  usePortal = false,
 }) {
   const navigate = useNavigate();
   const wrapRef = useRef(null);
+  const popupRef = useRef(null);
+  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 14, width: 430, maxHeight: 560 });
   const notificationSoundRef = useRef(null);
   const soundEnabledRef = useRef(true);
   const [open, setOpen] = useState(false);
@@ -537,11 +541,37 @@ export default function CoachNotificationBell({
     playNotificationSound,
     supabase,
   ]);
+  const updatePopupPosition = useCallback(() => {
+    if (!wrapRef.current || !usePortal) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const sideGap = 14;
+    const width = Math.min(430, Math.max(280, window.innerWidth - 28));
+    const left = Math.max(sideGap, Math.min(rect.right - width, window.innerWidth - width - sideGap));
+    const below = window.innerHeight - rect.bottom - 12;
+    const above = rect.top - 12;
+    const openAbove = below < 220 && above > below;
+    const maxHeight = Math.max(150, Math.min(560, openAbove ? above - 6 : below - 6));
+    const top = openAbove ? Math.max(sideGap, rect.top - maxHeight - 6) : rect.bottom + 6;
+    setPopupPosition({ top, left, width, maxHeight });
+  }, [usePortal]);
+
+  useEffect(() => {
+    if (!open || !usePortal) return undefined;
+    updatePopupPosition();
+    window.addEventListener("resize", updatePopupPosition);
+    window.addEventListener("scroll", updatePopupPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePopupPosition);
+      window.removeEventListener("scroll", updatePopupPosition, true);
+    };
+  }, [open, usePortal, updatePopupPosition]);
+
   useEffect(() => {
     const closeOutside = event => {
     if (
         wrapRef.current &&
-        !wrapRef.current.contains(event.target)
+        !wrapRef.current.contains(event.target) &&
+        !popupRef.current?.contains(event.target)
     ) {
         setOpen(false);
     }
@@ -642,71 +672,16 @@ export default function CoachNotificationBell({
     );
     }
   };
-  return (
-    <div
-    ref={wrapRef}
-    style={{
-        position: "relative",
-        display: "inline-flex",
-        zIndex: open ? 3000 : "auto",
-    }}
-    >
-    <button
-        type="button"
-        onClick={() => {
-          setOpen(current => !current);
-          loadNotifications();
-        }}
-        title="Notifications"
-        aria-label="Notifications"
-        style={{
-          width: 46,
-          height: 46,
-          borderRadius: 14,
-          border: "1px solid var(--line, #DDE3EF)",
-          background: "var(--card, #FFFFFF)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 19,
-          cursor: "pointer",
-          position: "relative",
-          boxShadow: "0 4px 14px rgba(13,27,62,0.06)",
-        }}
-    >
-        🔔
-        {unreadCount > 0 && (
-          <span
-        style={{
-              position: "absolute",
-              top: -7,
-              right: -7,
-              minWidth: 20,
-              height: 20,
-              padding: "0 5px",
-              borderRadius: 999,
-              background: "#EF4444",
-              color: "#FFFFFF",
-              fontSize: 10,
-              fontWeight: 900,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "2px solid #FFFFFF",
-        }}
-          >
-        {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
-        )}
-    </button>
-    {open && (
+  const popup = open ? (
         <div
+          ref={popupRef}
           style={{
-        position: "absolute",
-        top: 54,
-        right: 0,
-        width: "min(430px, calc(100vw - 28px))",
-        maxHeight: 560,
+        position: usePortal ? "fixed" : "absolute",
+        top: usePortal ? popupPosition.top : 54,
+        ...(usePortal ? { left: popupPosition.left } : { right: 0 }),
+        width: usePortal ? popupPosition.width : "min(430px, calc(100vw - 28px))",
+        maxHeight: usePortal ? popupPosition.maxHeight : 560,
+        zIndex: usePortal ? 10000 : undefined,
         overflow: "hidden",
         background: "var(--card, #FFFFFF)",
         border: "1px solid var(--line, #DDE3EF)",
@@ -782,7 +757,7 @@ export default function CoachNotificationBell({
           </div>
           <div
         style={{
-              maxHeight: 490,
+              maxHeight: usePortal ? Math.max(90, popupPosition.maxHeight - 75) : 490,
               overflowY: "auto",
               padding: 12,
         }}
@@ -929,7 +904,69 @@ export default function CoachNotificationBell({
         )}
           </div>
         </div>
-    )}
+  ) : null;
+
+  return (
+    <div
+    ref={wrapRef}
+    style={{
+        position: "relative",
+        display: "inline-flex",
+        paddingRight: 12, // Reserve room for the badge outside the button.
+        flexShrink: 0,
+        overflow: "visible",
+        zIndex: open ? 3000 : "auto",
+    }}
+    >
+    <button
+        type="button"
+        onClick={() => {
+          setOpen(current => !current);
+          loadNotifications();
+        }}
+        title="Notifications"
+        aria-label="Notifications"
+        style={{
+          width: 46,
+          height: 46,
+          borderRadius: 14,
+          border: "1px solid var(--line, #DDE3EF)",
+          background: "var(--card, #FFFFFF)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 19,
+          cursor: "pointer",
+          position: "relative",
+          boxShadow: "0 4px 14px rgba(13,27,62,0.06)",
+        }}
+    >
+        🔔
+        {unreadCount > 0 && (
+          <span
+        style={{
+              position: "absolute",
+              top: -7,
+              right: -7,
+              minWidth: 20,
+              height: 20,
+              padding: "0 5px",
+              borderRadius: 999,
+              background: "#EF4444",
+              color: "#FFFFFF",
+              fontSize: 10,
+              fontWeight: 900,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "2px solid #FFFFFF",
+        }}
+          >
+        {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+    </button>
+    {open && (usePortal && typeof document !== "undefined" ? createPortal(popup, document.body) : popup)}
     </div>
   );
 }

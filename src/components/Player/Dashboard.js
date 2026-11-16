@@ -988,7 +988,7 @@ export default function Dashboard() {
               }}
               title="Scan Player, Coach, or Skill Verification QR"
               aria-label="Scan Player, Coach, or Skill Verification QR"
-              style={{ minHeight: 40, padding: '8px 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, whiteSpace: 'nowrap' }}
+              style={{ width: 120, height: 36, minHeight: 36, padding: '0 12px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, whiteSpace: 'nowrap', flexShrink: 0 }}
             >
               <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3M21 16v3a2 2 0 0 1-2 2h-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -997,7 +997,7 @@ export default function Dashboard() {
               Scan QR
             </button>
 
-            <button className={styles.btnPrimary} onClick={() => navigate('/performance')}>
+            <button className={styles.btnPrimary} onClick={() => navigate('/performance')} style={{ width: 120, height: 36, minHeight: 36, padding: '0 12px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, whiteSpace: 'nowrap', flexShrink: 0 }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path
                   d="M7 1v12M1 7h12"
@@ -1018,6 +1018,8 @@ export default function Dashboard() {
               style={{
                 width: 46,
                 height: 46,
+                boxSizing: 'border-box',
+                flexShrink: 0,
                 borderRadius: 14,
                 border: '1px solid var(--line, #E2E8F0)',
                 background: 'var(--card, #FFFFFF)',

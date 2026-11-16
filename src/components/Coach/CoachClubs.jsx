@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 //import { useNavigate } from "react-router-dom";
 import CoachNotificationBell from "../Notifications/CoachNotificationBell";
+import { CoachPageHeader } from "./CoachShared";
 import { supabase } from "../../lib/supabase";
 import styles from "../Layout/Pages.module.css";
 import Loader from "../Loader/Loader";
@@ -6318,29 +6319,20 @@ export default function CoachClubs() {
 
   return (
     <div className={styles.playerReadablePage}>
-      <div className={styles.pageHead} style={{ overflow: "visible" }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 16,
-          }}
-        >
-          <div>
-            <div className={styles.pageTitle}>Coach Clubs</div>
-            <div className={styles.pageSub}>
-              Join a club as a coach, or create and manage your own club
-            </div>
+      <CoachPageHeader
+        title="Coach Clubs"
+        subtitle="Join a club as a coach, or create and manage your own club"
+        rightAction={
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <CoachNotificationBell
+              supabase={supabase}
+              mode="clubs"
+              usePortal
+              title="Club notifications"
+            />
           </div>
-
-          <CoachNotificationBell
-            supabase={supabase}
-            mode="clubs"
-            title="Club notifications"
-          />
-        </div>
-      </div>
+        }
+      />
 
       <div className={styles.tabs} style={{ marginBottom: 16 }}>
         <button

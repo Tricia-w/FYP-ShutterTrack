@@ -942,7 +942,15 @@ export default function NotificationBell({
     <div
       ref={wrapRef}
       className="sharedNotificationBellWrap"
-      style={{ position: "relative" }}
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        paddingTop: 8, // Reserve space for the badge above the bell.
+        paddingBottom: 8, // Balance the top padding so the bell aligns with adjacent 46px buttons.
+        paddingRight: 10, // Keep the badge inside the wrapper to the right.
+        flexShrink: 0,
+        overflow: "visible",
+      }}
     >
       <style>{`
         @media (max-width: 640px) {
@@ -999,29 +1007,34 @@ export default function NotificationBell({
         }}
       >
         🔔
-        {unread > 0 && (
-          <span
-            style={{
-              position: "absolute",
-              top: -5,
-              right: -5,
-              minWidth: 19,
-              height: 19,
-              padding: "0 5px",
-              borderRadius: 999,
-              background: "#EF4444",
-              color: "#FFFFFF",
-              border: `2px solid ${C.card}`,
-              fontSize: 10,
-              fontWeight: 800,
-              display: "grid",
-              placeItems: "center",
-            }}
-          >
-            {unread > 99 ? "99+" : unread}
-          </span>
-        )}
       </button>
+      {unread > 0 && (
+        <span
+          aria-label={`${unread} unread notifications`}
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            minWidth: 19,
+            height: 19,
+            padding: "0 5px",
+            boxSizing: "border-box",
+            borderRadius: 999,
+            background: "#EF4444",
+            color: "#FFFFFF",
+            border: `2px solid ${C.card}`,
+            fontSize: 10,
+            fontWeight: 800,
+            lineHeight: 1,
+            display: "grid",
+            placeItems: "center",
+            pointerEvents: "none",
+            zIndex: 1,
+          }}
+        >
+          {unread > 99 ? "99+" : unread}
+        </span>
+      )}
       {open &&
         typeof document !== "undefined" &&
         createPortal(
