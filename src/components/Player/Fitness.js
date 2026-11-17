@@ -4096,6 +4096,11 @@ export default function Fitness() {
             'It was marked as Missed because no status was selected. ' +
             'If you attended, open the schedule and change it to Completed.'
 
+          // Use the same per-schedule key as the database reminder job.
+          // This allows different missed sessions to have their own alerts.
+          const scheduleNotificationKey =
+            `player-schedule-missed-${item.id}`
+
           const {
             data: existingNotifications,
             error: notificationLoadError,
@@ -4103,12 +4108,7 @@ export default function Fitness() {
             .from('notifications')
             .select('id')
             .eq('user_id', userId)
-            .eq(
-              'source_type',
-              'player_schedule_status_reminder'
-            )
-            .eq('title', notificationTitle)
-            .eq('message', message)
+            .eq('dedupe_key', scheduleNotificationKey)
             .limit(1)
 
           if (notificationLoadError) {
@@ -4139,14 +4139,16 @@ export default function Fitness() {
                   'player_schedule_status_reminder',
                 action_url:
                   '/player/fitness',
+                dedupe_key: scheduleNotificationKey,
                 is_read: false,
                 created_at:
                   notificationTime,
               })
 
-            if (
-              notificationInsertError
-            ) {
+            if (notificationInsertError?.code === '23505') {
+              // The scheduled job (or another tab) created it first.
+              // Keep the existing alert instead of treating it as a failure.
+            } else if (notificationInsertError) {
               console.error(
                 'Create schedule reminder notification error:',
                 notificationInsertError
@@ -6888,18 +6890,19 @@ export default function Fitness() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent:
-                  'space-between',
+                justifyContent: 'space-between',
                 gap: 10,
-                marginBottom: 10,
+                marginBottom: 13,
+                flexWrap: 'wrap',
               }}
             >
               <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 9,
+                  gap: 10,
                   minWidth: 0,
+                  flex: '1 1 150px',
                 }}
               >
                 <div
@@ -6913,42 +6916,40 @@ export default function Fitness() {
                     flexShrink: 0,
                   }}
                 >
-                  <FitnessIcon
-                    type="fitness"
-                    color="#7C3AED"
-                    size={18}
-                  />
+                  <FitnessIcon type="fitness" color="#7C3AED" size={18} />
                 </div>
-
-                <div
-                  className={styles.metricLbl}
-                  style={{
-                    fontWeight: 700,
-                    color:
-                      'var(--text, #0D1B3E)',
-                  }}
-                >
-                  Fitness Goal
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    className={styles.metricLbl}
+                    style={{
+                      fontWeight: 700,
+                      color: 'var(--text, #0D1B3E)',
+                      lineHeight: 1.25,
+                    }}
+                  >
+                    Fitness Goal
+                  </div>
+                  {fitnessGoals.length > 1 && (
+                    <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 700, marginTop: 3 }}>
+                      {fitnessGoals.length} goals
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {fitnessGoals.length > 1 && (
-                <span style={{ marginLeft: 'auto', fontSize: 11, color: '#7C3AED', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                  {fitnessGoals.length} goals
-                </span>
-              )}
 
               <button
                 type="button"
                 className={styles.btnOutline}
                 onClick={openFitnessGoal}
                 style={{
-                  padding: '6px 10px',
+                  padding: '7px 11px',
                   fontSize: 12,
                   whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  marginLeft: 'auto',
                 }}
               >
-                {'View Goal'}
+                View Goal
               </button>
             </div>
 
@@ -8963,10 +8964,10 @@ export default function Fitness() {
             overflow-x: hidden !important;
           }
 
-          @media (max-width: 1200px) {
+          /* Two even rows instead of leaving the Fitness Goal card alone. */
+          @media (min-width: 641px) and (max-width: 1200px) {
             .fitness-mobile-metrics {
-              grid-template-columns:
-                repeat(3, minmax(0, 1fr)) !important;
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
             }
           }
 
