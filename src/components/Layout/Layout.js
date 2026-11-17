@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   NavLink,
   Outlet,
@@ -8,6 +8,22 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import styles from './Layout.module.css'
+
+function RadialNavIcon({ name }) {
+  const paths = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
+    profile: <><circle cx="12" cy="8" r="3.5"/><path d="M4.5 21c0-4 3-7 7.5-7s7.5 3 7.5 7"/></>,
+    chart: <><path d="M3 19V5M3 19h18M5 15l5-5 4 3 6-8"/></>,
+    fitness: <path d="M2 13h4l2-7 4 13 3-9 2 3h5"/>,
+    wallet: <><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18M6 6V4h13"/></>,
+    players: <><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6M17.5 14a5 5 0 0 1 3.5 5"/></>,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></>,
+    clubs: <><path d="m3 10 9-7 9 7v11H3z"/><path d="M9 21v-8h6v8"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2.2 2.2M16.8 16.8 19 19M19 5l-2.2 2.2M7.2 16.8 5 19"/></>,
+    logout: <><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5M14 8l4 4-4 4M8 12h10"/></>,
+  }
+  return <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.dashboard}</svg>
+}
 
 export default function Layout() {
   const {
@@ -44,9 +60,34 @@ export default function Layout() {
   const [showAccessDenied, setShowAccessDenied] =
     useState(false)
 
-  // Tablet / small-laptop sidebar can be minimised.
-  // Desktop stays fully open, while mobile keeps the existing top navigation.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // The navigation preference is local to each signed-in account.
+  // Keep floating as the default to preserve the user's current layout.
+  const [navigationStyle, setNavigationStyle] = useState('floating')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('shuttleClassicSidebarCollapsed') === 'true'
+  })
+
+  useEffect(() => {
+    window.localStorage.setItem('shuttleClassicSidebarCollapsed', String(sidebarCollapsed))
+  }, [sidebarCollapsed])
+
+  // Bottom-right by default. The floating button can be placed anywhere on screen.
+  const [radialExpanded, setRadialExpanded] = useState(false)
+  const [dragHoverIndex, setDragHoverIndex] = useState(-1)
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800,
+  }))
+  const [dock, setDock] = useState(() => ({
+    x: typeof window !== 'undefined' ? window.innerWidth - 48 : 1232,
+    y: typeof window !== 'undefined' ? window.innerHeight - 56 : 744,
+  }))
+  const radialGestureRef = useRef(null)
+  const radialCleanupRef = useRef(null)
+  const skipRoleClickRef = useRef(false)
+  const radialItemsRef = useRef([])
+  const [floatingDrag, setFloatingDrag] = useState(null)
 
   const [hasPlayerProfile, setHasPlayerProfile] =
     useState(false)
@@ -414,17 +455,340 @@ export default function Layout() {
     }
   }
 
+  const radialItems = mode === 'coach'
+    ? [
+        { label: 'Dashboard', icon: 'dashboard', to: '/coach' },
+        { label: 'My Players', icon: 'players', to: '/coach/players' },
+        { label: 'Sessions', icon: 'calendar', to: '/coach/sessions' },
+        { label: 'Progress', icon: 'chart', to: '/coach/progress' },
+        { label: 'Clubs', icon: 'clubs', to: '/coach/clubs' },
+        { label: 'My Profile', icon: 'profile', to: '/coach/profile' },
+        { label: 'Settings', icon: 'settings', to: '/coach/settings' },
+        { label: 'Log out', icon: 'logout', action: handleLogout },
+      ]
+    : [
+        { label: 'Dashboard', icon: 'dashboard', to: '/dashboard' },
+        { label: 'My Profile', icon: 'profile', to: '/profile' },
+        { label: 'Performance', icon: 'chart', to: '/performance' },
+        { label: 'Fitness', icon: 'fitness', to: '/fitness' },
+        { label: 'Expenses', icon: 'wallet', to: '/expenses' },
+        { label: 'Players & Opponents', icon: 'players', to: '/players' },
+        { label: 'Clubs', icon: 'clubs', to: '/clubs' },
+        { label: 'Settings', icon: 'settings', to: '/settings' },
+        { label: 'Log out', icon: 'logout', action: handleLogout },
+      ]
+
   const navClass = ({ isActive }) =>
-    `${styles.navItem} ${
-      isActive ? styles.active : ''
-    }`
+    `${styles.navItem} ${isActive ? styles.active : ''}`
+
+  useEffect(() => {
+    if (!user?.id) {
+      setNavigationStyle('floating')
+      return
+    }
+    try {
+      const saved = localStorage.getItem(`shuttleNavigationStyle:${user.id}`)
+      setNavigationStyle(saved === 'sidebar' ? 'sidebar' : 'floating')
+    } catch {
+      setNavigationStyle('floating')
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    const handleNavigationStyleChange = (event) => {
+      if (event?.detail?.userId && String(event.detail.userId) !== String(user?.id)) return
+      const next = event?.detail?.style
+      if (next === 'sidebar' || next === 'floating') {
+        setNavigationStyle(next)
+        setRadialExpanded(false)
+        setDragHoverIndex(-1)
+      }
+    }
+    window.addEventListener('shuttle-navigation-style-changed', handleNavigationStyleChange)
+    return () => window.removeEventListener('shuttle-navigation-style-changed', handleNavigationStyleChange)
+  }, [user?.id])
+
+  const hasBothModes = !checkingModes &&
+    (hasPlayerProfile || hasPlayerAccess === true || profile?.has_player_access === true) &&
+    (hasCoachProfile || hasCoachAccess === true || profile?.has_coach_access === true)
+
+  const openRadialPage = (item) => {
+    setDragHoverIndex(-1)
+    setRadialExpanded(false)
+    if (item.action) item.action()
+    else if (item.to && item.to !== location.pathname) navigate(item.to)
+  }
+
+  const toggleRadialRole = () => {
+    if (!hasBothModes) {
+      // Keep the current role when the account does not have both profiles.
+      return
+    }
+    setRadialExpanded(false)
+    switchMode(mode === 'player' ? 'coach' : 'player')
+  }
+
+
+  const WHEEL_SIZE = Math.min(328, viewport.width - 16, viewport.height - 16)
+  const WHEEL_RADIUS = WHEEL_SIZE / 2
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+  const dockX = floatingDrag?.x ?? clamp(dock.x, 36, Math.max(36, viewport.width - 36))
+  const dockY = floatingDrag?.y ?? clamp(dock.y, 44, Math.max(44, viewport.height - 44))
+  // The wheel shifts inward when opened, but the collapsed button stays where dropped.
+  const menuX = clamp(dockX, WHEEL_RADIUS + 8, Math.max(WHEEL_RADIUS + 8, viewport.width - WHEEL_RADIUS - 8))
+  const menuY = clamp(dockY, WHEEL_RADIUS + 8, Math.max(WHEEL_RADIUS + 8, viewport.height - WHEEL_RADIUS - 8))
+  const centreX = radialExpanded ? menuX : dockX
+  const centreY = radialExpanded ? menuY : dockY
+
+  useEffect(() => {
+    const refreshSize = () => setViewport({ width: window.innerWidth, height: window.innerHeight })
+    window.addEventListener('resize', refreshSize)
+    return () => window.removeEventListener('resize', refreshSize)
+  }, [])
+
+  useEffect(() => {
+    const key = `shuttleFloatingDock:${user?.id || 'default'}`
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || 'null')
+      if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+        // Exact position from the freely movable version.
+        setDock({ x: saved.x, y: saved.y })
+      } else if (saved && ['left', 'right'].includes(saved.side) && Number.isFinite(saved.y)) {
+        // Migrate the previous edge-docked position.
+        setDock({ x: saved.side === 'left' ? 48 : window.innerWidth - 48, y: saved.y })
+      } else {
+        setDock({ x: window.innerWidth - 48, y: window.innerHeight - 56 })
+      }
+    } catch {
+      setDock({ x: window.innerWidth - 48, y: window.innerHeight - 56 })
+    }
+  }, [user?.id])
+
+  // P/C is for the Valorant-style wheel. Drag the separate grip to move it.
+  const findRadialTarget = (clientX, clientY) => {
+    const nodes = Array.from(document.querySelectorAll('[data-shuttle-radial-index]'))
+    let nearest = -1
+    let nearestDistance = Infinity
+    nodes.forEach((node) => {
+      const rect = node.getBoundingClientRect()
+      const distance = Math.hypot(clientX - rect.left - rect.width / 2, clientY - rect.top - rect.height / 2)
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearest = Number(node.getAttribute('data-shuttle-radial-index'))
+      }
+    })
+    return nearestDistance <= 38 ? nearest : -1
+  }
+
+  const startRadialGesture = (event) => {
+    if (event.button !== undefined && event.button !== 0) return
+    if (radialCleanupRef.current) radialCleanupRef.current()
+    const pointerId = event.pointerId
+    const startedExpanded = radialExpanded
+    const gesture = { pointerId, x: event.clientX, y: event.clientY, selecting: startedExpanded }
+    radialGestureRef.current = gesture
+    skipRoleClickRef.current = false
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      radialCleanupRef.current = null
+    }
+
+    const onMove = (moveEvent) => {
+      const current = radialGestureRef.current
+      if (!current || moveEvent.pointerId !== pointerId) return
+      if (!current.selecting && Math.hypot(moveEvent.clientX - current.x, moveEvent.clientY - current.y) > 9) {
+        current.selecting = true
+        skipRoleClickRef.current = true
+        setRadialExpanded(true)
+      }
+      if (current.selecting) {
+        setDragHoverIndex(findRadialTarget(moveEvent.clientX, moveEvent.clientY))
+      }
+    }
+
+    const finish = (endEvent, cancelled = false) => {
+      if (endEvent.pointerId !== pointerId) return
+      const current = radialGestureRef.current
+      if (!current) return
+      const selecting = current.selecting
+      const destination = selecting && !cancelled
+        ? findRadialTarget(endEvent.clientX, endEvent.clientY)
+        : -1
+      cleanup()
+      radialGestureRef.current = null
+      setDragHoverIndex(-1)
+      if (selecting) {
+        skipRoleClickRef.current = true
+        if (destination >= 0 && radialItemsRef.current[destination]) {
+          openRadialPage(radialItemsRef.current[destination])
+        }
+      }
+    }
+    const onUp = (upEvent) => finish(upEvent)
+    const onCancel = (cancelEvent) => finish(cancelEvent, true)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    radialCleanupRef.current = cleanup
+  }
+
+  const startDockGesture = (event) => {
+    if (event.button !== undefined && event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (radialCleanupRef.current) radialCleanupRef.current()
+    const pointerId = event.pointerId
+    const x0 = clamp(dock.x, 36, Math.max(36, viewport.width - 36))
+    const y0 = clamp(dock.y, 44, Math.max(44, viewport.height - 44))
+    const startX = event.clientX
+    const startY = event.clientY
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      radialCleanupRef.current = null
+    }
+    const onMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return
+      setFloatingDrag({
+        x: clamp(x0 + moveEvent.clientX - startX, 36, Math.max(36, viewport.width - 36)),
+        y: clamp(y0 + moveEvent.clientY - startY, 44, Math.max(44, viewport.height - 44)),
+      })
+    }
+    const finish = (endEvent, cancelled = false) => {
+      if (endEvent.pointerId !== pointerId) return
+      cleanup()
+      setFloatingDrag(null)
+      if (cancelled) return
+      const x = clamp(x0 + endEvent.clientX - startX, 36, Math.max(36, viewport.width - 36))
+      const y = clamp(y0 + endEvent.clientY - startY, 44, Math.max(44, viewport.height - 44))
+      // Store the actual drop coordinates; do not snap to either edge.
+      const nextDock = { x, y }
+      setDock(nextDock)
+      try { localStorage.setItem(`shuttleFloatingDock:${user?.id || 'default'}`, JSON.stringify(nextDock)) } catch { /* Storage unavailable */ }
+    }
+    const onUp = (upEvent) => finish(upEvent)
+    const onCancel = (cancelEvent) => finish(cancelEvent, true)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    radialCleanupRef.current = cleanup
+  }
+
+  radialItemsRef.current = radialItems
+
+  useEffect(() => () => {
+    if (radialCleanupRef.current) radialCleanupRef.current()
+  }, [])
 
   return (
-    <div className={styles.app}>
+    <div className={styles.app} style={navigationStyle === 'floating' ? { display: 'block', width: '100%', minHeight: '100vh' } : undefined}>
+      {/* Keep the classic sidebar collapsible on full-size desktops too. */}
+      {navigationStyle === 'sidebar' && (
+        <style>{`
+          /* Explicitly show the collapse control on desktop, even if the CSS module hides it. */
+          .${styles.sidebar} .${styles.sidebarLogo} {
+            position: relative !important;
+          }
+          .${styles.sidebar} .${styles.sidebarCollapseBtn} {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            position: absolute !important;
+            top: 17px !important;
+            right: 12px !important;
+            left: auto !important;
+            width: 30px !important;
+            height: 30px !important;
+            padding: 0 !important;
+            align-items: center !important;
+            justify-content: center !important;
+            border-radius: 9px !important;
+            border: 1px solid rgba(175,199,238,0.35) !important;
+            background: rgba(255,255,255,0.06) !important;
+            color: #dce8ff !important;
+            cursor: pointer !important;
+            z-index: 5 !important;
+          }
+          .${styles.sidebar} .${styles.sidebarCollapseBtn}:hover {
+            background: rgba(66,115,213,0.4) !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.sidebarCollapseBtn} {
+            top: 14px !important;
+            right: 21px !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] {
+            width: 72px !important;
+            min-width: 72px !important;
+            max-width: 72px !important;
+            flex: 0 0 72px !important;
+            overflow-x: hidden !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.sidebarLogo} {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 12px !important;
+            padding: 16px 0 !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.logoMark} {
+            visibility: hidden !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.logoName},
+          [data-shuttle-sidebar-collapsed="true"] .${styles.logoSub},
+          [data-shuttle-sidebar-collapsed="true"] .${styles.navLabel},
+          [data-shuttle-sidebar-collapsed="true"] .${styles.userMeta},
+          [data-shuttle-sidebar-collapsed="true"] .${styles.logoutText} {
+            display: none !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.navSection} {
+            padding-left: 7px !important;
+            padding-right: 7px !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.navItem} {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 0 !important;
+            padding: 12px 0 !important;
+            font-size: 0 !important;
+            line-height: 0 !important;
+            overflow: hidden !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.navItem} svg {
+            display: block !important;
+            width: 19px !important;
+            height: 19px !important;
+            flex-shrink: 0 !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.sidebarUser},
+          [data-shuttle-sidebar-collapsed="true"] .${styles.sidebarLogout} {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+          }
+          [data-shuttle-sidebar-collapsed="true"] .${styles.logoutBtn} {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            padding: 12px !important;
+            font-size: 0 !important;
+          }
+        `}</style>
+      )}
+      {navigationStyle === 'sidebar' && (
       <aside
         className={`${styles.sidebar} ${
           sidebarCollapsed ? styles.sidebarCollapsed : ''
         }`}
+        data-shuttle-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
       >
 
         {/* Logo */}
@@ -517,14 +881,19 @@ export default function Layout() {
           <div
             className={styles.roleSwitcherWrap}
             style={{
-              padding: '0 12px 16px',
+              padding: sidebarCollapsed ? '8px 4px' : '16px 12px',
               borderBottom: '1px solid #1e2d50',
-              marginBottom: 16,
+              marginBottom: sidebarCollapsed ? 8 : 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
             <div
               style={{
                 display: 'flex',
+                flexDirection: sidebarCollapsed ? 'column' : 'row',
+                width: '100%',
                 background: '#0a1020',
                 borderRadius: 10,
                 padding: 3,
@@ -534,9 +903,11 @@ export default function Layout() {
               <button
                 type="button"
                 onClick={() => switchMode('player')}
+                aria-label="Switch to Player portal"
+                title="Player portal"
                 style={{
                   flex: 1,
-                  padding: '7px 0',
+                  padding: sidebarCollapsed ? '7px 0' : '7px 0',
                   borderRadius: 8,
                   border: 'none',
                   fontSize: 12,
@@ -553,15 +924,17 @@ export default function Layout() {
                       : '#4b6080',
                 }}
               >
-                Player
+                {sidebarCollapsed ? 'P' : 'Player'}
               </button>
 
               <button
                 type="button"
                 onClick={() => switchMode('coach')}
+                aria-label="Switch to Coach portal"
+                title="Coach portal"
                 style={{
                   flex: 1,
-                  padding: '7px 0',
+                  padding: sidebarCollapsed ? '7px 0' : '7px 0',
                   borderRadius: 8,
                   border: 'none',
                   fontSize: 12,
@@ -578,7 +951,7 @@ export default function Layout() {
                       : '#4b6080',
                 }}
               >
-                Coach
+                {sidebarCollapsed ? 'C' : 'Coach'}
               </button>
             </div>
           </div>
@@ -597,7 +970,7 @@ export default function Layout() {
             <NavLink
               to="/coach"
               end
-              className={navClass}
+              title="/coach" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -647,7 +1020,7 @@ export default function Layout() {
             
             <NavLink
               to="/coach/players"
-              className={navClass}
+              title="/coach/players" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -687,7 +1060,7 @@ export default function Layout() {
 
             <NavLink
               to="/coach/sessions"
-              className={navClass}
+              title="/coach/sessions" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -716,7 +1089,7 @@ export default function Layout() {
 
             <NavLink
               to="/coach/progress"
-              className={navClass}
+              title="/coach/progress" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -738,7 +1111,7 @@ export default function Layout() {
 
             <NavLink
               to="/coach/clubs"
-              className={navClass}
+              title="/coach/clubs" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -773,7 +1146,7 @@ export default function Layout() {
 
             <NavLink
               to="/coach/profile"
-              className={navClass}
+              title="/coach/profile" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -807,7 +1180,7 @@ export default function Layout() {
 
             <NavLink
               to="/coach/settings"
-              className={navClass}
+              title="/coach/settings" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -847,7 +1220,7 @@ export default function Layout() {
             <NavLink
               to="/dashboard"
               end
-              className={navClass}
+              title="/dashboard" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -904,7 +1277,7 @@ export default function Layout() {
 
             <NavLink
               to="/profile"
-              className={navClass}
+              title="/profile" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -931,7 +1304,7 @@ export default function Layout() {
 
             <NavLink
               to="/performance"
-              className={navClass}
+              title="/performance" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -953,7 +1326,7 @@ export default function Layout() {
 
             <NavLink
               to="/fitness"
-              className={navClass}
+              title="/fitness" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -975,7 +1348,7 @@ export default function Layout() {
 
             <NavLink
               to="/expenses"
-              className={navClass}
+              title="/expenses" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -1016,7 +1389,7 @@ export default function Layout() {
 
             <NavLink
               to="/players"
-              className={navClass}
+              title="/players" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -1050,7 +1423,7 @@ export default function Layout() {
             
             <NavLink
               to="/clubs"
-              className={navClass}
+              title="/clubs" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -1085,7 +1458,7 @@ export default function Layout() {
 
             <NavLink
               to="/settings"
-              className={navClass}
+              title="/settings" className={navClass}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -1167,10 +1540,67 @@ export default function Layout() {
           </button>
         </div>
       </aside>
-
-      <main className={styles.main}>
+      )}
+      <main className={styles.main} style={navigationStyle === 'floating' ? { marginLeft: 0, width: '100%', maxWidth: 'none', minWidth: 0, flex: 'none' } : sidebarCollapsed ? { marginLeft: 0, minWidth: 0, flex: '1 1 0%' } : undefined}>
         <Outlet />
       </main>
+
+      {/* Only mount the radial menu when selected in Settings. */}
+      {navigationStyle === 'floating' && radialExpanded && (
+        <button type="button" aria-label="Close navigation menu" onClick={() => setRadialExpanded(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 2799, background: 'rgba(5,13,30,.14)', border: 0, cursor: 'default' }} />
+      )}
+      {navigationStyle === 'floating' && <div style={{ position: 'fixed', left: centreX, top: centreY, width: radialExpanded ? WHEEL_SIZE : 64, height: radialExpanded ? WHEEL_SIZE : 64, transform: 'translate(-50%, -50%)', zIndex: 2800, fontFamily: 'inherit', pointerEvents: 'none' }}>
+        {radialExpanded && (
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'radial-gradient(circle at 47% 40%, #1b3763 0%, #102447 54%, #08172c 100%)', border: '1px solid rgba(139,193,255,.4)', boxShadow: '0 20px 65px rgba(3,12,30,.36), inset 0 0 40px rgba(47,103,220,.13)', pointerEvents: 'auto' }}>
+            <div style={{ position: 'absolute', inset: '17%', borderRadius: '50%', border: '1px dashed rgba(140,185,255,.19)', pointerEvents: 'none' }} />
+              {radialItems.map((item, index) => {
+                // Nine nodes for Player, eight for Coach. Avoid the bottom-right handle.
+                const angle = -Math.PI / 2 + (index * 2 * Math.PI) / radialItems.length
+                const x = 50 + 37.2 * Math.cos(angle)
+                const y = 50 + 37.2 * Math.sin(angle)
+                const isActive = Boolean(item.to) && (location.pathname === item.to || (item.to !== '/coach' && item.to !== '/dashboard' && location.pathname.startsWith(`${item.to}/`)))
+                return (
+                  <button
+                    key={item.label}
+                    data-shuttle-radial-index={index}
+                    type="button"
+                    onClick={() => openRadialPage(item)}
+                    title={item.label}
+                    aria-label={item.label}
+                    aria-current={isActive ? 'page' : undefined}
+                    style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: `translate(-50%, -50%) ${dragHoverIndex === index ? 'scale(1.19)' : 'scale(1)'}`, transition: 'transform .12s, box-shadow .12s, background .12s', width: 47, height: 47, borderRadius: '50%', border: dragHoverIndex === index ? '2px solid #9dfcec' : isActive ? '2px solid #81B5FF' : '1px solid #476691', background: dragHoverIndex === index ? '#0EA883' : isActive ? '#1A5FFF' : '#1b3458', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: dragHoverIndex === index ? '0 0 24px rgba(52,211,153,.75)' : isActive ? '0 0 14px rgba(59,130,246,.55)' : '0 3px 12px rgba(0,0,0,.25)' }}
+                  >
+                    <RadialNavIcon name={item.icon} />
+                  </button>
+                )
+              })}
+            {dragHoverIndex >= 0 && radialItems[dragHoverIndex] && <div style={{ position: 'absolute', left: '50%', top: '77%', transform: 'translateX(-50%)', color: '#5af5cc', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 2px 10px #071322' }}>{radialItems[dragHoverIndex].label}</div>}
+            <div style={{ position: 'absolute', top: '69%', left: '50%', transform: 'translateX(-50%)', color: '#a3badc', fontSize: 10, fontWeight: 650, whiteSpace: 'nowrap', pointerEvents: 'none' }}>{mode === 'coach' ? 'COACH PORTAL' : 'PLAYER PORTAL'}</div>
+          </div>
+        )}
+        <div style={{ position: 'absolute', width: 64, height: 64, left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 2, pointerEvents: 'auto' }}>
+          <button type="button" onPointerDown={startRadialGesture}
+            onClick={() => {
+              if (skipRoleClickRef.current) { skipRoleClickRef.current = false; return }
+              toggleRadialRole()
+            }}
+            title={radialExpanded ? 'Drag toward an icon and release · click to switch role' : 'Drag toward a page icon · tap to switch role'}
+            aria-label={hasBothModes ? `Switch to ${mode === 'player' ? 'Coach' : 'Player'} portal` : `${sidebarRole} portal`}
+            style={{ position: 'absolute', inset: 0, width: 64, height: 64, borderRadius: '50%', border: `3px solid ${mode === 'coach' ? '#72f0cf' : '#90b6ff'}`, background: mode === 'coach' ? 'linear-gradient(145deg,#0b9a76,#05634f)' : 'linear-gradient(145deg,#2977ff,#1241aa)', color: '#fff', fontSize: 27, fontWeight: 900, cursor: radialExpanded ? 'crosshair' : 'grab', touchAction: 'none', userSelect: 'none', boxShadow: '0 10px 28px rgba(13,40,100,.32)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >{mode === 'coach' ? 'C' : 'P'}</button>
+          <button type="button" aria-label={radialExpanded ? 'Minimise navigation' : 'Expand navigation'}
+            title={radialExpanded ? 'Minimise menu' : 'Expand menu'}
+            onClick={() => { setRadialExpanded((previous) => !previous); setDragHoverIndex(-1) }}
+            style={{ position: 'absolute', width: 26, height: 26, right: -5, top: -6, borderRadius: '50%', border: '2px solid #fff', background: '#142c54', color: '#fff', fontSize: 17, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 3px 10px rgba(0,0,0,.28)' }}
+          >{radialExpanded ? '−' : '+'}</button>
+          {!radialExpanded && <button type="button" aria-label="Move floating navigation" title="Drag to reposition the navigation button"
+            onPointerDown={startDockGesture}
+            onClick={(event) => { event.preventDefault(); event.stopPropagation() }}
+            style={{ position: 'absolute', left: -10, bottom: -9, width: 27, height: 27, borderRadius: '50%', border: '2px solid #fff', background: '#142c54', color: '#fff', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', touchAction: 'none', userSelect: 'none', boxShadow: '0 3px 10px rgba(0,0,0,.25)' }}
+          >⠿</button>}
+        </div>
+      </div>}
 
       {showAccessDenied && (
         <div

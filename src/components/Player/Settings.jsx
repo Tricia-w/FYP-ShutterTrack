@@ -105,6 +105,37 @@ const isValidEmail = value => {
 export default function Settings() {
   const navigate = useNavigate()
   const { refreshProfile, logout } = useAuth()
+  const [navStyle, setNavStyle] = useState('floating')
+  const [navStyleUserId, setNavStyleUserId] = useState('')
+
+  useEffect(() => {
+    let active = true
+    supabase.auth.getUser().then(({ data }) => {
+      if (!active) return
+      const id = data?.user?.id || ''
+      setNavStyleUserId(id)
+      try {
+        const stored = id ? localStorage.getItem(`shuttleNavigationStyle:${id}`) : null
+        setNavStyle(stored === 'sidebar' ? 'sidebar' : 'floating')
+      } catch {
+        setNavStyle('floating')
+      }
+    })
+    return () => { active = false }
+  }, [])
+
+  const changeNavigationStyle = (next) => {
+    if (next !== 'sidebar' && next !== 'floating') return
+    setNavStyle(next)
+    try {
+      if (navStyleUserId) localStorage.setItem(`shuttleNavigationStyle:${navStyleUserId}`, next)
+    } catch {
+      // Browser storage might be disabled.
+    }
+    window.dispatchEvent(new CustomEvent('shuttle-navigation-style-changed', {
+      detail: { style: next, userId: navStyleUserId },
+    }))
+  }
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -1389,6 +1420,43 @@ export default function Settings() {
               <span className={styles.badgeBlue}>
                 Current mode: {settings.darkMode ? 'Dark' : 'Light'}
               </span>
+            </div>
+            <div style={{ marginTop: 18, borderTop: '1px solid var(--line, #E8EDF6)', paddingTop: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text, #0D1B3E)', marginBottom: 4 }}>
+                Navigation style
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted, #8892A4)', marginBottom: 10 }}>
+                Choose how to move between pages.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  { id: 'sidebar', title: 'Classic sidebar', subtitle: 'Left-side navigation with page labels.', symbol: '☰' },
+                  { id: 'floating', title: 'Floating circular menu', subtitle: 'Moveable P/C circle with drag-to-select navigation.', symbol: '◎' },
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => changeNavigationStyle(option.id)}
+                    aria-pressed={navStyle === option.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                      padding: '11px 12px', textAlign: 'left', cursor: 'pointer',
+                      background: navStyle === option.id ? 'rgba(26,95,255,0.07)' : 'var(--card, #fff)',
+                      border: navStyle === option.id ? '1.5px solid #1A5FFF' : '1px solid var(--line, #E8EDF6)',
+                      borderRadius: 10, fontFamily: 'inherit', color: 'var(--text, #0D1B3E)',
+                    }}
+                  >
+                    <span style={{ color: '#1A5FFF', fontSize: 20, width: 24, textAlign: 'center' }}>{option.symbol}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 12, fontWeight: 700 }}>{option.title}</span>
+                      <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted, #8892A4)', marginTop: 2 }}>{option.subtitle}</span>
+                    </span>
+                    <span aria-hidden="true" style={{ color: navStyle === option.id ? '#1A5FFF' : '#A8B4C6' }}>
+                      {navStyle === option.id ? '◉' : '○'}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
