@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
@@ -424,6 +424,8 @@ export default function CoachSessions() {
   const [showAddSession, setShowAddSession] = useState(false)
   const [editingSession, setEditingSession] = useState(null)
   const [sessionForm, setSessionForm] = useState(emptyForm)
+  const [additionalDates, setAdditionalDates] = useState([])
+  const [dateToAdd, setDateToAdd] = useState('')
   const [loading, setLoading] = useState(true)
   const showLoader = useLoadingDelay(loading, 350)
   const [saving, setSaving] = useState(false)
@@ -438,6 +440,10 @@ export default function CoachSessions() {
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
   const [selectedDate, setSelectedDate] = useState('')
+  // Match Upcoming Sessions to the calendar's measured outer height.
+  // The calendar changes height when a day with sessions is selected.
+  const calendarCardRef = useRef(null)
+  const [calendarCardHeight, setCalendarCardHeight] = useState(null)
   const [studentSearch, setStudentSearch] = useState('')
   const [sessionSearch, setSessionSearch] = useState('')
   const [sessionFilter, setSessionFilter] = useState('All')
@@ -449,6 +455,30 @@ export default function CoachSessions() {
     googleCalendarBusy,
     setGoogleCalendarBusy,
   ] = useState(false)
+
+  useEffect(() => {
+    if (loading) return undefined
+    const calendarCard = calendarCardRef.current
+    if (!calendarCard) return undefined
+
+    const measure = () => {
+      const nextHeight = Math.ceil(calendarCard.getBoundingClientRect().height)
+      if (nextHeight > 0) {
+        setCalendarCardHeight(current => current === nextHeight ? current : nextHeight)
+      }
+    }
+
+    measure()
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(measure)
+      : null
+    if (observer) observer.observe(calendarCard)
+    window.addEventListener('resize', measure)
+    return () => {
+      if (observer) observer.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [loading])
 
   const loadData = useCallback(async () => {
     if (!user?.id) return
@@ -604,8 +634,12 @@ export default function CoachSessions() {
   const openNewSession = useCallback(
     date => {
       setEditingSession(null)
+      setAdditionalDates([])
+      setDateToAdd('')
       setStudentSearch('')
       setError('')
+      setAvailabilityError('')
+      setAvailabilityChecked(false)
       setSessionForm({
         ...emptyForm(),
         date: date || selectedDate || '',
@@ -757,6 +791,8 @@ export default function CoachSessions() {
     if (allFinalised) return
 
     setEditingSession(session)
+    setAdditionalDates([])
+    setDateToAdd('')
     setStudentSearch('')
     setError('')
     setAvailabilityError('')
@@ -815,6 +851,8 @@ export default function CoachSessions() {
 
     setShowAddSession(false)
     setEditingSession(null)
+    setAdditionalDates([])
+    setDateToAdd('')
     setStudentSearch('')
     setSessionForm(emptyForm())
     setError('')
@@ -940,13 +978,18 @@ export default function CoachSessions() {
       }
     }
 
-  const findScheduleConflict = useCallback(async () => {
+  const selectedSessionDates = useMemo(
+    () => [...new Set([sessionForm.date, ...(!editingSession ? additionalDates : [])].filter(Boolean))].sort(),
+    [sessionForm.date, additionalDates, editingSession]
+  )
+
+  const findScheduleConflict = useCallback(async (dateToCheck = sessionForm.date) => {
     const selectedPlayerIds =
       sessionForm.players.filter(Boolean)
 
     if (
       selectedPlayerIds.length === 0 ||
-      !sessionForm.date ||
+      !dateToCheck ||
       !sessionForm.startTime ||
       !sessionForm.endTime
     ) {
@@ -960,7 +1003,7 @@ export default function CoachSessions() {
       'check_coach_player_schedule_conflict',
       {
         p_player_ids: selectedPlayerIds,
-        p_session_date: sessionForm.date,
+        p_session_date: dateToCheck,
         p_start_time: sessionForm.startTime,
         p_end_time: sessionForm.endTime,
         p_ignore_session_id:
@@ -1037,27 +1080,11 @@ export default function CoachSessions() {
     studentMap,
   ])
 
-  /*
-   * Early availability check.
-   *
-   * Runs automatically when the selected player, date, start time,
-   * end time, or edited session changes. A short debounce avoids
-   * sending a query for every tiny form update.
-   */
+  // Validate all selected dates before enabling Save. Saving repeats these checks
+  // to guard against availability changing after the preview.
   useEffect(() => {
-    if (!showAddSession) {
-      setAvailabilityError('')
-      setAvailabilityChecked(false)
-      setCheckingAvailability(false)
-      return undefined
-    }
-
-    if (
-      sessionForm.players.length === 0 ||
-      !sessionForm.date ||
-      !sessionForm.startTime ||
-      !sessionForm.endTime
-    ) {
+    if (!showAddSession || !sessionForm.players.length ||
+        !sessionForm.date || !sessionForm.startTime || !sessionForm.endTime) {
       setAvailabilityError('')
       setAvailabilityChecked(false)
       setCheckingAvailability(false)
@@ -1065,86 +1092,47 @@ export default function CoachSessions() {
     }
 
     let cancelled = false
-
-    const timer = window.setTimeout(
-      async () => {
-        setCheckingAvailability(true)
-        setAvailabilityChecked(false)
-
-        try {
-          const conflict =
-            await findScheduleConflict()
-
+    setAvailabilityChecked(false)
+    setCheckingAvailability(true)
+    const timer = window.setTimeout(async () => {
+      try {
+        for (const date of selectedSessionDates) {
+          const conflict = await findScheduleConflict(date)
           if (cancelled) return
-
-          if (!conflict) {
-            setAvailabilityError('')
+          if (conflict) {
+            const message = conflict.type === 'rest_day'
+              ? `${conflict.playerName} has marked ${fmtDate(date)} as a Rest Day. Please select another date.`
+              : `${conflict.playerName} is unavailable on ${fmtDate(date)} at this time.${
+                  addMinutesToTime(conflict.rawEndTime, SESSION_BUFFER_MINUTES)
+                    ? ` Earliest available time: ${addMinutesToTime(conflict.rawEndTime, SESSION_BUFFER_MINUTES)}.`
+                    : ' Please choose another time slot.'
+                }`
+            setAvailabilityError(message)
             setAvailabilityChecked(true)
             return
-          }
-
-          if (
-            conflict.type === 'rest_day'
-          ) {
-            setAvailabilityError(
-              `${conflict.playerName} has marked ${fmtDate(
-                sessionForm.date
-              )} as a Rest Day. Please select another date.`
-            )
-            setAvailabilityChecked(true)
-            return
-          }
-
-          const earliestAvailableTime =
-            addMinutesToTime(
-              conflict.rawEndTime,
-              SESSION_BUFFER_MINUTES
-            )
-
-          setAvailabilityError(
-            `${conflict.playerName} is unavailable at this time.${
-              earliestAvailableTime
-                ? ` Earliest available time: ${earliestAvailableTime}.`
-                : ' Please choose another time slot.'
-            }`
-          )
-          setAvailabilityChecked(true)
-        } catch (availabilityCheckError) {
-          if (cancelled) return
-
-          console.error(
-            'Early session availability check error:',
-            availabilityCheckError
-          )
-
-          setAvailabilityError(
-            availabilityCheckError?.message ||
-              'Unable to check player availability.'
-          )
-          setAvailabilityChecked(false)
-        } finally {
-          if (!cancelled) {
-            setCheckingAvailability(false)
           }
         }
-      },
-      300
-    )
+        if (!cancelled) {
+          setAvailabilityError('')
+          setAvailabilityChecked(true)
+        }
+      } catch (checkError) {
+        if (cancelled) return
+        console.error('Training session availability check:', checkError)
+        setAvailabilityError(checkError?.message || 'Unable to check player availability.')
+        setAvailabilityChecked(false)
+      } finally {
+        if (!cancelled) setCheckingAvailability(false)
+      }
+    }, 300)
 
     return () => {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [
-    showAddSession,
-    sessionForm.players,
-    sessionForm.date,
-    sessionForm.startTime,
-    sessionForm.endTime,
-    editingSession?.id,
-    studentMap,
-    findScheduleConflict,
-  ])
+  }, [showAddSession, sessionForm.players, sessionForm.date,
+      sessionForm.startTime, sessionForm.endTime, selectedSessionDates,
+      findScheduleConflict])
 
   const handleSave = async () => {
     if (saving) return
@@ -1166,6 +1154,99 @@ export default function CoachSessions() {
     setError('')
 
     try {
+      // Additional dates create independent sessions with identical details.
+      // Edit mode retains the original single-session update workflow.
+      if (!editingSession && selectedSessionDates.length > 1) {
+        // Preflight every date before writing anything to Supabase.
+        for (const date of selectedSessionDates) {
+          const conflict = await findScheduleConflict(date)
+          if (conflict) {
+            const message = conflict.type === 'rest_day'
+              ? `${conflict.playerName} has marked ${fmtDate(date)} as a Rest Day.`
+              : `${conflict.playerName} is unavailable on ${fmtDate(date)} at the selected time.`
+            setAvailabilityError(message)
+            return
+          }
+        }
+
+        const payloads = selectedSessionDates.map(date => ({
+          coach_user_id: user.id,
+          session_date: date,
+          start_time: sessionForm.startTime,
+          end_time: sessionForm.endTime || null,
+          venue: sessionForm.venue.trim(),
+          session_type: sessionForm.type,
+          group_notes: sessionForm.notes.trim() || null,
+        }))
+
+        // One bulk insert creates all session rows together. If adding player
+        // assignments fails, try to remove the newly created session rows.
+        const { data: createdSessions, error: createError } = await supabase
+          .from('coach_training_sessions')
+          .insert(payloads)
+          .select('id, session_date')
+        if (createError) throw createError
+        const created = createdSessions || []
+
+        try {
+          const assignments = created.flatMap(session =>
+            sessionForm.players.map(playerId => ({
+              session_id: session.id,
+              player_user_id: playerId,
+              player_focus: sessionForm.playerFocus[playerId]?.trim() || null,
+              attendance_status: 'scheduled',
+              completed_at: null,
+            }))
+          )
+          const { error: assignmentError } = await supabase
+            .from('coach_training_session_players')
+            .insert(assignments)
+          if (assignmentError) throw assignmentError
+        } catch (assignmentError) {
+          const ids = created.map(session => session.id)
+          const { error: rollbackError } = await supabase
+            .from('coach_training_sessions')
+            .delete()
+            .in('id', ids)
+            .eq('coach_user_id', user.id)
+          if (rollbackError) {
+            console.error('Multi-date rollback failed:', rollbackError)
+            await loadData()
+            throw new Error(`Sessions were created, but player assignments failed and automatic cleanup failed. Check the calendar before retrying. ${assignmentError.message}`)
+          }
+          throw assignmentError
+        }
+
+        // Calendar sync is separate: a sync error must never duplicate a saved session.
+        const calendarErrors = []
+        for (const session of created) {
+          try {
+            const result = await syncShuttleTrackGoogleCalendar({
+              action: 'upsert', sourceType: 'coach_session', sourceId: session.id,
+            })
+            if (Array.isArray(result?.errors) && result.errors.length) {
+              console.error('Calendar sync warnings:', result.errors)
+              calendarErrors.push(fmtDate(session.session_date))
+            }
+          } catch (calendarError) {
+            console.error('Multi-date calendar sync error:', calendarError)
+            calendarErrors.push(fmtDate(session.session_date))
+          }
+        }
+
+        setSessionForm(emptyForm())
+        setAdditionalDates([])
+        setDateToAdd('')
+        setStudentSearch('')
+        setEditingSession(null)
+        setShowAddSession(false)
+        await loadData()
+        if (calendarErrors.length) {
+          setError(`${created.length} sessions saved in ShuttleTrack, but Google Calendar sync needs attention for: ${calendarErrors.join(', ')}.`)
+        }
+        return
+      }
+
       const conflict =
         await findScheduleConflict()
 
@@ -2601,8 +2682,9 @@ export default function CoachSessions() {
             }}
           >
           <div
+            ref={calendarCardRef}
             className={`${styles.card} ${styles.sessionsCalendar}`}
-            style={{ minWidth: 0 }}
+            style={{ minWidth: 0, alignSelf: 'start' }}
           >
             <div
               style={{
@@ -2946,10 +3028,13 @@ export default function CoachSessions() {
             className={styles.card}
             style={{
               minWidth: 0,
-              maxHeight: 620,
+              // Match the full calendar card, including its selected-day details.
+              height: calendarCardHeight ? `${calendarCardHeight}px` : 'auto',
+              boxSizing: 'border-box',
               overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
+              alignSelf: 'start',
             }}
           >
             <div
@@ -2974,6 +3059,7 @@ export default function CoachSessions() {
             ) : (
               <div
                 style={{
+                  flex: '1 1 auto',
                   minHeight: 0,
                   overflowY: 'auto',
                   paddingRight: 4,
@@ -3339,7 +3425,8 @@ export default function CoachSessions() {
           <div
             className={styles.modal}
             style={{
-              maxWidth: 620,
+              width: 'min(94vw, 800px)',
+              maxWidth: 800,
               maxHeight: '90vh',
               overflowY: 'auto',
             }}
@@ -3382,22 +3469,63 @@ export default function CoachSessions() {
               </div>
             )}
 
-            <div className={styles.g2} style={{ marginBottom: 0 }}>
+            {/* Match the Player Schedule field order while retaining coach-only fields. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '0 16px' }}>
               <div className={styles.formRow}>
                 <label className={styles.formLabel}>Date</label>
                 <input
                   className={styles.formInput}
                   type="date"
                   value={sessionForm.date}
-                  onChange={event =>
-                    setSessionForm(current => ({
-                      ...current,
-                      date: event.target.value,
-                    }))
-                  }
+                  onChange={event => {
+                    const nextDate = event.target.value
+                    setSessionForm(current => ({ ...current, date: nextDate }))
+                    setAdditionalDates(current => current.filter(date => date !== nextDate))
+                  }}
                 />
               </div>
+              <div className={styles.formRow}>
+                <label className={styles.formLabel}>Session type</label>
+                <select
+                  className={styles.formSelect}
+                  value={sessionForm.type}
+                  onChange={event => setSessionForm(current => ({
+                    ...current, type: event.target.value,
+                  }))}
+                >
+                  {SESSION_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
+            {!editingSession && (
+              <div style={{ marginBottom: 14 }}>
+                {additionalDates.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                    {additionalDates.map(date => (
+                      <span key={date} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, background: 'var(--soft, #F7F9FF)', border: '1px solid var(--line, #DDE3EF)', color: 'var(--text, #0D1B3E)', fontSize: 13, fontWeight: 600 }}>
+                        {fmtDate(date)}
+                        <button type="button" aria-label={`Remove ${fmtDate(date)}`} onClick={() => setAdditionalDates(current => current.filter(item => item !== date))} disabled={saving} style={{ border: 0, background: 'transparent', color: '#DC2626', cursor: 'pointer', fontSize: 17, padding: 0, lineHeight: 1 }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input className={styles.formInput} type="date" value={dateToAdd} onChange={event => setDateToAdd(event.target.value)} aria-label="Additional training date" style={{ flex: '1 1 180px', maxWidth: 230 }} />
+                  <button type="button" className={styles.btnOutline} disabled={!dateToAdd || dateToAdd === sessionForm.date || additionalDates.includes(dateToAdd) || additionalDates.length >= 19 || saving} onClick={() => {
+                    setAdditionalDates(current => [...current, dateToAdd].sort())
+                    setDateToAdd('')
+                  }}>+ Add another date</button>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted, #8892A4)' }}>
+                  {selectedSessionDates.length} {selectedSessionDates.length === 1 ? 'session' : 'sessions'} will be created with the same time, venue, players and training plan. Attendance stays separate for each date.
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '0 16px' }}>
               <div className={styles.formRow}>
                 <label className={styles.formLabel}>Start time</label>
                 <input
@@ -3406,23 +3534,16 @@ export default function CoachSessions() {
                   value={sessionForm.startTime}
                   onChange={event => {
                     const nextStartTime = event.target.value
-
                     setSessionForm(current => ({
                       ...current,
                       startTime: nextStartTime,
                       endTime: current.duration
-                        ? calculateEndTime(
-                            nextStartTime,
-                            current.duration
-                          )
+                        ? calculateEndTime(nextStartTime, current.duration)
                         : current.endTime,
                     }))
                   }}
                 />
               </div>
-            </div>
-
-            <div className={styles.g2} style={{ marginBottom: 0 }}>
               <div className={styles.formRow}>
                 <label className={styles.formLabel}>End time</label>
                 <input
@@ -3431,37 +3552,15 @@ export default function CoachSessions() {
                   value={sessionForm.endTime}
                   onChange={event => {
                     const nextEndTime = event.target.value
-
                     setSessionForm(current => ({
                       ...current,
                       endTime: nextEndTime,
                       duration: current.startTime
-                        ? calculateDuration(
-                            current.startTime,
-                            nextEndTime
-                          )
+                        ? calculateDuration(current.startTime, nextEndTime)
                         : current.duration,
                     }))
                   }}
                 />
-              </div>
-
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>Session type</label>
-                <select
-                  className={styles.formSelect}
-                  value={sessionForm.type}
-                  onChange={event =>
-                    setSessionForm(current => ({
-                      ...current,
-                      type: event.target.value,
-                    }))
-                  }
-                >
-                  {SESSION_TYPES.map(type => (
-                    <option key={type}>{type}</option>
-                  ))}
-                </select>
               </div>
             </div>
 
@@ -3501,8 +3600,7 @@ export default function CoachSessions() {
                   color: 'var(--text-muted, #8892A4)',
                 }}
               >
-                Entering a duration automatically sets the end time.
-                Changing the end time recalculates the duration.
+                Enter a duration to calculate the end time automatically. Changing the end time recalculates the duration.
               </div>
             </div>
 
@@ -3744,7 +3842,7 @@ export default function CoachSessions() {
                     : availabilityError
                       ? availabilityError
                       : availabilityChecked
-                        ? 'Time slot available.'
+                        ? `${selectedSessionDates.length === 1 ? 'Time slot' : `All ${selectedSessionDates.length} dates`} available.`
                         : 'Waiting to check player availability...'}
                 </div>
               )}
@@ -3864,7 +3962,9 @@ export default function CoachSessions() {
                     : 'Saving...'
                   : editingSession
                     ? 'Update session'
-                    : 'Save session'}
+                    : selectedSessionDates.length > 1
+                      ? `Create ${selectedSessionDates.length} sessions`
+                      : 'Save session'}
               </button>
             </div>
           </div>

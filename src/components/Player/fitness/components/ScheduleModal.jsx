@@ -1,11 +1,10 @@
 import styles from '../../../Layout/Pages.module.css'
 
-
 function ModalShell({
   title,
   children,
   onClose,
-  maxWidth = 560,
+  maxWidth = 800,
 }) {
   return (
     <div
@@ -17,8 +16,10 @@ function ModalShell({
       <div
         className={`${styles.modal} fitness-mobile-modal`}
         style={{
-          width: 'min(92vw, 100%)',
+          width: 'min(94vw, 800px)',
           maxWidth,
+          maxHeight: '90vh',
+          overflowY: 'auto',
         }}
       >
         <div className={styles.modalHead}>
@@ -51,7 +52,10 @@ function FormActions({
       style={{
         display: 'flex',
         justifyContent: 'space-between',
-        marginTop: 8,
+        marginTop: 16,
+        gap: 12,
+        alignItems: 'center',
+        flexWrap: 'wrap',
       }}
     >
       {onDelete ? (
@@ -320,7 +324,7 @@ export default function ScheduleModal({
     <ModalShell
       title={title}
       onClose={onClose}
-      maxWidth={820}
+      maxWidth={800}
     >
       {(checkingAvailability || availabilityError) && (
         <div
@@ -373,8 +377,8 @@ export default function ScheduleModal({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 18,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))',
+          gap: '0 16px',
         }}
       >
         <div className={styles.formRow}>
@@ -390,7 +394,7 @@ export default function ScheduleModal({
         </div>
 
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Type</label>
+          <label className={styles.formLabel}>Session type</label>
           <select
             className={styles.formSelect}
             value={form.type}
@@ -424,8 +428,8 @@ export default function ScheduleModal({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 18,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))',
+              gap: '0 16px',
             }}
           >
             <div className={styles.formRow}>
@@ -458,9 +462,9 @@ export default function ScheduleModal({
               display: 'grid',
               gridTemplateColumns:
                 isTraining || isCompetition || isFriendly
-                  ? '1fr 1fr'
+                  ? 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))'
                   : '1fr',
-              gap: 18,
+              gap: '0 16px',
             }}
           >
             <div className={styles.formRow}>
@@ -522,7 +526,7 @@ export default function ScheduleModal({
 
           <div className={styles.formRow}>
             <label className={styles.formLabel}>
-              Planned duration
+              Duration
             </label>
             <input
               className={styles.formInput}
@@ -545,7 +549,7 @@ export default function ScheduleModal({
                 color: '#8892A4',
               }}
             >
-              Enter a duration to calculate the end time automatically.
+              Enter a duration to calculate the end time automatically. Changing the end time recalculates the duration.
             </div>
           </div>
         </>

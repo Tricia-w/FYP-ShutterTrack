@@ -1303,7 +1303,7 @@ function ScheduleCalendar({
 
   const handleEdit = item => {
     if (item.source === 'training_log') {
-      onEditTraining(item)
+      if (!item.coachSessionId) onEditTraining(item)
       return
     }
 
@@ -1577,8 +1577,7 @@ function TrainingLogDetailModal({
     item.original || {}
 
   const isCoachAssigned =
-    original.source ===
-      'coach_training'
+    original.source === 'coach_training' || Boolean(original.coachSessionId)
 
   const notes =
     original.notes || ''
@@ -2542,6 +2541,10 @@ const FITNESS_NOTIFICATION_TYPES = [
   'coach_fitness_action_plan_due_tomorrow',
   'coach_fitness_action_plan_due_today',
   'coach_fitness_action_plan_overdue',
+  'fitness_goal_due_tomorrow',
+  'fitness_goal_due_today',
+  'fitness_goal_overdue',
+  'fitness_goal_achieved',
 ]
 
 function DeleteConfirmationModal({
@@ -2662,6 +2665,8 @@ export default function Fitness() {
   const [refreshKey, setRefreshKey] = useState(0)
 
   const [sessions, setSessions] = useState([])
+  // Coach attendance is authoritative for coach-created training sessions.
+  const [coachAttendanceBySession, setCoachAttendanceBySession] = useState({})
   const [scheduleList, setScheduleList] = useState([])
   const [tests, setTests] = useState([])
   const [recoveryLogs, setRecoveryLogs] = useState([])
@@ -2730,8 +2735,12 @@ export default function Fitness() {
   const [showFitnessInfo, setShowFitnessInfo] = useState(false)
   const [showFitnessDevelopment, setShowFitnessDevelopment] = useState(false)
   const [showFitnessScoreInfo, setShowFitnessScoreInfo] = useState(false)
-  const [fitnessGoal, setFitnessGoal] = useState(null)
+  const [fitnessGoals, setFitnessGoals] = useState([])
+  // Selected after player fitness indicators are calculated.
+
   const [showFitnessGoal, setShowFitnessGoal] = useState(false)
+  const [fitnessGoalMode, setFitnessGoalMode] = useState('list')
+  const [editingFitnessGoalId, setEditingFitnessGoalId] = useState(null)
   const [fitnessGoalForm, setFitnessGoalForm] = useState(
     emptyFitnessGoal()
   )
@@ -2846,10 +2855,11 @@ export default function Fitness() {
             .maybeSingle(),
 
           supabase
-            .from('fitness_goals')
+            .from('fitness_goal_entries')
             .select('*')
             .eq('user_id', user.id)
-            .maybeSingle(),
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false }),
         ])
 
         const error = [
@@ -2889,24 +2899,17 @@ export default function Fitness() {
           )
         )
 
-        setFitnessGoal(
-          fitnessGoalRes.data
-            ? {
-                id: fitnessGoalRes.data.id,
-                title:
-                  fitnessGoalRes.data.goal_note || '',
-                indicator:
-                  fitnessGoalRes.data.target_focus ||
-                  'Endurance',
-                targetScore:
-                  Number(
-                    fitnessGoalRes.data.target_score
-                  ) || 0,
-                deadline:
-                  fitnessGoalRes.data.deadline || '',
-                status: 'active',
-              }
-            : null
+        setFitnessGoals(
+          (fitnessGoalRes.data || []).map(row => ({
+            id: row.id,
+            title: row.goal_note || '',
+            indicator: row.target_focus || 'Endurance',
+            targetScore: Number(row.target_score) || 0,
+            deadline: row.deadline || '',
+            createdAt: row.created_at || '',
+            isFeatured: Boolean(row.is_featured),
+            status: 'active',
+          }))
         )
 
         const acceptedCoachIds = (
@@ -2981,6 +2984,17 @@ export default function Fitness() {
                 item.coach_training_sessions || null,
             },
           ])
+        )
+
+        setCoachAttendanceBySession(
+          Object.fromEntries(
+            (coachAssignmentRes.data || [])
+              .filter(item => item.session_id)
+              .map(item => [
+                String(item.session_id),
+                String(item.attendance_status || 'scheduled').toLowerCase(),
+              ])
+          )
         )
 
         setScheduleList(
@@ -3453,18 +3467,27 @@ export default function Fitness() {
     [tests]
   )
 
+  // Do not count an unconfirmed coach session as completed training load.
+  const verifiedTrainingSessions = useMemo(
+    () => sessions.filter(item =>
+      !item.coachSessionId ||
+      coachAttendanceBySession[String(item.coachSessionId)] === 'completed'
+    ),
+    [sessions, coachAttendanceBySession]
+  )
+
   const fitnessSummary = useMemo(
     () =>
       calculateFitnessSummary({
         tests: realPlayerFitnessTests,
-        sessions,
+        sessions: verifiedTrainingSessions,
         recoveryLogs,
         injuries,
         scheduleList,
       }),
     [
       realPlayerFitnessTests,
-      sessions,
+      verifiedTrainingSessions,
       recoveryLogs,
       injuries,
       scheduleList,
@@ -3608,39 +3631,38 @@ export default function Fitness() {
     recoveryScore,
   ])
 
-  const fitnessGoalCurrentScore = useMemo(() => {
-    if (!fitnessGoal?.indicator) return 0
+  // A manual star overrides automatic selection. Otherwise show the most urgent
+  // unfinished goal: overdue first, then the nearest upcoming deadline.
+  const fitnessGoal = useMemo(() => {
+    const starred = fitnessGoals.find(goal => goal.isFeatured)
+    if (starred) return starred
+    const unfinished = fitnessGoals.filter(goal => {
+      const score = indicators.find(item => item.name === goal.indicator)
+      const current = score?.hasData ? Number(score.val) || 0 : 0
+      return current < (Number(goal.targetScore) || 0)
+    })
+    if (!unfinished.length) return fitnessGoals[0] || null
+    return [...unfinished].sort((a, b) =>
+      String(a.deadline || '9999-12-31').localeCompare(String(b.deadline || '9999-12-31')) ||
+      String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+    )[0]
+  }, [fitnessGoals, indicators])
 
-    const item = indicators.find(
-      indicator =>
-        String(indicator.name).toLowerCase() ===
-        String(fitnessGoal.indicator).toLowerCase()
+  // Goal progress uses the latest player-owned score for each indicator.
+  const goalProgressFor = useCallback(goal => {
+    const current = indicators.find(item =>
+      String(item.name).toLowerCase() === String(goal?.indicator || '').toLowerCase()
     )
-
-    return item?.hasData
-      ? Math.round(Number(item.val) || 0)
+    const currentScore = current?.hasData ? Math.round(Number(current.val) || 0) : 0
+    const target = Number(goal?.targetScore) || 0
+    const progress = target > 0
+      ? clamp(Math.round((currentScore / target) * 100))
       : 0
-  }, [fitnessGoal, indicators])
+    return { currentScore, progress, completed: target > 0 && currentScore >= target }
+  }, [indicators])
 
-  const fitnessGoalProgress = useMemo(() => {
-    const target =
-      Number(fitnessGoal?.targetScore) || 0
-
-    if (target <= 0) return 0
-
-    return Math.max(
-      0,
-      Math.min(
-        100,
-        Math.round(
-          (fitnessGoalCurrentScore / target) * 100
-        )
-      )
-    )
-  }, [
-    fitnessGoal?.targetScore,
-    fitnessGoalCurrentScore,
-  ])
+  const { currentScore: fitnessGoalCurrentScore, progress: fitnessGoalProgress } =
+    goalProgressFor(fitnessGoal)
 
   const testIndicatorNames = [
     'Endurance',
@@ -3804,126 +3826,82 @@ export default function Fitness() {
       date: item.date,
       time: item.time || item.startTime || '',
       endTime: item.endTime || '',
-      activity:
-        item.activity ||
-        item.title ||
-        item.type ||
-        'Scheduled activity',
-      duration:
-        item.duration ||
-        calculateDuration(
-          item.time || item.startTime,
-          item.endTime
-        ) ||
-        '-',
+      activity: item.activity || item.title || item.type || 'Scheduled activity',
+      duration: item.duration ||
+        calculateDuration(item.time || item.startTime, item.endTime) || '-',
       focus: normalizeTrainingFocus(
         item.focus,
-        item.type ||
-          item.activity ||
-          item.title
+        item.type || item.activity || item.title
       ),
       venue: item.venue || '',
-      createdAt:
-        item.createdAt || '',
-      addedBy:
-        item.isCoachCreated ||
-        item.coachSessionId ||
-        item.coach_session_id
-          ? 'coach'
-          : 'player',
+      createdAt: item.createdAt || '',
+      addedBy: item.isCoachCreated || item.coachSessionId ? 'coach' : 'player',
       status: (() => {
+        if (item.isCoachCreated || item.coachSessionId) {
+          const attendance = String(
+            coachAttendanceBySession[String(item.coachSessionId)] ||
+            item.attendanceStatus || 'scheduled'
+          ).toLowerCase()
+          if (attendance === 'completed') return 'Completed'
+          if (attendance === 'absent') return 'Absent'
+          return isScheduleFinished(item) ? 'Awaiting completion' : 'Scheduled'
+        }
+
         const scheduleStatus = String(
           item.scheduleStatus || 'scheduled'
         ).toLowerCase()
-
-        const attendanceStatus = String(
-          item.attendanceStatus ||
-          item.attendance_status ||
-          ''
-        ).toLowerCase()
-
-        if (scheduleStatus === 'missed') {
-          return 'Missed'
-        }
-
-        if (scheduleStatus === 'completed') {
-          return 'Completed'
-        }
-
-        if (attendanceStatus === 'completed') {
-          return 'Completed'
-        }
-
-        if (attendanceStatus === 'absent') {
-          return 'Absent'
-        }
-
-        if (
-          item.isCoachCreated &&
-          isScheduleFinished(item)
-        ) {
-          return 'Awaiting completion'
-        }
-
+        if (scheduleStatus === 'missed') return 'Missed'
+        if (scheduleStatus === 'completed') return 'Completed'
         return 'Scheduled'
       })(),
       original: item,
     }))
 
-    const completedItems = sessions.map(item => ({
-      id: `training-${item.id}`,
-      sourceId: item.id,
-      sourceType: 'training',
-      date: item.date,
-      time: item.time || '',
-      endTime: item.endTime || '',
-      activity:
-        item.activity ||
-        item.training ||
-        item.title ||
-        'Completed training',
-      duration: item.duration || '-',
-      focus: normalizeTrainingFocus(
-        item.focus,
-        item.type ||
-          item.activity ||
-          item.title
-      ),
-      venue: item.venue || '',
-      createdAt:
-        item.createdAt || '',
-      addedBy:
-        item.coachSessionId ||
-        item.coach_session_id
-          ? 'coach'
-          : 'player',
-      status: 'Completed',
-      original: item,
-    }))
-
-    const seenCompletedCoachSessions = new Set(
-      completedItems
-        .map(item => item.original?.coachSessionId)
-        .filter(Boolean)
+    const scheduleCoachIds = new Set(
+      scheduleList.map(item => item.coachSessionId).filter(Boolean).map(String)
     )
 
-    const filteredScheduled = scheduledItems.filter(item => {
-      const coachSessionId =
-        item.original?.coachSessionId ||
-        item.original?.coach_session_id
-
-      return !(
-        coachSessionId &&
-        seenCompletedCoachSessions.has(coachSessionId)
+    // If a coach-created schedule exists, show that authoritative status.
+    // A stale training-log row must not replace it with "Completed".
+    const completedItems = sessions
+      .filter(item =>
+        !item.coachSessionId ||
+        !scheduleCoachIds.has(String(item.coachSessionId))
       )
-    })
+      .map(item => {
+        const attendance = item.coachSessionId
+          ? coachAttendanceBySession[String(item.coachSessionId)] || 'scheduled'
+          : 'completed'
+        return {
+          id: `training-${item.id}`,
+          sourceId: item.id,
+          sourceType: 'training',
+          date: item.date,
+          time: item.startTime || '',
+          endTime: item.endTime || '',
+          activity: item.activity || item.title || 'Completed training',
+          duration: item.duration || '-',
+          focus: normalizeTrainingFocus(item.focus, item.activity || item.title),
+          venue: item.venue || '',
+          createdAt: item.createdAt || '',
+          addedBy: item.coachSessionId ? 'coach' : 'player',
+          status: attendance === 'completed'
+            ? 'Completed'
+            : attendance === 'absent'
+              ? 'Absent'
+              : isScheduleFinished(item)
+                ? 'Awaiting completion'
+                : 'Scheduled',
+          original: item,
+        }
+      })
 
-    return [...filteredScheduled, ...completedItems].sort((a, b) => {
+    return [...scheduledItems, ...completedItems].sort((a, b) => {
       const aValue = `${a.date || ''}T${a.time || '00:00'}`
       const bValue = `${b.date || ''}T${b.time || '00:00'}`
       return bValue.localeCompare(aValue)
     })
-  }, [scheduleList, sessions])
+  }, [scheduleList, sessions, coachAttendanceBySession])
 
   const tableSessions = useMemo(() => {
     const searchText = filter.search.trim().toLowerCase()
@@ -4194,15 +4172,22 @@ export default function Fitness() {
   const calendarItems = useMemo(() => {
     return [
       ...scheduleList,
-      ...sessions.map(session => ({
-        ...session,
-        source: 'training_log',
-        type: 'Completed Training',
-        title: session.activity || 'Completed Training',
-        dotColor: SCHEDULE_COLORS['Completed Training'],
-      })),
+      ...verifiedTrainingSessions
+        .filter(session =>
+          !session.coachSessionId ||
+          !scheduleList.some(schedule =>
+            String(schedule.coachSessionId) === String(session.coachSessionId)
+          )
+        )
+        .map(session => ({
+          ...session,
+          source: 'training_log',
+          type: 'Completed Training',
+          title: session.activity || 'Completed Training',
+          dotColor: SCHEDULE_COLORS['Completed Training'],
+        })),
     ]
-  }, [scheduleList, sessions])
+  }, [scheduleList, verifiedTrainingSessions])
 
   // Keep one selected date for both the highlighted day and its details.
   // A selected date is never toggled off; empty dates show the empty message.
@@ -4254,7 +4239,7 @@ export default function Fitness() {
     const currentYear = now.getFullYear()
     const currentMonth = now.getMonth()
 
-    return sessions.filter(session => {
+    return verifiedTrainingSessions.filter(session => {
       if (!session?.date) return false
 
       const date = new Date(
@@ -4267,7 +4252,7 @@ export default function Fitness() {
         date.getMonth() === currentMonth
       )
     }).length
-  }, [sessions])
+  }, [verifiedTrainingSessions])
 
   const setForm = setter => (k, v) => setter(f => ({ ...f, [k]: v }))
 
@@ -5401,116 +5386,146 @@ export default function Fitness() {
   }
 
   const openFitnessGoal = () => {
-    setFitnessGoalForm(
-      fitnessGoal
-        ? {
-            title: fitnessGoal.title || '',
-            indicator:
-              fitnessGoal.indicator ||
-              'Endurance',
-            targetScore:
-              Number(fitnessGoal.targetScore) || 80,
-            deadline:
-              fitnessGoal.deadline || '',
-          }
-        : emptyFitnessGoal()
-    )
-
+    setFitnessGoalMode('list')
+    setEditingFitnessGoalId(null)
+    setLoadError('')
     setShowFitnessGoal(true)
+  }
+
+  const startAddFitnessGoal = () => {
+    setEditingFitnessGoalId(null)
+    setFitnessGoalForm(emptyFitnessGoal())
+    setFitnessGoalMode('form')
+    setLoadError('')
+  }
+
+  const startEditFitnessGoal = goal => {
+    setEditingFitnessGoalId(goal.id)
+    setFitnessGoalForm({
+      title: goal.title || '',
+      indicator: goal.indicator || 'Endurance',
+      targetScore: goal.targetScore || 80,
+      deadline: goal.deadline || '',
+    })
+    setFitnessGoalMode('form')
+    setLoadError('')
   }
 
   const saveFitnessGoal = async () => {
     if (saving) return
-
-    const goalTitle =
-      fitnessGoalForm.title.trim()
-
-    const targetScore =
-      Number(fitnessGoalForm.targetScore)
-
+    const goalTitle = fitnessGoalForm.title.trim()
+    const targetScore = Number(fitnessGoalForm.targetScore)
     if (!goalTitle) {
-      setLoadError(
-        'Please enter a fitness goal.'
-      )
+      setLoadError('Please enter a fitness goal.')
       return
     }
-
-    if (
-      !Number.isFinite(targetScore) ||
-      targetScore < 1 ||
-      targetScore > 100
-    ) {
-      setLoadError(
-        'Target score must be between 1 and 100.'
-      )
+    if (!Number.isFinite(targetScore) || targetScore < 1 || targetScore > 100) {
+      setLoadError('Target score must be between 1 and 100.')
       return
     }
-
     if (!fitnessGoalForm.deadline) {
-      setLoadError(
-        'Please select a goal deadline.'
-      )
+      setLoadError('Please select a goal deadline.')
       return
     }
 
     setSaving(true)
     setLoadError('')
-
     try {
       const uid = await getUserId()
-
       const payload = {
         user_id: uid,
         goal_note: goalTitle,
-        target_focus:
-          fitnessGoalForm.indicator ||
-          'Endurance',
+        target_focus: fitnessGoalForm.indicator || 'Endurance',
         target_score: targetScore,
         deadline: fitnessGoalForm.deadline,
-        updated_at:
-          new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
-
-      const { data, error } = await supabase
-        .from('fitness_goals')
-        .upsert(
-          payload,
-          {
-            onConflict: 'user_id',
-          }
-        )
-        .select('*')
-        .single()
-
+      const query = editingFitnessGoalId
+        ? supabase.from('fitness_goal_entries').update(payload)
+            .eq('id', editingFitnessGoalId).eq('user_id', uid)
+        : supabase.from('fitness_goal_entries').insert(payload)
+      const { data, error } = await query.select('*').single()
       if (error) throw error
-
-      setFitnessGoal({
+      const goal = {
         id: data.id,
         title: data.goal_note || '',
-        indicator:
-          data.target_focus || 'Endurance',
-        targetScore:
-          Number(data.target_score) || 0,
+        indicator: data.target_focus || 'Endurance',
+        targetScore: Number(data.target_score) || 0,
         deadline: data.deadline || '',
+        createdAt: data.created_at || '',
+        isFeatured: Boolean(data.is_featured),
         status: 'active',
-      })
-
-      setShowFitnessGoal(false)
+      }
+      setFitnessGoals(prev => [goal, ...prev.filter(item => item.id !== goal.id)]
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || String(b.id).localeCompare(String(a.id))))
+      setFitnessGoalMode('list')
+      setEditingFitnessGoalId(null)
+      setFitnessGoalForm(emptyFitnessGoal())
     } catch (error) {
-      const message =
-        error?.message ||
-        'Failed to save fitness goal.'
-
-      console.error(
-        'Save fitness goal error:',
-        error
-      )
-
+      const message = error?.message || 'Failed to save fitness goal.'
+      console.error('Save fitness goal error:', error)
       setLoadError(message)
       alert(message)
     } finally {
       setSaving(false)
     }
+  }
+
+  const featureFitnessGoal = async goal => {
+    if (saving || !goal?.id) return
+    setSaving(true)
+    setLoadError('')
+    try {
+      const unstar = Boolean(goal.isFeatured)
+      const { error } = unstar
+        ? await supabase.rpc('clear_featured_fitness_goal')
+        : await supabase.rpc('set_featured_fitness_goal', { p_goal_id: goal.id })
+      if (error) throw error
+      setFitnessGoals(previous => previous.map(item => ({
+        ...item,
+        isFeatured: unstar ? false : item.id === goal.id,
+      })))
+    } catch (error) {
+      const message = error?.message || 'Unable to update featured goal.'
+      console.error('Update featured goal error:', error)
+      setLoadError(message)
+      alert(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteFitnessGoal = async goal => {
+    if (saving || !goal?.id) return
+    setSaving(true)
+    setLoadError('')
+    try {
+      const uid = await getUserId()
+      const { error } = await supabase.from('fitness_goal_entries')
+        .delete().eq('id', goal.id).eq('user_id', uid)
+      if (error) throw error
+      setFitnessGoals(prev => prev.filter(item => item.id !== goal.id))
+      if (editingFitnessGoalId === goal.id) {
+        setEditingFitnessGoalId(null)
+        setFitnessGoalMode('list')
+      }
+    } catch (error) {
+      const message = error?.message || 'Failed to delete fitness goal.'
+      setLoadError(message)
+      alert(message)
+      throw error
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const requestDeleteFitnessGoal = goal => {
+    setDeleteConfirm({
+      title: 'Delete fitness goal?',
+      message: 'This goal will be permanently removed. Your fitness scores and tests will not change.',
+      itemName: goal.title || 'Fitness goal',
+      action: () => deleteFitnessGoal(goal),
+    })
   }
 
   const saveTraining = async () => {
@@ -6917,6 +6932,12 @@ export default function Fitness() {
                 </div>
               </div>
 
+              {fitnessGoals.length > 1 && (
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: '#7C3AED', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  {fitnessGoals.length} goals
+                </span>
+              )}
+
               <button
                 type="button"
                 className={styles.btnOutline}
@@ -6927,9 +6948,7 @@ export default function Fitness() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {fitnessGoal
-                  ? 'Edit Goal'
-                  : 'Set Goal'}
+                {'View Goal'}
               </button>
             </div>
 
@@ -7035,8 +7054,7 @@ export default function Fitness() {
                   color: '#8892A4',
                 }}
               >
-                No fitness goal set yet. Set a target
-                score and deadline to track progress.
+                No fitness goal set yet. Select View Goal to add your first target.
               </div>
             )}
           </div>
@@ -9255,12 +9273,10 @@ export default function Fitness() {
             }
 
             if (
-              item.sourceType ===
-              'training'
+              item.sourceType === 'training' &&
+              !item.original?.coachSessionId
             ) {
-              openEditTraining(
-                item.original
-              )
+              openEditTraining(item.original)
             }
           }}
         />
@@ -9588,214 +9604,142 @@ export default function Fitness() {
       )}
 
       {showFitnessGoal && (
-        <div
-          className={styles.modalOverlay}
-          role="dialog"
-          aria-modal="true"
+        <div className={styles.modalOverlay} role="dialog" aria-modal="true"
           aria-labelledby="fitness-goal-title"
           onClick={event => {
-            if (
-              event.target ===
-                event.currentTarget &&
-              !saving
-            ) {
+            if (event.target === event.currentTarget && !saving) {
               setShowFitnessGoal(false)
             }
-          }}
-        >
-          <div
-            className={`${styles.modal} fitness-mobile-modal`}
-            style={{
-              width: 'min(92vw, 100%)',
-              maxWidth: 520,
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
-          >
+          }}>
+          <div className={`${styles.modal} fitness-mobile-modal`}
+            style={{ width: 'min(92vw, 100%)', maxWidth: 580, maxHeight: '90vh', overflowY: 'auto' }}>
             <div className={styles.modalHead}>
               <div>
-                <div
-                  id="fitness-goal-title"
-                  className={styles.modalTitle}
-                >
-                  {fitnessGoal
-                    ? 'Edit Fitness Goal'
-                    : 'Set Fitness Goal'}
+                <div id="fitness-goal-title" className={styles.modalTitle}>
+                  {fitnessGoalMode === 'list' ? 'My Fitness Goals' : editingFitnessGoalId ? 'Edit Fitness Goal' : 'Add Fitness Goal'}
                 </div>
-
-                <div
-                  style={{
-                    marginTop: 5,
-                    fontSize: 12,
-                    lineHeight: 1.5,
-                    color:
-                      'var(--text-muted, #8892A4)',
-                  }}
-                >
-                  Set one personal fitness target and
-                  track progress from the latest
-                  fitness indicator score.
+                <div style={{ marginTop: 5, fontSize: 12, color: 'var(--text-muted, #8892A4)', lineHeight: 1.5 }}>
+                  {fitnessGoalMode === 'list'
+                    ? 'Tap a star to choose which goal appears on your Fitness card.'
+                    : 'Choose a fitness indicator, target score and deadline.'}
                 </div>
               </div>
-
-              <button
-                type="button"
-                className={styles.modalClose}
-                onClick={() =>
-                  setShowFitnessGoal(false)
-                }
-                disabled={saving}
-                aria-label="Close fitness goal"
-              >
-                ×
-              </button>
+              <button type="button" className={styles.modalClose}
+                onClick={() => setShowFitnessGoal(false)} disabled={saving}
+                aria-label="Close fitness goals">×</button>
             </div>
 
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>
-                Goal
-              </label>
-
-              <input
-                className={styles.formInput}
-                type="text"
-                value={fitnessGoalForm.title}
-                placeholder="e.g. Improve Endurance"
-                onChange={event =>
-                  setFitnessGoalForm(
-                    current => ({
-                      ...current,
-                      title:
-                        event.target.value,
-                    })
+            {fitnessGoalMode === 'list' ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)' }}>
+                    {fitnessGoals.length} {fitnessGoals.length === 1 ? 'goal' : 'goals'}
+                  </span>
+                  <button type="button" className={styles.btnPrimary} onClick={startAddFitnessGoal}
+                    disabled={saving} style={{ fontSize: 12, padding: '8px 12px' }}>+ Add Goal</button>
+                </div>
+                <div style={{ marginBottom: 12, fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted, #8892A4)' }}>
+                  {fitnessGoals.some(goal => goal.isFeatured)
+                    ? 'A starred goal appears on your Fitness card. Click its gold star again to return to automatic deadline selection.'
+                    : 'Auto mode: your Fitness card shows the unfinished goal with the earliest deadline (including overdue goals). Click a star to override.'}
+                </div>
+                {fitnessGoals.length === 0 ? (
+                  <div style={{ padding: '24px 12px', textAlign: 'center', background: 'var(--soft, #F7F9FF)', borderRadius: 12, color: 'var(--text-muted, #8892A4)', fontSize: 13 }}>
+                    No fitness goals yet. Select Add Goal to create one.
+                  </div>
+                ) : fitnessGoals.map(goal => {
+                  const { currentScore, progress, completed } = goalProgressFor(goal)
+                  const isFrontCardGoal = fitnessGoal?.id === goal.id
+                  const isStarred = Boolean(goal.isFeatured)
+                  return (
+                    <div key={goal.id} style={{ border: '1px solid var(--line, #E8EEF8)', borderRadius: 12, padding: 14, marginBottom: 10, background: 'var(--card, #FFFFFF)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+                        <button type="button"
+                          title={isStarred ? 'Remove star and use automatic deadline selection' : 'Star this goal to show it on the Fitness Goal card'}
+                          aria-label={isStarred ? `Remove star from ${goal.title}` : `Star ${goal.title}`} 
+                          aria-pressed={isStarred}
+                          disabled={saving}
+                          onClick={() => featureFitnessGoal(goal)}
+                          style={{ width: 34, height: 34, flexShrink: 0, border: 'none', background: 'transparent',
+                            color: isStarred ? '#F59E0B' : 'var(--text-muted, #8892A4)',
+                            cursor: saving ? 'default' : 'pointer', fontSize: 25,
+                            display: 'grid', placeItems: 'center', padding: 0 }}>
+                          {isStarred ? '★' : '☆'}
+                        </button>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>{goal.title}</div>
+                          {isFrontCardGoal && (
+                            <div style={{ marginTop: 3, fontSize: 11, fontWeight: 700, color: '#B45309' }}>
+                              {isStarred ? 'Starred · Shown on Fitness card' : 'Auto-selected · Nearest deadline'}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 12, marginTop: 4, color: completed ? '#059669' : 'var(--text-muted, #8892A4)' }}>
+                            {completed ? 'Target reached' : goal.deadline && goal.deadline < todayISO() ? 'Overdue' : 'In progress'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 7 }}>
+                          <button type="button" className={styles.btnOutline} disabled={saving}
+                            onClick={() => startEditFitnessGoal(goal)} style={{ fontSize: 12, padding: '6px 10px' }}>Edit</button>
+                          <button type="button" disabled={saving}
+                            onClick={() => requestDeleteFitnessGoal(goal)}
+                            style={{ fontSize: 12, padding: '6px 10px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5', borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}>Delete</button>
+                        </div>
+                      </div>
+                      <div style={{ height: 8, marginTop: 12, borderRadius: 999, background: 'var(--line, #E8EEF8)', overflow: 'hidden' }}>
+                        <div style={{ width: `${progress}%`, height: '100%', borderRadius: 999, background: completed ? '#10B981' : '#7C3AED' }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7, gap: 8, fontSize: 12, color: 'var(--text-muted, #8892A4)', flexWrap: 'wrap' }}>
+                        <span>{goal.indicator}: <strong>{currentScore}</strong> → <strong>{goal.targetScore}</strong>/100</span>
+                        <strong style={{ color: completed ? '#059669' : '#7C3AED' }}>{progress}%</strong>
+                      </div>
+                      <div style={{ marginTop: 5, fontSize: 12, color: 'var(--text-muted, #8892A4)' }}>Deadline: {goal.deadline ? fmtDate(goal.deadline) : '-'}</div>
+                    </div>
                   )
-                }
-              />
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  'repeat(2, minmax(0, 1fr))',
-                gap: 12,
-              }}
-            >
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Fitness indicator
-                </label>
-
-                <select
-                  className={styles.formInput}
-                  value={
-                    fitnessGoalForm.indicator
-                  }
-                  onChange={event =>
-                    setFitnessGoalForm(
-                      current => ({
-                        ...current,
-                        indicator:
-                          event.target.value,
-                      })
-                    )
-                  }
-                >
-                  {[
-                    'Endurance',
-                    'Speed',
-                    'Strength',
-                    'Agility',
-                    'Recovery',
-                  ].map(option => (
-                    <option
-                      key={option}
-                      value={option}
-                    >
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={styles.formRow}>
-                <label className={styles.formLabel}>
-                  Target score
-                </label>
-
-                <input
-                  className={styles.formInput}
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={
-                    fitnessGoalForm.targetScore
-                  }
-                  onChange={event =>
-                    setFitnessGoalForm(
-                      current => ({
-                        ...current,
-                        targetScore:
-                          event.target.value,
-                      })
-                    )
-                  }
-                />
-              </div>
-            </div>
-
-            <div className={styles.formRow}>
-              <label className={styles.formLabel}>
-                Deadline
-              </label>
-
-              <input
-                className={styles.formInput}
-                type="date"
-                value={fitnessGoalForm.deadline}
-                min={todayISO()}
-                onChange={event =>
-                  setFitnessGoalForm(
-                    current => ({
-                      ...current,
-                      deadline:
-                        event.target.value,
-                    })
-                  )
-                }
-              />
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 10,
-                marginTop: 18,
-              }}
-            >
-              <button
-                type="button"
-                className={styles.btnOutline}
-                disabled={saving}
-                onClick={() =>
-                  setShowFitnessGoal(false)
-                }
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                className={styles.btnPrimary}
-                disabled={saving}
-                onClick={saveFitnessGoal}
-              >
-                {saving
-                  ? 'Saving...'
-                  : 'Save Goal'}
-              </button>
-            </div>
+                })}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                  <button type="button" className={styles.btnOutline} onClick={() => setShowFitnessGoal(false)}>Close</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={styles.formRow}>
+                  <label className={styles.formLabel} htmlFor="goal-title-input">Goal</label>
+                  <input id="goal-title-input" className={styles.formInput} type="text"
+                    value={fitnessGoalForm.title} placeholder="e.g. Improve Endurance"
+                    onChange={event => setFitnessGoalForm(current => ({ ...current, title: event.target.value }))}/>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                  <div className={styles.formRow}>
+                    <label className={styles.formLabel} htmlFor="goal-indicator-input">Fitness indicator</label>
+                    <select id="goal-indicator-input" className={styles.formInput}
+                      value={fitnessGoalForm.indicator}
+                      onChange={event => setFitnessGoalForm(current => ({ ...current, indicator: event.target.value }))}>
+                      {['Endurance','Speed','Strength','Agility','Recovery'].map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.formRow}>
+                    <label className={styles.formLabel} htmlFor="goal-score-input">Target score</label>
+                    <input id="goal-score-input" className={styles.formInput} type="number" min="1" max="100"
+                      value={fitnessGoalForm.targetScore}
+                      onChange={event => setFitnessGoalForm(current => ({ ...current, targetScore: event.target.value }))}/>
+                  </div>
+                </div>
+                <div className={styles.formRow}>
+                  <label className={styles.formLabel} htmlFor="goal-deadline-input">Deadline</label>
+                  <input id="goal-deadline-input" className={styles.formInput} type="date"
+                    value={fitnessGoalForm.deadline}
+                    onChange={event => setFitnessGoalForm(current => ({ ...current, deadline: event.target.value }))}/>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 18 }}>
+                  <button type="button" className={styles.btnOutline} disabled={saving}
+                    onClick={() => { setFitnessGoalMode('list'); setLoadError('') }}>Back</button>
+                  <button type="button" className={styles.btnPrimary} disabled={saving}
+                    onClick={saveFitnessGoal}>{saving ? 'Saving...' : editingFitnessGoalId ? 'Save Changes' : 'Add Goal'}</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
