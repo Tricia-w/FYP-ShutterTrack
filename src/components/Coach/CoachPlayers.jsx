@@ -812,6 +812,186 @@ function ReportPlayerModal({ player, submitting, onClose, onSubmit }) {
   )
 }
 
+
+// Read-only student fitness goals. Render only for accepted coach-player connections.
+// Row Level Security must also restrict goal SELECT access in Supabase.
+function CoachPlayerFitnessGoals({ player }) {
+  const [goals, setGoals] = useState([])
+  const [scores, setScores] = useState({})
+  const [loadingGoals, setLoadingGoals] = useState(true)
+  const [goalsError, setGoalsError] = useState('')
+  const [showAllGoals, setShowAllGoals] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setGoals([])
+    setScores({})
+    setGoalsError('')
+    setShowAllGoals(false)
+    if (!player?.assigned || !player?.isRegistered || !player?.id) {
+      setLoadingGoals(false)
+      return undefined
+    }
+
+    setLoadingGoals(true)
+    const loadGoals = async () => {
+      try {
+        const [goalsResult, testsResult, recoveryResult, injuriesResult] = await Promise.all([
+          supabase.from('fitness_goal_entries')
+            .select('id, goal_note, target_focus, target_score, deadline, is_featured, created_at')
+            .eq('user_id', player.id)
+            .order('created_at', { ascending: false }),
+          supabase.from('fitness_tests').select('indicator, score, added_by_coach, updated_at, created_at, test_date')
+            .eq('user_id', player.id),
+          supabase.from('fitness_recovery_logs').select('sleep_hours, fatigue_level, soreness_level, log_date, created_at')
+            .eq('user_id', player.id).order('log_date', { ascending: false }).limit(1),
+          supabase.from('fitness_injuries').select('status').eq('user_id', player.id),
+        ])
+        if (goalsResult.error) throw goalsResult.error
+        if (!active) return
+        setGoals(goalsResult.data || [])
+
+        const nextScores = {}
+        if (!testsResult.error) {
+          const tests = (testsResult.data || [])
+            .filter(test => test.added_by_coach !== true)
+            .sort((a, b) => {
+              const aTime = new Date(a.updated_at || a.created_at || a.test_date || 0).getTime() || 0
+              const bTime = new Date(b.updated_at || b.created_at || b.test_date || 0).getTime() || 0
+              return bTime - aTime
+            })
+          for (const test of tests) {
+            const key = String(test.indicator || '').toLowerCase() === 'flexibility'
+              ? 'agility' : String(test.indicator || '').toLowerCase()
+            if (!Object.prototype.hasOwnProperty.call(nextScores, key)) {
+              nextScores[key] = Math.max(0, Math.min(100, Math.round(Number(test.score) || 0)))
+            }
+          }
+        } else {
+          console.warn('Could not load student fitness test scores:', testsResult.error)
+        }
+
+        if (!recoveryResult.error && !injuriesResult.error && (recoveryResult.data || []).length > 0) {
+          const recovery = recoveryResult.data[0]
+          const activeInjuries = (injuriesResult.data || []).filter(row =>
+            String(row.status || '').toLowerCase() === 'monitoring'
+          ).length
+          const score = 100 - (Number(recovery.fatigue_level) || 0) * 8
+            - (Number(recovery.soreness_level) || 0) * 5
+            + Math.min(8, Math.max(0, Number(recovery.sleep_hours) || 0))
+            - activeInjuries * 5
+          nextScores.recovery = Math.max(0, Math.min(100, Math.round(score)))
+        }
+        setScores(nextScores)
+      } catch (loadError) {
+        if (!active) return
+        setGoalsError(loadError?.message || 'Unable to load the player fitness goals.')
+      } finally {
+        if (active) setLoadingGoals(false)
+      }
+    }
+    loadGoals()
+    return () => { active = false }
+  }, [player?.id, player?.assigned, player?.isRegistered])
+
+  if (!player?.assigned || !player?.isRegistered) return null
+
+  const localToday = getLocalISODate()
+  const getGoalInfo = goal => {
+    const indicator = String(goal.target_focus || 'Endurance')
+    const currentScore = scores[indicator.toLowerCase()]
+    const hasScore = Number.isFinite(currentScore)
+    const target = Number(goal.target_score) || 0
+    const progress = hasScore && target > 0
+      ? Math.max(0, Math.min(100, Math.round((currentScore / target) * 100)))
+      : null
+    const completed = hasScore && target > 0 && currentScore >= target
+    const overdue = !completed && Boolean(goal.deadline && goal.deadline < localToday)
+    return { indicator, currentScore, hasScore, target, progress, completed, overdue }
+  }
+  const featured = goals.find(goal => goal.is_featured === true)
+  const unfinished = goals.filter(goal => !getGoalInfo(goal).completed)
+  const closestDeadline = [...unfinished].sort((a, b) =>
+    String(a.deadline || '9999-12-31').localeCompare(String(b.deadline || '9999-12-31')) ||
+    String(b.created_at || '').localeCompare(String(a.created_at || ''))
+  )[0]
+  const cardGoal = featured || closestDeadline || goals[0] || null
+
+  const renderGoal = (goal, detailed = false) => {
+    const info = getGoalInfo(goal)
+    return (
+      <div key={goal.id} style={{ padding: detailed ? 14 : 12, border: '1px solid var(--line, #EEF1F8)', background: 'var(--soft, #F7F9FF)', borderRadius: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: '#0D1B3E', overflowWrap: 'anywhere' }}>
+            {goal.is_featured && <span title="Featured by player" style={{ color: '#D97706', marginRight: 6 }}>★</span>}
+            {goal.goal_note || `Improve ${info.indicator}`}
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, color: info.completed ? '#047857' : info.overdue ? '#B91C1C' : '#1D4ED8' }}>
+            {info.completed ? 'Target reached' : info.overdue ? 'Overdue' : 'In progress'}
+          </span>
+        </div>
+        <div style={{ height: 8, borderRadius: 999, marginTop: 11, background: '#E2E8F0', overflow: 'hidden' }}>
+          <div style={{ width: `${info.progress ?? 0}%`, height: '100%', borderRadius: 999, background: info.completed ? '#10B981' : '#7C3AED' }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginTop: 7, color: '#64748B', fontSize: 11 }}>
+          <span>{info.indicator}: {info.hasScore ? info.currentScore : 'Score unavailable'} / {info.target}</span>
+          <strong>{info.progress === null ? '—' : `${info.progress}%`}</strong>
+        </div>
+        <div style={{ marginTop: 6, color: '#8892A4', fontSize: 11 }}>
+          Deadline: {goal.deadline ? formatPlayerMatchDate(`${goal.deadline}T00:00:00`) : 'Not set'}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.card} style={{ padding: 18, marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div>
+          <div className={styles.cardTitle} style={{ marginBottom: 2 }}>Player Fitness Goals</div>
+          <div style={{ fontSize: 11, color: '#8892A4' }}>Read-only · Goals are managed by the player</div>
+        </div>
+        {!loadingGoals && !goalsError && goals.length > 0 && (
+          <button type="button" className={styles.btnOutline} onClick={() => setShowAllGoals(true)} style={{ fontSize: 11 }}>
+            View all goals ({goals.length})
+          </button>
+        )}
+      </div>
+      {loadingGoals ? (
+        <div style={{ fontSize: 12, color: '#8892A4', padding: '12px 0' }}>Loading player goals...</div>
+      ) : goalsError ? (
+        <div style={{ fontSize: 12, color: '#B91C1C' }}>{goalsError}</div>
+      ) : cardGoal ? renderGoal(cardGoal) : (
+        <div style={{ fontSize: 12, color: '#8892A4', padding: 12, border: '1px dashed var(--line, #D8DEEA)', borderRadius: 10 }}>
+          This player has not added any fitness goals yet.
+        </div>
+      )}
+      {showAllGoals && (
+        <div role="presentation" onMouseDown={event => {
+          if (event.target === event.currentTarget) setShowAllGoals(false)
+        }} style={{ position: 'fixed', inset: 0, zIndex: 11000, background: 'rgba(13,27,62,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}>
+          <div role="dialog" aria-modal="true" aria-label={`${player.name}'s fitness goals`} style={{ width: 'min(620px,100%)', maxHeight: '86vh', overflowY: 'auto', background: 'var(--card, #fff)', padding: 20, borderRadius: 18, boxShadow: '0 24px 60px rgba(13,27,62,.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#0D1B3E' }}>{player.name}'s Fitness Goals</div>
+                <div style={{ fontSize: 11, color: '#8892A4', marginTop: 4 }}>Read-only · ★ indicates the player's featured goal</div>
+              </div>
+              <button type="button" className={styles.btnOutline} onClick={() => setShowAllGoals(false)} aria-label="Close fitness goals">×</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[...goals].sort((a, b) => Number(Boolean(b.is_featured)) - Number(Boolean(a.is_featured)) ||
+                String(a.deadline || '9999-12-31').localeCompare(String(b.deadline || '9999-12-31'))).map(goal => renderGoal(goal, true))}
+            </div>
+            <div style={{ textAlign: 'right', marginTop: 16 }}>
+              <button type="button" className={styles.btnOutline} onClick={() => setShowAllGoals(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PlayerMetricIcon({ type, color = 'currentColor', size = 18 }) {
   const props = {
     width: size,
@@ -3542,6 +3722,7 @@ export default function CoachPlayers() {
                     </div>
                   )}
                 </div>
+                <CoachPlayerFitnessGoals player={selectedPlayer} />
                 </>
               )}
             </div>
@@ -4290,6 +4471,7 @@ export default function CoachPlayers() {
                   )}
                 </div>
               )}
+              {profilePlayer.assigned && <CoachPlayerFitnessGoals player={profilePlayer} />}
 
               <div
                 style={{

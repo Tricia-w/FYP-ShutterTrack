@@ -598,14 +598,6 @@ function decodeInjuryNotes(value) {
 
 const INJURY_IMAGE_BUCKET = 'injury-images'
 
-function getInjuryImageUrl(imagePath) {
-  if (!imagePath) return ''
-  const { data } = supabase.storage
-    .from(INJURY_IMAGE_BUCKET)
-    .getPublicUrl(imagePath)
-  return data?.publicUrl || ''
-}
-
 function getInjurySeverityColor(severity) {
   const normalized = String(severity || '').toLowerCase()
   if (normalized === 'severe') return '#EF4444'
@@ -634,7 +626,7 @@ function normalizeInjury(row) {
     bodyX: meta.bodyX,
     bodyY: meta.bodyY,
     imagePath,
-    imageUrl: getInjuryImageUrl(imagePath),
+    
     createdAt: row?.created_at || '',
     updatedAt: row?.updated_at || '',
     isActive:
@@ -1678,6 +1670,43 @@ export default function CoachProgress() {
     useState(null)
   const [injuryDetailOpen, setInjuryDetailOpen] =
     useState(false)
+  // Injury images live in a private bucket under <player-user-id>/<filename>.
+  // Fetch a short-lived signed URL only when the details popup is opened.
+  const [injuryDetailPhotoUrl, setInjuryDetailPhotoUrl] = useState('')
+  const [injuryPhotoLoading, setInjuryPhotoLoading] = useState(false)
+  const [injuryPhotoError, setInjuryPhotoError] = useState('')
+  const [injuryPhotoRetry, setInjuryPhotoRetry] = useState(0)
+  useEffect(() => {
+    const imagePath = String(selectedInjury?.imagePath || '').trim()
+    setInjuryDetailPhotoUrl('')
+    setInjuryPhotoError('')
+    if (!injuryDetailOpen || !imagePath) {
+      setInjuryPhotoLoading(false)
+      return undefined
+    }
+
+    let cancelled = false
+    setInjuryPhotoLoading(true)
+    const loadPhoto = async () => {
+      try {
+        const { data, error: photoError } = await supabase.storage
+          .from(INJURY_IMAGE_BUCKET)
+          .createSignedUrl(imagePath, 60 * 60)
+        if (photoError) throw photoError
+        if (!data?.signedUrl) throw new Error('No signed photo URL was returned.')
+        if (!cancelled) setInjuryDetailPhotoUrl(data.signedUrl)
+      } catch (photoError) {
+        console.error('Coach injury photo access error:', photoError)
+        if (!cancelled) {
+          setInjuryPhotoError('Unable to access this injury photo. Check the accepted-coach Storage permission for the injury-images bucket.')
+        }
+      } finally {
+        if (!cancelled) setInjuryPhotoLoading(false)
+      }
+    }
+    loadPhoto()
+    return () => { cancelled = true }
+  }, [injuryDetailOpen, selectedInjury?.imagePath, injuryPhotoRetry])
   const [matchNote, setMatchNote] = useState('')
   const [savingMatch, setSavingMatch] =
     useState(false)
@@ -5658,22 +5687,6 @@ export default function CoachProgress() {
                                       gap: 9,
                                     }}
                                   >
-                                    {injury.imageUrl && (
-                                      <img
-                                        src={injury.imageUrl}
-                                        alt=""
-                                        style={{
-                                          width: 42,
-                                          height: 42,
-                                          borderRadius: 8,
-                                          objectFit: 'cover',
-                                          flexShrink: 0,
-                                          background:
-                                            'var(--soft, #F7F9FF)',
-                                        }}
-                                      />
-                                    )}
-
                                     <div style={{ minWidth: 0 }}>
                                       <div
                                         style={{
@@ -6691,19 +6704,45 @@ export default function CoachProgress() {
                     })()}
                   </svg>
                 </div>
-                {selectedInjury.imageUrl && (
-                  <img
-                    src={selectedInjury.imageUrl}
-                    alt="Injury"
-                    style={{
-                      marginTop: 12,
-                      width: '100%',
-                      maxHeight: 180,
-                      objectFit: 'cover',
-                      borderRadius: 12,
-                      border: '1px solid var(--line, #EEF1F8)',
-                    }}
-                  />
+                {Boolean(selectedInjury.imagePath) && (
+                  <div style={{ marginTop: 12, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted, #8892A4)', marginBottom: 7 }}>
+                      Uploaded injury photo
+                    </div>
+                    {injuryPhotoLoading && (
+                      <div role="status" style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)', padding: '12px 0' }}>
+                        Loading photo...
+                      </div>
+                    )}
+                    {injuryDetailPhotoUrl && !injuryPhotoError && (
+                      <img
+                        src={injuryDetailPhotoUrl}
+                        alt={`${selectedInjury.name} injury`}
+                        onError={() => {
+                          setInjuryDetailPhotoUrl('')
+                          setInjuryPhotoError('The injury photo could not be displayed. Check Storage access or try again.')
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          maxHeight: 280,
+                          objectFit: 'contain',
+                          borderRadius: 12,
+                          border: '1px solid var(--line, #EEF1F8)',
+                          background: 'var(--soft, #F7F9FF)',
+                        }}
+                      />
+                    )}
+                    {injuryPhotoError && (
+                      <div role="alert" style={{ padding: 10, borderRadius: 10, background: '#FFF7ED', color: '#9A3412', fontSize: 11, lineHeight: 1.5 }}>
+                        {injuryPhotoError}
+                        <button type="button" onClick={() => setInjuryPhotoRetry(v => v + 1)}
+                          style={{ display: 'block', marginTop: 6, fontSize: 11, fontWeight: 700, color: '#1A5FFF', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}>
+                          Retry photo
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
