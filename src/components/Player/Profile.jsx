@@ -2527,7 +2527,18 @@ export default function Profile() {
                   <option>Female</option>
                 </select>
               </div>
-              <div className={styles.formRow}><label className={styles.formLabel}>Playing Hand</label><select className={styles.formSelect} value={form.hand} onChange={set('hand')}><option>Right</option><option>Left</option></select></div>
+              <div className={styles.formRow}>
+                <label
+                  className={styles.formLabel}
+                  style={{ display: 'flex', alignItems: 'center', height: 34, marginBottom: 6 }}
+                >
+                  Playing Hand
+                </label>
+                <select className={styles.formSelect} value={form.hand} onChange={set('hand')}>
+                  <option>Right</option>
+                  <option>Left</option>
+                </select>
+              </div>
             </div>
             <div className={styles.g2} style={{ marginBottom: 0 }}>
               <div className={styles.formRow}><label className={styles.formLabel}>Height cm</label><input className={styles.formInput} type="number" value={form.height} onChange={set('height')} /></div>
