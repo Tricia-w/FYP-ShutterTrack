@@ -65,6 +65,7 @@ const EMPTY_FORM = {
   club: '',
   state: '',
   coaching_level: 'Community Coach',
+  verification_route: 'certified',
   experience_years: '',
   specialties: [],
   player_levels: [],
@@ -158,10 +159,12 @@ export default function CoachProfile() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('success')
+  const [verificationFeedback, setVerificationFeedback] = useState(null)
   const [autosaveStatus, setAutosaveStatus] = useState('Saved')
   const [verificationStatus, setVerificationStatus] = useState('pending')
   const [rejectionReason, setRejectionReason] = useState('')
   const [verifiedAt, setVerifiedAt] = useState(null)
+  const [verificationSubmittedAt, setVerificationSubmittedAt] = useState(null)
   const [resubmitting, setResubmitting] = useState(false)
   const initialLoadCompleteRef = useRef(false)
   const lastSavedSnapshotRef = useRef('')
@@ -222,6 +225,7 @@ export default function CoachProfile() {
     const data = profileResult.data
 
     setVerificationStatus(data?.verification_status || 'pending')
+    setVerificationSubmittedAt(data?.verification_submitted_at || null)
     setRejectionReason(data?.rejection_reason || '')
     setVerifiedAt(data?.verified_at || null)
 
@@ -273,6 +277,7 @@ export default function CoachProfile() {
         '',
       state: data?.state || profile?.state || profile?.location || '',
       coaching_level: data?.coaching_level || 'Community Coach',
+      verification_route: data?.verification_route === 'experience' ? 'experience' : 'certified',
       experience_years:
         data?.experience_years === null ||
         data?.experience_years === undefined
@@ -340,6 +345,7 @@ export default function CoachProfile() {
       ...current,
       [field]: value,
     }))
+    setVerificationFeedback(null)
     setMessage('')
     setAutosaveStatus('Unsaved changes')
   }
@@ -828,6 +834,7 @@ export default function CoachProfile() {
         club: nextForm.club.trim() || null,
         state: nextForm.state.trim() || null,
         coaching_level: nextForm.coaching_level,
+        verification_route: nextForm.verification_route === 'experience' ? 'experience' : 'certified',
         experience_years: Number(nextForm.experience_years) || 0,
         specialties: nextForm.specialties,
         player_levels: nextForm.player_levels,
@@ -1057,28 +1064,50 @@ export default function CoachProfile() {
 
 
 
-  const handleResubmitVerification = async () => {
-    if (!user?.id) return
+  // Saving a draft and submitting it for verification are separate actions.
+  const handleSubmitVerification = async () => {
+    if (!user?.id) {
+      setVerificationFeedback({ type: 'error', text: 'Please sign in again before submitting.' })
+      return
+    }
+    if (verificationStatus === 'verified' ||
+      (verificationStatus === 'pending' && verificationSubmittedAt)) {
+      setVerificationFeedback({ type: 'success', text: 'Your coach verification is already submitted or approved.' })
+      return
+    }
 
     const hasMainCertificate = Boolean(
       form.certification.trim() && form.certification_file_url
     )
-
     const hasRelevantCertificate = relevantCertificates.some(
       item => item.certificate_name.trim() && item.file_url
     )
+    const missing = []
+    if (!form.display_name.trim()) missing.push('display name')
+    if (!form.state.trim()) missing.push('state')
+    if (form.experience_years === '' || Number(form.experience_years) < 0)
+      missing.push('years of experience')
+    if (!form.specialties.length) missing.push('coaching specialty')
+    if (!form.player_levels.length) missing.push('player level')
+    if (!form.session_types.length) missing.push('session type')
+    if (form.verification_route === 'experience') {
+      if (Number(form.experience_years) <= 0) missing.push('at least 1 year of coaching experience')
+      if (form.bio.trim().length < 100) missing.push('an About coach statement of at least 100 characters')
+      if (form.coaching_philosophy.trim().length < 40) missing.push('a coaching philosophy of at least 40 characters')
+    } else if (!hasMainCertificate && !hasRelevantCertificate) {
+      missing.push('a certificate name and uploaded proof')
+    }
 
-    if (!hasMainCertificate && !hasRelevantCertificate) {
+    if (missing.length) {
       setMessageType('error')
-      setMessage(
-        'Upload at least one complete certificate before resubmitting.'
-      )
+      setMessage(`Complete these items before submitting: ${missing.join(', ')}.`)
+      setVerificationFeedback({ type: 'error', text: 'Your application has not been sent. Complete the following information first:', items: missing })
       return
     }
 
     setResubmitting(true)
+    setVerificationFeedback({ type: 'info', text: 'Saving your profile and submitting it for admin review…' })
     setMessage('')
-
     try {
       const saved = await persistProfile({
         nextForm: form,
@@ -1086,27 +1115,26 @@ export default function CoachProfile() {
         nextVenues: trainingVenues,
         manual: true,
       })
+      if (!saved) {
+        setVerificationFeedback({ type: 'error', text: 'Your verification was not submitted because the profile could not be saved. Check the message below the form and try again.' })
+        return
+      }
 
-      if (!saved) return
-
-      const { error } = await supabase
-        .rpc('resubmit_coach_verification')
-
+      const { error } = await supabase.rpc('submit_coach_verification')
       if (error) throw error
 
       setVerificationStatus('pending')
+      setVerificationSubmittedAt(new Date().toISOString())
       setRejectionReason('')
       setVerifiedAt(null)
       setMessageType('success')
-      setMessage(
-        'Your updated certification has been resubmitted for admin review.'
-      )
+      setMessage('Verification submitted. An admin can now review your coach profile and supporting information.')
+      setVerificationFeedback({ type: 'success', text: 'Verification submitted successfully! Your application is now Pending Admin Review. You do not need to submit it again.' })
     } catch (error) {
-      console.error('Verification resubmit error:', error)
+      console.error('Coach verification submission error:', error)
       setMessageType('error')
-      setMessage(
-        error.message || 'Failed to resubmit coach verification.'
-      )
+      setMessage(error.message || 'Unable to submit coach verification.')
+      setVerificationFeedback({ type: 'error', text: `Submission failed. Nothing was sent to Admin. ${error.message || 'Please try again.'}` })
     } finally {
       setResubmitting(false)
     }
@@ -1189,7 +1217,9 @@ export default function CoachProfile() {
                 ? '✓ Verified Coach'
                 : verificationStatus === 'rejected'
                   ? 'Verification rejected'
-                  : 'Verification under review'}
+                  : verificationSubmittedAt
+                    ? 'Verification under review'
+                    : 'Verification not submitted'}
             </div>
 
             <div
@@ -1220,16 +1250,19 @@ export default function CoachProfile() {
                   }`
                 : verificationStatus === 'rejected'
                   ? rejectionReason ||
-                    'Update your certification and resubmit it for review.'
-                  : 'An admin must verify your certification before players can find your coach profile.'}
+                    'Update your coaching profile and resubmit it for review.'
+                  : verificationSubmittedAt
+                    ? 'Your application was submitted. An admin will review your coaching information before players can find you.'
+                    : 'Complete your profile and choose a verification route below, then submit for admin review.'}
             </div>
           </div>
 
-          {verificationStatus === 'rejected' && (
-            <button
+           {(verificationStatus === 'rejected' ||
+             (verificationStatus === 'pending' && !verificationSubmittedAt)) && (
+             <button
               type="button"
               className={styles.btnPrimary}
-              onClick={handleResubmitVerification}
+               onClick={handleSubmitVerification}
               disabled={resubmitting || saving}
               style={{
                 fontSize: 11,
@@ -1237,10 +1270,50 @@ export default function CoachProfile() {
                 whiteSpace: 'nowrap',
               }}
             >
-              {resubmitting ? 'Resubmitting...' : 'Resubmit verification'}
+               {resubmitting ? 'Submitting...' : verificationStatus === 'rejected' ? 'Resubmit verification' : 'Submit for Verification'}
             </button>
           )}
         </div>
+
+        {verificationFeedback && (
+          <div
+            role={verificationFeedback.type === 'error' ? 'alert' : 'status'}
+            aria-live={verificationFeedback.type === 'error' ? 'assertive' : 'polite'}
+            style={{
+              marginTop: 14,
+              padding: '13px 15px',
+              borderRadius: 12,
+              background: verificationFeedback.type === 'error'
+                ? '#FEF2F2'
+                : verificationFeedback.type === 'success'
+                  ? '#ECFDF5'
+                  : '#EFF6FF',
+              border: verificationFeedback.type === 'error'
+                ? '1px solid #FECACA'
+                : verificationFeedback.type === 'success'
+                  ? '1px solid #A7F3D0'
+                  : '1px solid #BFDBFE',
+              color: verificationFeedback.type === 'error'
+                ? '#991B1B'
+                : verificationFeedback.type === 'success'
+                  ? '#065F46'
+                  : '#1D4ED8',
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 800, lineHeight: 1.55 }}>
+              {verificationFeedback.type === 'error' ? '⚠ Submission incomplete' :
+                verificationFeedback.type === 'success' ? '✓ Submission confirmed' : 'Submitting…'}
+            </div>
+            <div style={{ fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
+              {verificationFeedback.text}
+            </div>
+            {verificationFeedback.items?.length > 0 && (
+              <ul style={{ margin: '8px 0 0', paddingLeft: 21, fontSize: 12, lineHeight: 1.8 }}>
+                {verificationFeedback.items.map(item => <li key={item}>{item}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -1502,6 +1575,23 @@ export default function CoachProfile() {
             <div className={styles.card}>
               <div className={styles.cardTitle}>Coaching background</div>
 
+              <div style={{ padding: 14, marginBottom: 16, borderRadius: 12, border: '1px solid var(--line, #DDE3F0)', background: 'var(--soft, #F8FAFC)' }}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: 'var(--text, #0D1B3E)' }}>Verification application type</div>
+                <div style={{ display: 'grid', gap: 9 }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 12, lineHeight: 1.5, cursor: 'pointer' }}>
+                    <input type="radio" name="coachVerificationRoute" value="certified" checked={form.verification_route !== 'experience'} onChange={() => updateField('verification_route', 'certified')} style={{ marginTop: 3 }} />
+                    <span><strong>Certified coach</strong> — Upload at least one named coaching certificate with proof.</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 12, lineHeight: 1.5, cursor: 'pointer' }}>
+                    <input type="radio" name="coachVerificationRoute" value="experience" checked={form.verification_route === 'experience'} onChange={() => updateField('verification_route', 'experience')} style={{ marginTop: 3 }} />
+                    <span><strong>No formal certification</strong> — Apply using at least one year of coaching experience, a detailed About coach statement (100+ characters), and a coaching philosophy (40+ characters). Admin will manually review your application.</span>
+                  </label>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted, #64748B)', marginTop: 9 }}>
+                  Admin verification confirms review of your application; it does not certify professional qualifications.
+                </div>
+              </div>
+
               <div className={styles.g2} style={{ marginBottom: 0 }}>
                 <div className={styles.formRow}>
                   <label className={styles.formLabel}>Coaching level</label>
@@ -1563,7 +1653,7 @@ export default function CoachProfile() {
                       Main certificate
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted, #8892A4)', marginTop: 3 }}>
-                      Your most important coaching qualification, such as a BAM, BWF, national or state certificate.
+                      {form.verification_route === 'experience' ? 'Optional: add a certificate if available. You can submit without one using the experience route.' : 'Your most important coaching qualification, such as a BAM, BWF, national or state certificate.'}
                     </div>
                   </div>
                   <span className={styles.badgeBlue}>Primary</span>
@@ -2152,6 +2242,11 @@ export default function CoachProfile() {
 
             <div className={styles.card}>
               <div className={styles.cardTitle}>About your coaching</div>
+              {form.verification_route === 'experience' && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted, #64748B)', marginBottom: 14, lineHeight: 1.6 }}>
+                  For the non-certified route, explain where and how you coach (at least 100 characters) and your training approach (at least 40 characters). These details are reviewed by Admin.
+                </div>
+              )}
 
               <div className={styles.formRow}>
                 <label className={styles.formLabel}>About coach</label>
@@ -2286,11 +2381,15 @@ export default function CoachProfile() {
                     </span>
                   )}
 
-                  {verificationStatus === 'pending' && (
+                   {verificationStatus === 'pending' && verificationSubmittedAt && (
                     <span className={styles.badgeAmber}>
                       Pending
                     </span>
                   )}
+
+                   {verificationStatus === 'pending' && !verificationSubmittedAt && (
+                     <span className={styles.badgeGray}>Not submitted</span>
+                   )}
 
                   {verificationStatus === 'rejected' && (
                     <span

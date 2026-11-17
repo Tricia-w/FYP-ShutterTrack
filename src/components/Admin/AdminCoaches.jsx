@@ -223,6 +223,11 @@ export default function AdminCoaches() {
       ]);
 
       const formatted = [...userIds]
+        .filter((userId) => {
+          const row = profileByUser.get(userId)
+          return Boolean(row && (row.verification_submitted_at ||
+            ['verified', 'rejected'].includes(String(row.verification_status || '').toLowerCase())))
+        })
         .map((userId) => {
           const publicCoach =
             publicByUser.get(userId) || {};
@@ -315,6 +320,14 @@ export default function AdminCoaches() {
             rejectionReason:
               profile.rejection_reason || "",
             certificates,
+            verificationRoute: profile.verification_route === 'experience' ? 'experience' : 'certified',
+            biography: profile.bio || '',
+            coachingPhilosophy: profile.coaching_philosophy || '',
+            submittedAt: profile.verification_submitted_at || null,
+            hasReviewCertificate: certificates.some(cert => cert.name && cert.fileUrl),
+            hasExperienceEvidence: Number(profile.experience_years || 0) > 0 &&
+              String(profile.bio || '').trim().length >= 100 &&
+              String(profile.coaching_philosophy || '').trim().length >= 40,
             accountStatus:
               appUser.account_status ||
               "active",
@@ -444,6 +457,12 @@ export default function AdminCoaches() {
 
   const saveDecision = async () => {
     if (!selected || !decision) return;
+
+    if (decision === 'Verified' && (!selected.submittedAt ||
+      (selected.verificationRoute === 'experience' ? !selected.hasExperienceEvidence : !selected.hasReviewCertificate))) {
+      setErrorMessage('Coach must submit an application with the required certificate or coaching-experience information before approval.');
+      return;
+    }
 
     if (
       decision === "Rejected" &&
@@ -1071,6 +1090,24 @@ export default function AdminCoaches() {
             </div>
           </div>
 
+          <div style={{ marginTop: 16, padding: 14, border: '1px solid #E5EAF3', borderRadius: 12, background: '#F8FAFF' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 7 }}>Verification route</div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>
+              {selected.verificationRoute === 'experience' ? 'Non-certified / coaching experience' : 'Certified / certificate review'}
+            </div>
+            {selected.verificationRoute === 'experience' && (
+              <div style={{ fontSize: 12, lineHeight: 1.65, marginTop: 11, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                <strong>About coach</strong>
+                <p style={{ margin: '5px 0 12px' }}>{selected.biography || 'Not provided'}</p>
+                <strong>Coaching philosophy</strong>
+                <p style={{ margin: '5px 0 0' }}>{selected.coachingPhilosophy || 'Not provided'}</p>
+                <div style={{ marginTop: 9, color: selected.hasExperienceEvidence ? '#047857' : '#B91C1C', fontWeight: 700 }}>
+                  {selected.hasExperienceEvidence ? 'Experience application information complete' : 'Experience application information incomplete'}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div style={{ marginTop: 16 }}>
             <div
               style={{
@@ -1094,7 +1131,7 @@ export default function AdminCoaches() {
                   fontSize: 12,
                 }}
               >
-                No certificate file was uploaded.
+                {selected.verificationRoute === 'experience' ? 'No certificate uploaded (optional for the experience route).' : 'No certificate file was uploaded.'}
               </div>
             ) : (
               <div
@@ -1204,6 +1241,8 @@ export default function AdminCoaches() {
                 </button>
                 <button
                   type="button"
+                  disabled={!selected.submittedAt || (selected.verificationRoute === 'experience' ? !selected.hasExperienceEvidence : !selected.hasReviewCertificate)}
+                  title={!selected.submittedAt || (selected.verificationRoute === 'experience' ? !selected.hasExperienceEvidence : !selected.hasReviewCertificate) ? 'Submitted application with required supporting information is required' : 'Verify coach'}
                   onClick={() =>
                     beginDecision("Verified")
                   }

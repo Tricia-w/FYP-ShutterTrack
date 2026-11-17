@@ -441,10 +441,17 @@ export default function Settings() {
     if (dedupeKey) {
       payload.dedupe_key = dedupeKey
     }
-    const { error } = await supabase.from('notifications').insert(payload)
+    // The database function uses ON CONFLICT ... DO NOTHING for the
+    // partial unique index on (user_id, dedupe_key), avoiding HTTP 409.
+    const { error } = await supabase.rpc('insert_notification_if_new', {
+      p_user_id: payload.user_id,
+      p_title: payload.title,
+      p_message: payload.message,
+      p_type: payload.type,
+      p_dedupe_key: payload.dedupe_key ?? null,
+    })
     if (error) {
-      if (error.code === '23505') return
-      console.log(error)
+      console.error('Create notification error:', error)
     }
   }
   const checkMatchReminders = async currentSettings => {

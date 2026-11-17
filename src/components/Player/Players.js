@@ -4162,7 +4162,19 @@ export default function Players() {
 
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 10, fontWeight: 600 }}>{filtered.length} player{filtered.length !== 1 ? "s" : ""} found</div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                maxHeight: "600px",
+                overflowY: "auto",
+                overflowX: "hidden",
+                paddingRight: 6,
+                paddingBottom: 4,
+                overscrollBehavior: "contain",
+              }}
+            >
               {filtered.length === 0 && <div className={styles.card} style={{ textAlign: "center", padding: 40, color: C.muted }}>{tab === "fav" ? "You have not added any favourite players yet." : "No players match your search."}</div>}
               {filtered.map((player) => {
                 const isSelected = selected?.id === player.id;
