@@ -578,6 +578,7 @@ export default function Dashboard() {
           setupRes,
           expenseRes,
           lastExpenseRes,
+          groupExpenseRes,
           fitnessTestsRes,
           fitnessRecoveryRes,
           fitnessInjuriesRes,
@@ -617,6 +618,14 @@ export default function Dashboard() {
             .eq('user_id', authUser.id)
             .gte('date', lastStart)
             .lt('date', lastEnd),
+
+          // Use the same source of group shares as the Expense Tracker.
+          // Include the previous and current months for the comparison card.
+          supabase
+            .from('group_expenses')
+            .select('id,created_by,expense_date,category,title,creator_share,status,group_expense_participants(id,user_id,amount_owed,request_status)')
+            .gte('expense_date', lastStart)
+            .lt('expense_date', monthEnd),
 
           supabase
             .from('fitness_tests')
@@ -681,6 +690,10 @@ export default function Dashboard() {
 
         if (requestError) throw requestError
 
+        if (groupExpenseRes.error) {
+          console.error('Dashboard group expenses load error:', groupExpenseRes.error)
+        }
+
         if (coachSkillAssessmentRes.error) {
           console.error(
             'Coach skill assessment load error:',
@@ -744,8 +757,41 @@ export default function Dashboard() {
 
         setSetup(setupRes.data || null)
         setMatches(matchRows)
-        setExpenses(expenseRes.data || [])
-        setLastMonthExpenses(lastExpenseRes.data || [])
+        // Merge personal expenses with group shares, without inserting
+        // duplicate personal expense rows into public.expenses.
+        const groupShares = (groupExpenseRes.data || []).flatMap(group => {
+          if (group.status === 'cancelled') return []
+
+          const ownsExpense = group.created_by === authUser.id
+          const share = ownsExpense
+            ? Number(group.creator_share || 0)
+            : (group.group_expense_participants || [])
+                .filter(participant =>
+                  participant.user_id === authUser.id &&
+                  participant.request_status === 'accepted'
+                )
+                .reduce((sum, participant) => sum + Number(participant.amount_owed || 0), 0)
+
+          if (share <= 0) return []
+
+          return [{
+            id: `group-${group.id}`,
+            date: group.expense_date,
+            category: group.category || 'Other',
+            description: `${group.title} · Group share`,
+            amount: share,
+          }]
+        })
+
+        const currentGroupShares = groupShares.filter(item =>
+          item.date >= monthStart && item.date < monthEnd
+        )
+        const previousGroupShares = groupShares.filter(item =>
+          item.date >= lastStart && item.date < lastEnd
+        )
+
+        setExpenses([...(expenseRes.data || []), ...currentGroupShares])
+        setLastMonthExpenses([...(lastExpenseRes.data || []), ...previousGroupShares])
 
         const attendanceBySession = new Map(
           (coachAssignmentRes.data || []).map(item => [

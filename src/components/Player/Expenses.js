@@ -1460,81 +1460,52 @@ export default function Expenses() {
       ? byCategory.reduce((max, e) => (e.val > max.val ? e : max), byCategory[0])
       : null
 
-  // Transparent, rule-based insights calculated entirely from saved player expenses.
-  // No Gemini requests, new tables, or additional personal-data sharing are required.
-  const previousCategoryTotals = Object.fromEntries(
-    Object.keys(categoryInfo).map(category => [
-      category,
-      previousMonthExpenses
-        .filter(expense => expense.category === category)
-        .reduce((sum, expense) => sum + Number(expense.amount), 0),
-    ])
-  )
-  const categoryIncrease = hasPreviousMonthData && hasSelectedMonthData
-    ? byCategory
-      .map(item => ({ ...item, increase: item.val - (previousCategoryTotals[item.category] || 0) }))
-      .filter(item => item.increase > 0)
-      .sort((a, b) => b.increase - a.increase)[0] || null
-    : null
-  const categoryAdvice = {
-    Court: 'Consider sharing court rental costs with training partners when practical.',
-    Equipment: 'Review whether new equipment is necessary before your next purchase.',
-    Shuttlecocks: 'Consider sharing shuttlecock costs with your regular badminton group.',
-    Stringing: 'Check your restringing schedule and avoid replacing strings earlier than needed.',
-    Transport: 'Consider combining trips or sharing transport when convenient.',
-    Other: 'Review the descriptions in this category to identify optional expenses.',
-  }
-  // Only actionable, non-duplicated recommendations belong here.
-  // Trends stay in Monthly Trend; amounts and thresholds stay in Budget Alert.
-  const smartInsights = []
+  // Classic Suggestions panel: straightforward budget and category guidance.
+  // All figures come from this month's actual personal + group share records.
+  const classicSuggestions = []
   if (!hasSelectedMonthData) {
-    smartInsights.push({
+    classicSuggestions.push({
       type: 'info',
       title: 'Start tracking your spending',
-      text: 'Add an expense to see personalized ways to manage badminton costs.',
+      text: 'Record your badminton expenses to receive spending suggestions.',
     })
   } else {
-    if (highestCategory) {
-      const adviceTitles = {
-        Court: 'Consider sharing court costs',
-        Equipment: 'Plan equipment purchases',
-        Shuttlecocks: 'Share shuttlecock costs',
-        Stringing: 'Review your stringing schedule',
-        Transport: 'Reduce transport costs',
-        Other: 'Review miscellaneous spending',
+    if (hasMonthlyBudget) {
+      if (budgetStatus === 'Exceeded') {
+        classicSuggestions.push({
+          type: 'warning',
+          title: 'Monthly budget exceeded',
+          text: `You are ${formatRM(Math.abs(remainingBudget))} over your ${formatRM(monthlyBudget)} budget. Review upcoming expenses before spending more.`,
+        })
+      } else if (budgetStatus === 'Reached' || budgetStatus === 'Near Limit') {
+        classicSuggestions.push({
+          type: 'warning',
+          title: 'Keep an eye on your budget',
+          text: `You have ${formatRM(Math.max(0, remainingBudget))} remaining from your ${formatRM(monthlyBudget)} monthly budget.`,
+        })
+      } else {
+        classicSuggestions.push({
+          type: 'success',
+          title: 'Spending under control',
+          text: 'Your current spending is still within the monthly budget. Continue monitoring expenses regularly.',
+        })
       }
-      smartInsights.push({
+    } else {
+      classicSuggestions.push({
         type: 'info',
-        title: adviceTitles[highestCategory.category],
-        text: categoryAdvice[highestCategory.category],
+        title: 'Set a monthly budget',
+        text: 'Set a spending target to monitor court, shuttlecock and other badminton costs.',
       })
     }
-
-    if (categoryIncrease && categoryIncrease.category !== highestCategory?.category) {
-      smartInsights.push({
+    if (highestCategory) {
+      classicSuggestions.push({
         type: 'warning',
-        title: `Review ${categoryIncrease.label.toLowerCase()} expenses`,
-        text: `Check whether recent ${categoryIncrease.label.toLowerCase()} costs were necessary before making similar purchases.`,
-      })
-    } else if (hasMonthlyBudget) {
-      smartInsights.push({
-        type: budgetStatus === 'Exceeded' || budgetStatus === 'Reached' ? 'warning' : 'info',
-        title: budgetStatus === 'Exceeded' || budgetStatus === 'Reached'
-          ? 'Prioritize essential training costs'
-          : 'Plan upcoming badminton sessions',
-        text: budgetStatus === 'Exceeded' || budgetStatus === 'Reached'
-          ? 'Review optional purchases and upcoming bookings before adding more expenses.'
-          : 'Consider planned sessions and equipment needs before committing to more expenses this month.',
-      })
-    } else if (!highestCategory || highestCategory.category !== 'Other') {
-      smartInsights.push({
-        type: 'info',
-        title: 'Plan future badminton costs',
-        text: 'Estimate upcoming court, transport, and equipment costs before scheduling activities.',
+        title: `${highestCategory.label} is the highest cost`,
+        text: `${highestCategory.label} takes up ${highestCategory.pct}% of this month’s spending (${formatRM(highestCategory.val)}). Review this category if you want to reduce costs.`,
       })
     }
   }
-  const visibleSmartInsights = smartInsights.slice(0, 2)
+  const visibleClassicSuggestions = classicSuggestions.slice(0, 2)
 
   const budgetAlertMessage = (() => {
     if (!hasMonthlyBudget) {
@@ -1646,18 +1617,6 @@ export default function Expenses() {
     await fetchExpenses()
     closeExpenseModal()
   }
-  const pencilIcon = (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: C.muted, flexShrink: 0 }}>
-      <path
-        d="M9.5 2.5l2 2L4 12H2v-2L9.5 2.5Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-
   if (loading && !showLoader) {
     return null
   }
@@ -1742,7 +1701,7 @@ export default function Expenses() {
               WebkitTextFillColor: '#FFFFFF',
             }}
           >
-            {formatRMNoDecimal(selectedMonthTotal)}
+            {formatRM(selectedMonthTotal)}
           </div>
           <div className={styles.metricLbl} style={{ color: 'rgba(255,255,255,0.6)' }}>
             {selectedMonth}
@@ -1790,14 +1749,6 @@ export default function Expenses() {
             {hasMonthlyBudget && remainingBudget < 0 ? 'Over budget' : 'Remaining budget'}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 10 }}>
-            <button
-              type="button"
-              className={styles.btnOutline}
-              style={{ fontSize: 11, padding: '6px 10px', borderRadius: 8, color: '#1A5FFF', borderColor: '#B9CAFD', fontWeight: 700 }}
-              onClick={event => { event.stopPropagation(); setShowBudgetAlert(true) }}
-            >
-              View Budget
-            </button>
             <button
               type="button"
               className={styles.btnOutline}
@@ -2065,7 +2016,6 @@ export default function Expenses() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
                       {formatRM(expense.amount)}
                     </span>
-                    {expense.source !== 'group' && pencilIcon}
                   </div>
                 </div>
               ))
@@ -2125,25 +2075,78 @@ export default function Expenses() {
                       : `Recorded spending is unchanged from ${previousMonthName}.`}
             </div>
           </div>
+          {/* Original, always-visible Budget Alert card. */}
+          <div className={styles.card} style={{
+            border: `1.5px solid ${budgetStatus === 'Exceeded' ? '#EF4444' :
+              ['Near Limit', 'Reached'].includes(budgetStatus) ? '#F59E0B' :
+              budgetStatus === 'Safe' ? '#00C48C' : C.line}`,
+          }}>
+            <div className={styles.cardTitle} style={{
+              color: budgetStatus === 'Exceeded' ? '#EF4444' :
+                ['Near Limit', 'Reached'].includes(budgetStatus) ? '#D97706' :
+                budgetStatus === 'Safe' ? '#00C48C' : C.muted,
+            }}>Budget Alert</div>
+            <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.6, color: C.text, marginBottom: 14 }}>
+              {budgetAlertMessage}
+            </div>
+            {hasMonthlyBudget && (
+              <>
+                <div className={styles.statRow}>
+                  <span className={styles.statLabel}>Budget used</span>
+                  <span className={styles.statVal} style={{ color: budgetStatus === 'Exceeded' ? '#EF4444' : '#00C48C' }}>
+                    {budgetUsedPercent}%
+                  </span>
+                </div>
+                <div className={styles.statRow}>
+                  <span className={styles.statLabel}>{remainingBudget < 0 ? 'Over budget' : 'Remaining'}</span>
+                  <span className={styles.statVal} style={{ color: remainingBudget < 0 ? '#EF4444' : '#00C48C' }}>
+                    {formatRM(Math.abs(remainingBudget))}
+                  </span>
+                </div>
+              </>
+            )}
+            <div className={styles.statRow}>
+              <span className={styles.statLabel}>Status</span>
+              <span className={styles.statVal}>
+                <span className={budgetStatus === 'Exceeded' ? styles.badgeRed :
+                  ['Near Limit', 'Reached'].includes(budgetStatus) ? styles.badgeAmber :
+                    budgetStatus === 'Safe' ? styles.badgeGreen : styles.badgeGray}>
+                  {budgetStatus}
+                </span>
+              </span>
+            </div>
+            {highestCategory && (
+              <div style={{ marginTop: 13, color: C.muted, fontWeight: 700, fontSize: 12 }}>
+                Highest category: {highestCategory.label} — {formatRM(highestCategory.val)} ({highestCategory.pct}%)
+              </div>
+            )}
+          </div>
           <div className={styles.card}>
-            <div className={styles.cardTitle} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span aria-hidden="true" style={{ color: '#1A5FFF' }}>✦</span>
-              Smart Spending Insights
-            </div>
-            <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
-              Practical tips based on your recorded expenses
-            </div>
+            <div className={styles.cardTitle}>Suggestions</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {visibleSmartInsights.map((insight, index) => {
-                const meta = getSuggestionMeta(insight.type)
+              {visibleClassicSuggestions.map((suggestion, index) => {
+                const success = suggestion.type === 'success'
+                const warning = suggestion.type === 'warning'
+                const color = success ? '#059669' : warning ? '#D97706' : '#2563EB'
+                const bg = success ? '#DDF8EF' : warning ? '#FFF4DE' : '#EFF6FF'
+                const border = success ? '#00C48C' : warning ? '#F59E0B' : '#BFDBFE'
+                const meta = getSuggestionMeta(suggestion.type)
                 return (
-                  <div key={`${insight.title}-${index}`} style={{ display: 'flex', gap: 10, padding: '10px 12px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.card }}>
-                    <span style={{ width: 26, height: 26, borderRadius: 8, background: meta.background, flexShrink: 0, display: 'grid', placeItems: 'center' }}>
-                      <ExpenseIcon type={meta.icon} color={meta.color} size={15} />
+                  <div key={`${suggestion.title}-${index}`} style={{
+                    display: 'flex', gap: 11, padding: '12px 14px',
+                    background: bg, border: `1px solid ${border}`, borderRadius: 10,
+                  }}>
+                    <span style={{ width: 25, height: 25, flexShrink: 0, display: 'grid',
+                      placeItems: 'center', background: meta.background, borderRadius: 8 }}>
+                      <ExpenseIcon type={meta.icon} color={color} size={15} />
                     </span>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, color: C.text, fontSize: 13, marginBottom: 4 }}>{insight.title}</div>
-                      <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.55 }}>{insight.text}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 4 }}>
+                        {suggestion.title}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text, lineHeight: 1.55 }}>
+                        {suggestion.text}
+                      </div>
                     </div>
                   </div>
                 )
