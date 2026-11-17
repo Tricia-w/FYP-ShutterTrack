@@ -79,6 +79,9 @@ export default function Layout() {
     width: typeof window !== 'undefined' ? window.innerWidth : 1280,
     height: typeof window !== 'undefined' ? window.innerHeight : 800,
   }))
+  const isMobileSidebar = viewport.width <= 900
+  const isNavCollapsed = !isMobileSidebar && sidebarCollapsed
+
   const [dock, setDock] = useState(() => ({
     x: typeof window !== 'undefined' ? window.innerWidth - 48 : 1232,
     y: typeof window !== 'undefined' ? window.innerHeight - 56 : 744,
@@ -685,7 +688,134 @@ export default function Layout() {
   }, [])
 
   return (
-    <div className={styles.app} style={navigationStyle === 'floating' ? { display: 'block', width: '100%', minHeight: '100vh' } : undefined}>
+    <div className={`${styles.app} ${navigationStyle === 'sidebar' ? 'shuttleMobileSidebarLayout' : ''}`} style={navigationStyle === 'floating' ? { display: 'block', width: '100%', minHeight: '100vh' } : undefined}>
+      {navigationStyle === 'sidebar' && (
+        <style>{`
+          /* Mobile classic navigation: full-width top bar, NOT a left sidebar. */
+          @media (max-width: 900px) {
+            .shuttleMobileSidebarLayout {
+              display: flex !important;
+              flex-direction: column !important;
+              width: 100% !important;
+              min-width: 0 !important;
+              max-width: 100% !important;
+              min-height: 100vh !important;
+              overflow-x: clip !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar {
+              display: block !important;
+              position: relative !important;
+              inset: auto !important;
+              transform: none !important;
+              width: 100% !important;
+              min-width: 0 !important;
+              max-width: 100% !important;
+              height: auto !important;
+              min-height: 0 !important;
+              max-height: none !important;
+              flex: 0 0 auto !important;
+              margin: 0 !important;
+              overflow: visible !important;
+              box-sizing: border-box !important;
+              border-radius: 0 !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.sidebarLogo} {
+              display: flex !important;
+              position: relative !important;
+              flex-direction: row !important;
+              align-items: center !important;
+              justify-content: flex-start !important;
+              gap: 12px !important;
+              min-height: 78px !important;
+              padding: 14px 22px !important;
+              box-sizing: border-box !important;
+              width: 100% !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.logoMark} {
+              display: flex !important;
+              visibility: visible !important;
+              opacity: 1 !important;
+              flex: 0 0 auto !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.logoName} {
+              display: block !important;
+              font-size: clamp(17px, 4vw, 24px) !important;
+              white-space: nowrap !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.logoSub} {
+              display: none !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.sidebarCollapseBtn} {
+              display: none !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.roleSwitcherWrap} {
+              display: flex !important;
+              width: 100% !important;
+              box-sizing: border-box !important;
+              padding: 14px 20px !important;
+              margin: 0 !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.navSection} {
+              display: flex !important;
+              flex-direction: row !important;
+              align-items: center !important;
+              justify-content: flex-start !important;
+              flex-wrap: nowrap !important;
+              gap: 6px !important;
+              width: 100% !important;
+              min-height: 78px !important;
+              max-width: 100% !important;
+              padding: 12px 18px !important;
+              margin: 0 !important;
+              overflow-x: auto !important;
+              overflow-y: hidden !important;
+              white-space: nowrap !important;
+              box-sizing: border-box !important;
+              scrollbar-width: thin;
+              -webkit-overflow-scrolling: touch;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.navLabel} {
+              display: none !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.navItem} {
+              display: inline-flex !important;
+              flex: 0 0 auto !important;
+              align-items: center !important;
+              justify-content: center !important;
+              gap: 10px !important;
+              width: auto !important;
+              min-width: max-content !important;
+              padding: 12px 14px !important;
+              margin: 0 !important;
+              font-size: 14px !important;
+              line-height: 1.3 !important;
+              overflow: visible !important;
+              text-decoration: none !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.navItem} svg {
+              display: block !important;
+              width: 22px !important;
+              height: 22px !important;
+              flex: 0 0 auto !important;
+            }
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.sidebarUser},
+            .shuttleMobileSidebarLayout .shuttleMobileSidebar .${styles.sidebarLogout} {
+              display: none !important;
+            }
+            .shuttleMobileSidebarLayout > .${styles.main} {
+              display: block !important;
+              position: relative !important;
+              width: 100% !important;
+              min-width: 0 !important;
+              max-width: 100% !important;
+              margin: 0 !important;
+              padding-top: 0 !important;
+              flex: 1 1 auto !important;
+              box-sizing: border-box !important;
+            }
+          }
+        `}</style>
+      )}
       {/* Keep the classic sidebar collapsible on full-size desktops too. */}
       {navigationStyle === 'sidebar' && (
         <style>{`
@@ -785,10 +915,10 @@ export default function Layout() {
       )}
       {navigationStyle === 'sidebar' && (
       <aside
-        className={`${styles.sidebar} ${
-          sidebarCollapsed ? styles.sidebarCollapsed : ''
+        className={`${styles.sidebar} shuttleMobileSidebar ${
+          !isMobileSidebar && isNavCollapsed ? styles.sidebarCollapsed : ''
         }`}
-        data-shuttle-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
+        data-shuttle-sidebar-collapsed={!isMobileSidebar && isNavCollapsed ? 'true' : 'false'}
       >
 
         {/* Logo */}
@@ -831,19 +961,17 @@ export default function Layout() {
               : 'Player Monitor'}
           </div>
 
-          <button
+          {!isMobileSidebar && <button
             type="button"
             className={styles.sidebarCollapseBtn}
-            onClick={() =>
-              setSidebarCollapsed((previous) => !previous)
-            }
+            onClick={() => setSidebarCollapsed((previous) => !previous)}
             aria-label={
-              sidebarCollapsed
+              isNavCollapsed
                 ? 'Expand navigation'
                 : 'Minimise navigation'
             }
             title={
-              sidebarCollapsed
+              isNavCollapsed
                 ? 'Expand navigation'
                 : 'Minimise navigation'
             }
@@ -857,9 +985,7 @@ export default function Layout() {
             >
               <path
                 d={
-                  sidebarCollapsed
-                    ? 'M7 4l6 6-6 6'
-                    : 'M13 4l-6 6 6 6'
+                  sidebarCollapsed ? 'M7 4l6 6-6 6' : 'M13 4l-6 6 6 6' 
                 }
                 stroke="currentColor"
                 strokeWidth="1.8"
@@ -867,7 +993,7 @@ export default function Layout() {
                 strokeLinejoin="round"
               />
             </svg>
-          </button>
+          </button>}
         </div>
 
         {/* Role switcher — only when both profiles exist */}
@@ -881,9 +1007,9 @@ export default function Layout() {
           <div
             className={styles.roleSwitcherWrap}
             style={{
-              padding: sidebarCollapsed ? '8px 4px' : '16px 12px',
+              padding: isNavCollapsed ? '8px 4px' : '16px 12px',
               borderBottom: '1px solid #1e2d50',
-              marginBottom: sidebarCollapsed ? 8 : 16,
+              marginBottom: isNavCollapsed ? 8 : 16,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -892,7 +1018,7 @@ export default function Layout() {
             <div
               style={{
                 display: 'flex',
-                flexDirection: sidebarCollapsed ? 'column' : 'row',
+                flexDirection: isNavCollapsed ? 'column' : 'row',
                 width: '100%',
                 background: '#0a1020',
                 borderRadius: 10,
@@ -907,7 +1033,7 @@ export default function Layout() {
                 title="Player portal"
                 style={{
                   flex: 1,
-                  padding: sidebarCollapsed ? '7px 0' : '7px 0',
+                  padding: isNavCollapsed ? '7px 0' : '7px 0',
                   borderRadius: 8,
                   border: 'none',
                   fontSize: 12,
@@ -924,7 +1050,7 @@ export default function Layout() {
                       : '#4b6080',
                 }}
               >
-                {sidebarCollapsed ? 'P' : 'Player'}
+                {isNavCollapsed ? 'P' : 'Player'}
               </button>
 
               <button
@@ -934,7 +1060,7 @@ export default function Layout() {
                 title="Coach portal"
                 style={{
                   flex: 1,
-                  padding: sidebarCollapsed ? '7px 0' : '7px 0',
+                  padding: isNavCollapsed ? '7px 0' : '7px 0',
                   borderRadius: 8,
                   border: 'none',
                   fontSize: 12,
@@ -951,7 +1077,7 @@ export default function Layout() {
                       : '#4b6080',
                 }}
               >
-                {sidebarCollapsed ? 'C' : 'Coach'}
+                {isNavCollapsed ? 'C' : 'Coach'}
               </button>
             </div>
           </div>
@@ -1541,7 +1667,7 @@ export default function Layout() {
         </div>
       </aside>
       )}
-      <main className={styles.main} style={navigationStyle === 'floating' ? { marginLeft: 0, width: '100%', maxWidth: 'none', minWidth: 0, flex: 'none' } : sidebarCollapsed ? { marginLeft: 0, minWidth: 0, flex: '1 1 0%' } : undefined}>
+      <main className={styles.main} style={navigationStyle === 'floating' ? { marginLeft: 0, width: '100%', maxWidth: 'none', minWidth: 0, flex: 'none' } : isMobileSidebar ? { marginLeft: 0, width: '100%', maxWidth: '100%', minWidth: 0, flex: '1 1 auto' } : sidebarCollapsed ? { marginLeft: 0, minWidth: 0, flex: '1 1 0%' } : undefined}>
         <Outlet />
       </main>
 

@@ -802,6 +802,7 @@
 /* =========================
    MODAL
 ========================= */
+/* Shared modal positioning: centre short dialogs and scroll tall ones safely. */
 .modalOverlay {
   position: fixed;
   inset: 0;
@@ -811,6 +812,9 @@
   align-items: center;
   z-index: 1000;
   padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .modal {
@@ -819,6 +823,10 @@
   padding: 28px;
   width: 100%;
   max-width: 480px;
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  margin: auto;
+  overflow-y: auto;
   box-shadow: 0 20px 60px rgba(13, 27, 62, 0.2);
   box-sizing: border-box;
 }
@@ -1450,12 +1458,13 @@
   }
   .modalOverlay {
     padding: 12px;
-    align-items: flex-start;
-    overflow-y: auto;
+    align-items: center;
   }
   .modal {
     padding: 20px;
     max-width: 100%;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
   }
   .scoreGrid {
     grid-template-columns: 1fr;
