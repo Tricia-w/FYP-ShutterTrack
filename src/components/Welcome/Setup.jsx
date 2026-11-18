@@ -19,6 +19,20 @@ const PLAYING_LEVEL_OPTIONS = [
   'Elite',
 ]
 
+// Guidance only: these descriptions do not change stored levels or matching logic.
+const PLAYING_LEVEL_GUIDE = [
+  ['Lower Beginner', 'Just started badminton and learning basic rules, grips, and shots.'],
+  ['Beginner', 'Understands the basics and can make simple shots, but rallies are often short.'],
+  ['Upper Beginner', 'Can maintain some rallies, although shot control is still inconsistent.'],
+  ['Lower Intermediate', 'Can play common shots and keep rallies going more regularly.'],
+  ['Intermediate', 'Has reasonable shot control, court movement, and basic match tactics.'],
+  ['Upper Intermediate', 'Uses different shots and tactics with good consistency in games.'],
+  ['Lower Advanced', 'Shows strong technique, effective court coverage, and tactical awareness.'],
+  ['Advanced', 'Plays confidently in challenging matches with reliable shot control.'],
+  ['Upper Advanced', 'Highly skilled and experienced against strong competitive players.'],
+  ['Elite', 'Plays at a very high competitive standard, such as state or national level.'],
+]
+
 export default function Setup() {
   const { user, loading, saveProfile } = useAuth()
 
@@ -46,6 +60,8 @@ export default function Setup() {
     level: 'Beginner',
     pressure: 'Calm',
   })
+
+  const [showPlayingLevelGuide, setShowPlayingLevelGuide] = useState(false)
 
   const [saving, setSaving] = useState(false)
 
@@ -545,10 +561,29 @@ export default function Setup() {
             </select>
           </div>
           <div>
-            <label className={styles.label} style={labelStyle}>
-              What is your playing level?
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+              <label className={styles.label} style={{ ...labelStyle, marginBottom: 0 }} htmlFor="player-playing-level">
+                What is your playing level?
+              </label>
+              <button
+                type="button"
+                aria-label="View playing level descriptions"
+                title="What does each playing level mean?"
+                onClick={() => setShowPlayingLevelGuide(true)}
+                style={{
+                  width: 22, height: 22, padding: 0, borderRadius: '50%',
+                  border: isDark ? '1px solid #8495B3' : '1px solid #9AA9BF',
+                  background: 'transparent', color: isDark ? '#CBD5E1' : '#52647E',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 800,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                i
+              </button>
+            </div>
             <select
+              id="player-playing-level"
               className={styles.select}
               style={selectStyle}
               value={form.level}
@@ -563,6 +598,87 @@ export default function Setup() {
             </select>
           </div>
         </div>
+        {showPlayingLevelGuide && (
+          <div
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setShowPlayingLevelGuide(false)
+            }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 10000,
+              background: 'rgba(15, 23, 42, 0.62)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 16, boxSizing: 'border-box',
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="playing-level-guide-title"
+              onKeyDown={event => {
+                if (event.key === 'Escape') setShowPlayingLevelGuide(false)
+              }}
+              style={{
+                width: 'min(560px, 100%)', maxHeight: 'min(82vh, 720px)',
+                overflowY: 'auto', borderRadius: 16, padding: '20px',
+                background: isDark ? '#1C2537' : '#FFFFFF',
+                border: isDark ? '1px solid #40506D' : '1px solid #DFE6F0',
+                color: isDark ? '#F8FAFC' : '#172033',
+                boxShadow: '0 22px 70px rgba(0,0,0,0.25)',
+                boxSizing: 'border-box',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 8 }}>
+                <h2 id="playing-level-guide-title" style={{ margin: 0, fontSize: 20 }}>
+                  Playing Level Guide
+                </h2>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => setShowPlayingLevelGuide(false)}
+                  aria-label="Close playing level guide"
+                  style={{
+                    border: 'none', background: 'transparent', cursor: 'pointer',
+                    color: 'inherit', fontSize: 22, padding: '3px 8px',
+                  }}
+                >✕</button>
+              </div>
+              <p style={{ fontSize: 13, lineHeight: 1.5, opacity: 0.8, margin: '0 0 12px' }}>
+                Choose the level that best matches your usual badminton games. These are general guidelines, not official rankings.
+              </p>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {PLAYING_LEVEL_GUIDE.map(([level, description]) => (
+                  <div
+                    key={level}
+                    style={{
+                      padding: '10px 12px', borderRadius: 10,
+                      background: form.level === level
+                        ? (isDark ? 'rgba(59,130,246,.18)' : '#EFF6FF')
+                        : (isDark ? '#253149' : '#F7F9FC'),
+                      border: form.level === level
+                        ? '1px solid #3B82F6'
+                        : (isDark ? '1px solid #38465F' : '1px solid #E5EAF2'),
+                    }}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 3 }}>
+                      {level}{form.level === level ? ' · Your selection' : ''}
+                    </div>
+                    <div style={{ fontSize: 13, lineHeight: 1.5, opacity: 0.85 }}>{description}</div>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPlayingLevelGuide(false)}
+                style={{
+                  display: 'block', width: '100%', marginTop: 14, padding: '11px 14px',
+                  border: 'none', borderRadius: 10, background: '#1A5FFF',
+                  color: '#FFFFFF', fontWeight: 700, cursor: 'pointer',
+                }}
+              >Got it</button>
+            </div>
+          </div>
+        )}
         <div className={styles.field}>
           <label className={styles.label} style={labelStyle}>
             How do you react under pressure?

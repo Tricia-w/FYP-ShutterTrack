@@ -427,6 +427,113 @@ function decodeInjuryNotes(value) {
   }
 }
 
+// Guided fitness self-assessment for casual, trained and competitive players.
+// Four questions per indicator; each answer scores 0–4 (overall 0–100).
+// Scores describe self-reported experiences, not objective physical test results.
+const FITNESS_GUIDED_QUESTIONS = {
+  Endurance: [
+    {
+      question: 'How long can you usually play badminton before you need a longer rest?',
+      options: ['Less than 15 minutes', '15–30 minutes', '30–60 minutes', '1–2 hours', 'More than 2 hours'],
+    },
+    {
+      question: 'After several games, how much energy do you usually have left?',
+      options: ['Almost none', 'A little', 'About half of my usual energy', 'Quite a lot', 'Almost as much as when I started'],
+    },
+    {
+      question: 'How often do you need extra breaks because you feel tired during a session?',
+      options: ['Almost every game', 'After most games', 'After some games', 'Only occasionally', 'Rarely or never'],
+    },
+    {
+      question: 'Towards the end of a long session, how well can you keep up your usual movement?',
+      options: ['I struggle a lot', 'I slow down noticeably', 'I slow down a little', 'I can mostly keep up', 'I can keep up just as well'],
+    },
+  ],
+  Speed: [
+    {
+      question: 'How quickly can you move from the middle of the court to reach a shot?',
+      options: ['Very slowly', 'Slowly', 'At a moderate speed', 'Quickly', 'Very quickly'],
+    },
+    {
+      question: 'When you see where the shuttlecock is going, how quickly can you start moving?',
+      options: ['Very slowly', 'Slowly', 'At a moderate speed', 'Quickly', 'Almost immediately'],
+    },
+    {
+      question: 'After hitting a shot, how quickly can you get ready for the next one?',
+      options: ['Very slowly', 'Slowly', 'At a moderate speed', 'Quickly', 'Very quickly'],
+    },
+    {
+      question: 'Compared with the other players you usually play with, how fast do you move around the court?',
+      options: ['Much slower', 'A little slower', 'About the same', 'A little faster', 'Much faster'],
+    },
+  ],
+  Strength: [
+    {
+      question: 'How consistently can you send the shuttlecock to the back of the opponent’s court?',
+      options: ['Almost never', 'Rarely', 'Sometimes', 'Often', 'Almost always'],
+    },
+    {
+      question: 'During a long game, how well can you maintain the distance of your shots?',
+      options: ['My shots become much shorter', 'My shots become noticeably shorter', 'My shots become a little shorter', 'My shot distance stays mostly the same', 'My shot distance stays consistent'],
+    },
+    {
+      question: 'When you move forward and push back to the middle of the court, how much effort does it take?',
+      options: ['A great deal of effort', 'Quite a lot of effort', 'A moderate amount', 'A little effort', 'Very little effort'],
+    },
+    {
+      question: 'How well can you keep your legs steady when reaching for shots?',
+      options: ['I lose balance very often', 'I often feel unsteady', 'I sometimes feel unsteady', 'I am usually steady', 'I am consistently steady'],
+    },
+  ],
+  Agility: [
+    {
+      question: 'How easily can you change direction while moving around the court?',
+      options: ['Very difficult', 'Difficult', 'Sometimes difficult', 'Usually easy', 'Very easy'],
+    },
+    {
+      question: 'How easily can you move between the front and back of the court?',
+      options: ['Very difficult', 'Difficult', 'Sometimes difficult', 'Usually easy', 'Very easy'],
+    },
+    {
+      question: 'After reaching for a shot, how easily can you turn and move towards the next one?',
+      options: ['Very difficult', 'Difficult', 'Sometimes difficult', 'Usually easy', 'Very easy'],
+    },
+    {
+      question: 'When a shot goes in a different direction than you expected, how easily can you adjust your movement?',
+      options: ['Very difficult', 'Difficult', 'Sometimes difficult', 'Usually easy', 'Very easy'],
+    },
+  ],
+}
+
+const blankFitnessGuidedAnswers = () =>
+  Object.fromEntries(Object.keys(FITNESS_GUIDED_QUESTIONS).map(name => [name, [null, null, null, null]]))
+
+function calculateGuidedFitnessScore(answers) {
+  if (!Array.isArray(answers) || answers.length !== 4 ||
+      answers.some(value => !Number.isInteger(value) || value < 0 || value > 4)) return null
+  return Math.round((answers.reduce((sum, value) => sum + value, 0) / 16) * 100)
+}
+
+// Keep the selected choices with the baseline so players can correct mistakes
+// before their first regular fitness test. Older baselines have no saved choices.
+function readGuidedFitnessAnswers(result) {
+  const match = String(result || '').match(/(?:^|[;|]\s*)answers=([0-4],[0-4],[0-4],[0-4])(?:$|\s)/)
+  return match ? match[1].split(',').map(Number) : [null, null, null, null]
+}
+
+function writeGuidedFitnessResult(answers) {
+  return `Guided self-assessment baseline; answers=${answers.join(',')}`
+}
+
+// Compare all four choices, not only the calculated score: different answers
+// may produce the same total. This also keeps unrelated baselines untouched.
+function guidedFitnessAnswersChanged(answers, previousBaseline) {
+  if (calculateGuidedFitnessScore(answers) === null) return false
+  if (!previousBaseline) return true
+  const saved = readGuidedFitnessAnswers(previousBaseline.result)
+  return answers.some((answer, index) => answer !== saved[index])
+}
+
 const FITNESS_COLORS = {
   Endurance: '#10B981',
   Speed: '#2563EB',
@@ -2765,12 +2872,7 @@ export default function Fitness() {
   const [trainingForm, setTrainingForm] = useState(emptyTraining())
   const [testForm, setTestForm] = useState(emptyTest())
   const [showInitialFitness, setShowInitialFitness] = useState(false)
-  const [initialFitnessForm, setInitialFitnessForm] = useState({
-    Endurance: 50,
-    Speed: 50,
-    Strength: 50,
-    Agility: 50,
-  })
+  const [initialFitnessAnswers, setInitialFitnessAnswers] = useState(blankFitnessGuidedAnswers)
   const [recoveryForm, setRecoveryForm] = useState(emptyRecovery())
   const [injuryForm, setInjuryForm] = useState(emptyInjury())
 
@@ -3676,8 +3778,12 @@ export default function Fitness() {
       name => !latestPlayerTestFor(name)
     )
 
+  // A saved guided baseline can be corrected until the first regular fitness
+  // test for that specific indicator. Once tested, that indicator is locked.
+  const initialFitnessEligibleIndicators = missingTestIndicators
+
   const canSetInitialFitness =
-    missingTestIndicators.length > 0
+    initialFitnessEligibleIndicators.length > 0
 
   const recordedIndicators =
     indicators.filter(item => item.hasData)
@@ -5235,29 +5341,44 @@ export default function Fitness() {
   }
 
   const openInitialFitness = () => {
-    setInitialFitnessForm(previous => {
-      const next = { ...previous }
-
-      testIndicatorNames.forEach(name => {
-        const currentTest = latestPlayerTestFor(name)
-        const savedBaseline = latestBaselineFor(name)
-
-        next[name] = currentTest
-          ? clamp(currentTest.score)
-          : savedBaseline
-            ? clamp(savedBaseline.score)
-            : clamp(previous[name] || 50)
-      })
-
-      return next
-    })
-
+    if (!canSetInitialFitness) return
+    const answers = blankFitnessGuidedAnswers()
+    for (const name of initialFitnessEligibleIndicators) {
+      const previousBaseline = latestBaselineFor(name)
+      if (previousBaseline) {
+        answers[name] = readGuidedFitnessAnswers(previousBaseline.result)
+      }
+    }
+    setInitialFitnessAnswers(answers)
+    setLoadError('')
     setShowInitialFitness(true)
   }
 
   const saveInitialFitness = async () => {
-    if (saving || missingTestIndicators.length === 0) {
-      setShowInitialFitness(false)
+    if (saving || !canSetInitialFitness) return
+
+    const scores = Object.fromEntries(
+      initialFitnessEligibleIndicators.map(name => [
+        name,
+        calculateGuidedFitnessScore(initialFitnessAnswers[name]),
+      ])
+    )
+
+    // A previously saved baseline may have no recorded answers (older data).
+    // Let the player correct one indicator without redoing every other one.
+    const needsAnswers = initialFitnessEligibleIndicators.some(name =>
+      !latestBaselineFor(name) && scores[name] === null
+    )
+    const indicatorsToSave = initialFitnessEligibleIndicators.filter(name =>
+      guidedFitnessAnswersChanged(initialFitnessAnswers[name], latestBaselineFor(name))
+    )
+
+    if (needsAnswers) {
+      setLoadError('Please answer all four questions for each indicator that has no saved assessment.')
+      return
+    }
+    if (indicatorsToSave.length === 0) {
+      setLoadError('No changes to save. Select or change an answer first.')
       return
     }
 
@@ -5266,61 +5387,74 @@ export default function Fitness() {
 
     try {
       const uid = await getUserId()
-      const now = new Date().toISOString()
-      const savedItems = []
 
-      for (const name of missingTestIndicators) {
-        const existingBaseline = latestBaselineFor(name)
+      // Recheck the database: an existing regular fitness test locks the
+      // guided baseline, including if a test was added in another browser tab.
+      const { data: currentRows, error: checkError } = await supabase
+        .from('fitness_tests')
+        .select('*')
+        .eq('user_id', uid)
+
+      if (checkError) throw checkError
+
+      const currentPlayerTests = (currentRows || [])
+        .map(rowToTest)
+        .filter(test => !test.addedByCoach)
+
+      const now = new Date().toISOString()
+
+      for (const name of indicatorsToSave) {
+        const sameIndicator = currentPlayerTests.filter(test =>
+          (test.indicator === 'Flexibility' ? 'Agility' : test.indicator) === name
+        )
+        if (sameIndicator.some(test => !isInitialFitnessBaseline(test))) {
+          throw new Error(
+            `${name} already has a regular Fitness Test, so its guided assessment is locked. Refresh the page.`
+          )
+        }
+      }
+
+      // Save completed scores to existing fitness_tests rows when possible.
+      // Each indicator retains its original baseline date after corrections.
+      for (const name of indicatorsToSave) {
+        const savedBaseline = currentPlayerTests
+          .filter(test =>
+            isInitialFitnessBaseline(test) &&
+            (test.indicator === 'Flexibility' ? 'Agility' : test.indicator) === name
+          )
+          .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0]
 
         const payload = {
           user_id: uid,
-          test_date:
-            existingBaseline?.date ||
-            todayISO(),
+          test_date: savedBaseline?.date || todayISO(),
           test_name: 'Initial self-assessment',
-          result: 'Self-assessed baseline',
+          result: writeGuidedFitnessResult(initialFitnessAnswers[name]),
           indicator: name,
-          score: clamp(initialFitnessForm[name]),
+          score: scores[name],
           added_by_coach: false,
           coach_user_id: null,
           change_note: 'Initial self-assessment',
           updated_at: now,
         }
 
-        const query = existingBaseline?.id
-          ? supabase
-              .from('fitness_tests')
-              .update(payload)
-              .eq('id', existingBaseline.id)
-              .eq('user_id', uid)
-          : supabase
-              .from('fitness_tests')
-              .insert(payload)
+        const query = savedBaseline?.id
+          ? supabase.from('fitness_tests').update(payload)
+              .eq('id', savedBaseline.id).eq('user_id', uid)
+          : supabase.from('fitness_tests').insert(payload)
 
-        const { data, error } =
-          await query.select('*').single()
-
+        const { data, error } = await query.select('*').single()
         if (error) throw error
 
-        savedItems.push(rowToTest(data))
+        const savedTest = rowToTest(data)
+        setTests(previous => [
+          savedTest,
+          ...previous.filter(item => item.id !== savedTest.id),
+        ])
       }
-
-      setTests(previous => [
-        ...savedItems,
-        ...previous.filter(
-          item =>
-            !savedItems.some(
-              saved => saved.id === item.id
-            )
-        ),
-      ])
 
       setShowInitialFitness(false)
     } catch (err) {
-      setLoadError(
-        err.message ||
-          'Failed to save initial fitness levels.'
-      )
+      setLoadError(err.message || 'Failed to save guided fitness scores.')
     } finally {
       setSaving(false)
     }
@@ -7243,23 +7377,23 @@ export default function Fitness() {
                     {[
                       [
                         'Endurance',
-                        'Helps you maintain energy, movement and performance during long rallies and matches without tiring too quickly.',
+                        'Helps you keep playing and moving without getting tired too quickly.',
                       ],
                       [
                         'Speed',
-                        'Helps you move quickly around the court, reach the shuttle faster and react effectively to fast shots.',
+                        'Helps you move quickly to reach the shuttlecock and get ready for the next shot.',
                       ],
                       [
                         'Strength',
-                        'Supports powerful smashes, stable lunges and explosive movements needed during attacking and defensive play.',
+                        'Helps you hit the shuttlecock with power and keep your body strong while moving around the court.',
                       ],
                       [
                         'Agility',
-                        'Helps you change direction quickly, move efficiently between court positions and stay balanced during fast rallies.',
+                        'Helps you move left, right, forward and backward while staying balanced.',
                       ],
                       [
                         'Recovery',
-                        'Shows how well your body recovers from training and matches so you can perform effectively in the next session.',
+                        'Shows how rested or tired your body feels after playing or exercising.',
                       ],
                     ].map(([name, description]) => (
                       <div
@@ -7322,7 +7456,9 @@ export default function Fitness() {
                   }}
                   onClick={openInitialFitness}
                 >
-                  Set initial levels
+                  {initialFitnessEligibleIndicators.some(name => latestBaselineFor(name))
+                    ? 'Edit initial levels'
+                    : 'Set initial levels'}
                 </button>
               )}
 
@@ -9380,224 +9516,160 @@ export default function Fitness() {
           aria-modal="true"
           aria-labelledby="initial-fitness-title"
           onClick={event => {
-            if (event.target === event.currentTarget && !saving) {
-              setShowInitialFitness(false)
-            }
+            if (event.target === event.currentTarget && !saving) setShowInitialFitness(false)
           }}
         >
           <div
             className={styles.modal}
-            style={{
-              maxWidth: 540,
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
+            style={{ maxWidth: 620, maxHeight: '90vh', overflowY: 'auto' }}
           >
             <div className={styles.modalHead}>
               <div>
-                <div
-                  id="initial-fitness-title"
-                  className={styles.modalTitle}
-                >
-                  Set Initial Fitness Levels
+                <div id="initial-fitness-title" className={styles.modalTitle}>
+                  Guided Initial Fitness Assessment
                 </div>
-
-                <div
-                  style={{
-                    marginTop: 5,
-                    fontSize: 13,
-                    lineHeight: 1.5,
-                    color: 'var(--text-muted, #8892A4)',
-                  }}
-                >
-                  Set or edit a starting self-assessment before a fitness
-                  test is recorded. Once a test is added for an indicator,
-                  its starting level is locked.
+                <div style={{ marginTop: 5, fontSize: 13, lineHeight: 1.5, color: 'var(--text-muted, #8892A4)' }}>
+                  Answer based on your recent badminton experience. No equipment is needed. Scores are calculated from your answers. You can edit your responses until you record a Fitness Test for that indicator.
                 </div>
               </div>
-
               <button
                 type="button"
                 className={styles.modalClose}
-                onClick={() => {
-                  if (!saving) setShowInitialFitness(false)
-                }}
-                aria-label="Close initial fitness levels"
-              >
-                ×
-              </button>
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 16,
-              }}
-            >
-              {testIndicatorNames.map(name => {
-                const existingTest = latestPlayerTestFor(name)
-                const isLocked = Boolean(existingTest)
-                const currentValue = isLocked
-                  ? clamp(existingTest.score)
-                  : clamp(initialFitnessForm[name])
-
-                return (
-                  <div
-                    key={name}
-                    className={styles.formRow}
-                    style={{
-                      marginBottom: 0,
-                      paddingBottom: 14,
-                      borderBottom:
-                        '1px solid var(--line, #E8EEF8)',
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: 12,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <label
-                        className={styles.formLabel}
-                        style={{
-                          marginBottom: 0,
-                          fontSize: 14,
-                        }}
-                      >
-                        {name}
-                      </label>
-
-                      {isLocked ? (
-                        <span
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: '#10B981',
-                          }}
-                        >
-                          {currentValue} /100 · Locked
-                        </span>
-                      ) : (
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                          }}
-                        >
-                          <input
-                            className={styles.formInput}
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={currentValue}
-                            disabled={saving}
-                            onChange={event =>
-                              setInitialFitnessForm(previous => ({
-                                ...previous,
-                                [name]: clamp(event.target.value),
-                              }))
-                            }
-                            style={{
-                              width: 78,
-                              height: 38,
-                              padding: '7px 9px',
-                              textAlign: 'center',
-                              fontSize: 14,
-                              fontWeight: 600,
-                            }}
-                          />
-
-                          <span
-                            style={{
-                              fontSize: 14,
-                              color:
-                                'var(--text-muted, #8892A4)',
-                            }}
-                          >
-                            /100
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      step="1"
-                      value={currentValue}
-                      disabled={isLocked || saving}
-                      onChange={event =>
-                        setInitialFitnessForm(previous => ({
-                          ...previous,
-                          [name]: Number(event.target.value),
-                        }))
-                      }
-                      style={{
-                        width: '100%',
-                        accentColor: '#1A5FFF',
-                        cursor: isLocked
-                          ? 'not-allowed'
-                          : 'pointer',
-                      }}
-                    />
-
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        marginTop: 5,
-                        fontSize: 12,
-                        color:
-                          'var(--text-muted, #8892A4)',
-                      }}
-                    >
-                      <span>0</span>
-                      <span>
-                        {isLocked
-                          ? 'Locked after fitness test'
-                          : 'Self-assessed starting level'}
-                      </span>
-                      <span>100</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div
-              style={{
-                marginTop: 18,
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 10,
-              }}
-            >
-              <button
-                type="button"
-                className={styles.btnOutline}
                 disabled={saving}
                 onClick={() => setShowInitialFitness(false)}
-              >
+                aria-label="Close initial fitness assessment"
+              >×</button>
+            </div>
+
+            {testIndicatorNames.map(name => {
+              const existingTest = latestPlayerTestFor(name)
+              const previousBaseline = latestBaselineFor(name)
+              const isLocked = Boolean(existingTest)
+              const currentAnswers = initialFitnessAnswers[name] || [null, null, null, null]
+              const calculatedScore = calculateGuidedFitnessScore(currentAnswers)
+              // Older baseline records stored only the calculated score.
+              // Do not invent previous choices: explain why they cannot be restored.
+              const hasSavedAnswers = previousBaseline
+                ? calculateGuidedFitnessScore(readGuidedFitnessAnswers(previousBaseline.result)) !== null
+                : false
+              const needsLegacyReentry = Boolean(previousBaseline && !hasSavedAnswers && !isLocked)
+              const hasUnsavedChanges = !isLocked && guidedFitnessAnswersChanged(currentAnswers, previousBaseline)
+
+              return (
+                <section
+                  key={name}
+                  style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--line, #E8EEF8)' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <strong style={{ fontSize: 15 }}>{name}</strong>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: isLocked ? '#10B981' : '#2563EB' }}>
+                        {isLocked
+                          ? `${clamp(existingTest.score)} /100 · Locked`
+                          : calculatedScore !== null
+                            ? `${calculatedScore} /100 · Guided score`
+                            : previousBaseline
+                              ? `${clamp(previousBaseline.score)} /100 · Saved (editable)`
+                              : '4 questions'}
+                    </span>
+                  </div>
+                  {isLocked ? (
+                    <p style={{ fontSize: 12, color: 'var(--text-muted, #8892A4)' }}>
+                      A regular Fitness Test has already been recorded for this indicator, so its guided baseline is locked.
+                    </p>
+                  ) : (
+                    <>
+                      {previousBaseline && hasSavedAnswers && !hasUnsavedChanges && (
+                        <p style={{ fontSize: 12, color: '#047857', marginBottom: 12 }}>
+                          Your previous answers have been restored. You can change just one answer and save.
+                        </p>
+                      )}
+                      {previousBaseline && hasSavedAnswers && hasUnsavedChanges && (
+                        <p style={{ fontSize: 12, color: '#A16207', marginBottom: 12 }}>
+                          Unsaved changes for {name}. Other indicators will stay unchanged.
+                        </p>
+                      )}
+                      {needsLegacyReentry && (
+                        <div
+                          role="status"
+                          style={{
+                            padding: '10px 12px',
+                            marginBottom: 14,
+                            borderRadius: 10,
+                            border: '1px solid #FCD34D',
+                            background: 'color-mix(in srgb, #FBBF24 10%, var(--card, #FFFFFF))',
+                            color: 'var(--text, #0D1B3E)',
+                            fontSize: 12,
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          <strong>Previous answers unavailable.</strong>{' '}
+                          Your earlier assessment saved a score of {clamp(previousBaseline.score)}/100,
+                          but did not save which options you selected. Your saved score is unchanged.
+                          To correct this assessment, answer these four questions again and save.
+                          The new version will remember your selections next time.
+                        </div>
+                      )}
+                      {FITNESS_GUIDED_QUESTIONS[name].map((item, index) => (
+                        <div key={`${name}-${index}`} style={{ marginBottom: 13 }}>
+                          <label
+                            className={styles.formLabel}
+                            htmlFor={`guided-fitness-${name}-${index}`}
+                            style={{ display: 'block', marginBottom: 6, fontSize: 12 }}
+                          >
+                            {index + 1}. {item.question}
+                          </label>
+                          <select
+                            id={`guided-fitness-${name}-${index}`}
+                            className={styles.formInput}
+                            value={currentAnswers[index] === null ? '' : String(currentAnswers[index])}
+                            disabled={saving}
+                            onChange={event => {
+                              const choice = Number(event.target.value)
+                              setInitialFitnessAnswers(previous => ({
+                                ...previous,
+                                [name]: previous[name].map((value, answerIndex) =>
+                                  answerIndex === index ? choice : value
+                                ),
+                              }))
+                            }}
+                            style={{ width: '100%', minHeight: 40 }}
+                          >
+                            <option value="" disabled>Select the answer closest to your experience</option>
+                            {item.options.map((option, value) => (
+                              <option key={value} value={value}>{option}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </section>
+              )
+            })}
+
+            <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted, #8892A4)' }}>
+              Guided scores use four responses scored 0–4: (total / 16) × 100.
+              They are self-reported estimates and should not be treated as objective fitness measurements.
+              Recovery still uses the separate Recovery Check-in.
+            </p>
+            {loadError && <p role="alert" style={{ color: '#DC2626', fontSize: 12 }}>{loadError}</p>}
+            <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" className={styles.btnOutline} disabled={saving} onClick={() => setShowInitialFitness(false)}>
                 Cancel
               </button>
-
               <button
                 type="button"
                 className={styles.btnPrimary}
-                disabled={
-                  saving ||
-                  missingTestIndicators.length === 0
-                }
+                disabled={saving || !canSetInitialFitness ||
+                  initialFitnessEligibleIndicators.some(name =>
+                    !latestBaselineFor(name) &&
+                    calculateGuidedFitnessScore(initialFitnessAnswers[name]) === null
+                  ) || !initialFitnessEligibleIndicators.some(name =>
+                    guidedFitnessAnswersChanged(initialFitnessAnswers[name], latestBaselineFor(name))
+                  )}
                 onClick={saveInitialFitness}
               >
-                {saving ? 'Saving...' : 'Save initial levels'}
+                {saving ? 'Saving...' : 'Save guided assessment'}
               </button>
             </div>
           </div>
