@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { THEME_OPTIONS, getSavedTheme as getSelectedShuttleTheme, applyShuttleTheme } from '../../theme/themeOptions'
+import { THEME_OPTIONS, getSavedTheme as getSelectedShuttleTheme, applyShuttleTheme, saveAccountTheme } from '../../theme/themeOptions'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import styles from '../Layout/Pages.module.css'
@@ -114,13 +114,36 @@ const THEME_PREVIEWS = {
 
 export default function Settings() {
   const navigate = useNavigate()
-  const { refreshProfile, logout } = useAuth()
-  const [selectedTheme, setSelectedTheme] = useState(getSelectedShuttleTheme)
+  const { user, refreshProfile, logout } = useAuth()
+  const [selectedTheme, setSelectedTheme] = useState(() => getSelectedShuttleTheme())
   const [appearanceExpanded, setAppearanceExpanded] = useState(false)
+  const [themeSaveError, setThemeSaveError] = useState('')
 
-  const changeTheme = (nextTheme) => {
-    const applied = applyShuttleTheme(nextTheme)
+  // Layout restores the Supabase preference. Keep this page in sync when
+  // returning from the other role or changing accounts.
+  useEffect(() => {
+    const update = event => {
+      if (event.detail?.userId === user?.id) {
+        setSelectedTheme(event.detail.theme)
+      }
+    }
+    setSelectedTheme(getSelectedShuttleTheme(user?.id || null))
+    window.addEventListener('shuttle-theme-changed', update)
+    return () => window.removeEventListener('shuttle-theme-changed', update)
+  }, [user?.id])
+
+  const changeTheme = async nextTheme => {
+    if (!user?.id) return
+    const applied = applyShuttleTheme(nextTheme, user.id)
     setSelectedTheme(applied)
+    setThemeSaveError('')
+    try {
+      await saveAccountTheme(supabase, user.id, applied)
+    } catch (error) {
+      console.error('Could not save account theme:', error)
+      // Keep the choice in this account's local cache, but report lack of cloud sync.
+      setThemeSaveError('Theme applied on this device, but could not sync to your account. ' + (error.message || 'Please try again.'))
+    }
   }
 
   const [navStyle, setNavStyle] = useState('sidebar')
@@ -1449,8 +1472,13 @@ export default function Settings() {
               Colour theme
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>
-              Choose your appearance. The selection is saved automatically for both portals.
+              Your theme is saved to your account and shared across Player and Coach modes, including other devices.
             </div>
+            {themeSaveError && (
+              <div role="alert" style={{ color: '#B91C1C', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '9px 11px', fontSize: 12, marginBottom: 10 }}>
+                {themeSaveError}
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
               {THEME_OPTIONS.map(option => {
                 const preview = THEME_PREVIEWS[option.value]

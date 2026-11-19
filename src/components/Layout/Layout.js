@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import styles from './Layout.module.css'
 import '../../theme/themePalette.css'
-import { applyShuttleTheme, getSavedTheme } from '../../theme/themeOptions'
+import { applyShuttleTheme, getSavedTheme, loadAccountTheme } from '../../theme/themeOptions'
 
 function RadialNavIcon({ name }) {
   const paths = {
@@ -40,10 +40,44 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Restore the selected appearance across Player and Coach portals.
+  // Restore each account's own theme. The remote preference takes priority over
+  // the per-account cache; switch immediately on account changes to prevent
+  // one signed-in account seeing the previous account's theme.
   useEffect(() => {
-    applyShuttleTheme(getSavedTheme())
-  }, [])
+    const userId = user?.id
+    if (!userId) {
+      applyShuttleTheme('light')
+      return undefined
+    }
+
+    let cancelled = false
+    let changedWhileLoading = false
+    applyShuttleTheme(getSavedTheme(userId), userId)
+
+    const onThemeChange = event => {
+      if (event.detail?.userId === userId && !restoring) {
+        changedWhileLoading = true
+      }
+    }
+    let restoring = false
+    window.addEventListener('shuttle-theme-changed', onThemeChange)
+
+    loadAccountTheme(supabase, userId)
+      .then(theme => {
+        if (cancelled || changedWhileLoading) return
+        restoring = true
+        applyShuttleTheme(theme, userId)
+        restoring = false
+      })
+      .catch(error => {
+        console.error('Could not load account theme; using this account’s cached theme:', error)
+      })
+
+    return () => {
+      cancelled = true
+      window.removeEventListener('shuttle-theme-changed', onThemeChange)
+    }
+  }, [user?.id])
 
   const accountRole = (
     profile?.role ||
