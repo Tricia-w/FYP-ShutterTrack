@@ -1712,15 +1712,129 @@ export default function Layout() {
         <Outlet />
       </main>
 
+      {/* Floating navigation colours follow the active account theme via html[data-theme]. */}
+      <style>{`
+        :root {
+          --wheel-bg: radial-gradient(circle at 47% 40%, #1b3763 0%, #102447 54%, #08172c 100%);
+          --wheel-border: rgba(139,193,255,.4);
+          --wheel-shadow: 0 20px 65px rgba(3,12,30,.36), inset 0 0 40px rgba(47,103,220,.13);
+          --wheel-guide: rgba(140,185,255,.19);
+          --wheel-node: #1b3458;
+          --wheel-node-border: #476691;
+          --wheel-active: #1A5FFF;
+          --wheel-active-border: #81B5FF;
+          --wheel-active-glow: rgba(59,130,246,.55);
+          --wheel-hover: #0EA883;
+          --wheel-hover-border: #9dfcec;
+          --wheel-hover-glow: rgba(52,211,153,.75);
+          --wheel-caption: #a3badc;
+          --wheel-hover-label: #5af5cc;
+          --wheel-control: #142c54;
+          --wheel-centre-player: linear-gradient(145deg,#2977ff,#1241aa);
+          --wheel-centre-player-border: #90b6ff;
+          --wheel-centre-coach: linear-gradient(145deg,#0b9a76,#05634f);
+          --wheel-centre-coach-border: #72f0cf;
+          --wheel-overlay: rgba(5,13,30,.14);
+        }
+        html[data-theme='dark'] {
+          --wheel-bg: radial-gradient(circle at 47% 40%, #243248 0%, #111a2b 54%, #080e19 100%);
+          --wheel-border: rgba(141,166,211,.42);
+          --wheel-shadow: 0 20px 65px rgba(0,0,0,.52), inset 0 0 36px rgba(107,139,207,.10);
+          --wheel-guide: rgba(170,192,231,.21);
+          --wheel-node: #253650;
+          --wheel-node-border: #536782;
+          --wheel-active: #537DDB;
+          --wheel-active-border: #A2BFFF;
+          --wheel-active-glow: rgba(114,154,245,.48);
+          --wheel-hover: #6988C4;
+          --wheel-hover-border: #C9D9FF;
+          --wheel-hover-glow: rgba(137,168,230,.55);
+          --wheel-caption: #B4C4DE;
+          --wheel-hover-label: #D6E5FF;
+          --wheel-control: #253650;
+          --wheel-centre-player: linear-gradient(145deg,#688FF0,#344E96);
+          --wheel-centre-player-border: #ABC6FF;
+          --wheel-centre-coach: linear-gradient(145deg,#27A58A,#126457);
+          --wheel-centre-coach-border: #8FE9CE;
+          --wheel-overlay: rgba(0,0,0,.35);
+        }
+        html[data-theme='ocean'] {
+          --wheel-bg: radial-gradient(circle at 47% 40%, #166A91 0%, #104A70 54%, #082E4A 100%);
+          --wheel-border: rgba(137,222,249,.48);
+          --wheel-shadow: 0 20px 65px rgba(6,58,94,.36), inset 0 0 40px rgba(53,194,235,.13);
+          --wheel-guide: rgba(165,230,247,.25);
+          --wheel-node: #185779;
+          --wheel-node-border: #4E91AF;
+          --wheel-active: #0CA8D3;
+          --wheel-active-border: #9CEBFF;
+          --wheel-active-glow: rgba(34,211,238,.55);
+          --wheel-hover: #087FA5;
+          --wheel-hover-border: #B9F5FF;
+          --wheel-hover-glow: rgba(58,215,241,.60);
+          --wheel-caption: #C1E5F2;
+          --wheel-hover-label: #ABF2FF;
+          --wheel-control: #104A70;
+          --wheel-centre-player: linear-gradient(145deg,#24BCE4,#07779C);
+          --wheel-centre-player-border: #A7EEFF;
+          --wheel-centre-coach: linear-gradient(145deg,#17AF9D,#096B67);
+          --wheel-centre-coach-border: #8DF1E2;
+          --wheel-overlay: rgba(6,45,72,.20);
+        }
+        html[data-theme='forest'] {
+          --wheel-bg: radial-gradient(circle at 47% 40%, #245B45 0%, #153D30 54%, #0B291F 100%);
+          --wheel-border: rgba(155,226,183,.45);
+          --wheel-shadow: 0 20px 65px rgba(5,36,23,.38), inset 0 0 40px rgba(57,194,127,.12);
+          --wheel-guide: rgba(169,231,190,.23);
+          --wheel-node: #255541;
+          --wheel-node-border: #518E6E;
+          --wheel-active: #168456;
+          --wheel-active-border: #99E8B5;
+          --wheel-active-glow: rgba(67,201,127,.52);
+          --wheel-hover: #2AA572;
+          --wheel-hover-border: #B4F8CC;
+          --wheel-hover-glow: rgba(74,222,128,.60);
+          --wheel-caption: #C2DEC9;
+          --wheel-hover-label: #B8FFD3;
+          --wheel-control: #1B4A37;
+          --wheel-centre-player: linear-gradient(145deg,#24B879,#0D6846);
+          --wheel-centre-player-border: #A1E9BD;
+          --wheel-centre-coach: linear-gradient(145deg,#21A777,#0C6147);
+          --wheel-centre-coach-border: #A1E9BD;
+          --wheel-overlay: rgba(7,39,24,.20);
+        }
+        html[data-theme='monochrome'] {
+          --wheel-bg: radial-gradient(circle at 47% 40%, #3A3A3A 0%, #252525 54%, #151515 100%);
+          --wheel-border: rgba(190,190,190,.42);
+          --wheel-shadow: 0 20px 65px rgba(0,0,0,.4), inset 0 0 40px rgba(255,255,255,.045);
+          --wheel-guide: rgba(230,230,230,.18);
+          --wheel-node: #393939;
+          --wheel-node-border: #737373;
+          --wheel-active: #13E38C;
+          --wheel-active-border: #B1FFDA;
+          --wheel-active-glow: rgba(19,227,140,.52);
+          --wheel-hover: #0BBD74;
+          --wheel-hover-border: #A8FFDB;
+          --wheel-hover-glow: rgba(19,227,140,.63);
+          --wheel-caption: #C6C6C6;
+          --wheel-hover-label: #86FFC5;
+          --wheel-control: #313131;
+          --wheel-centre-player: linear-gradient(145deg,#4B4B4B,#262626);
+          --wheel-centre-player-border: #13E38C;
+          --wheel-centre-coach: linear-gradient(145deg,#4B4B4B,#262626);
+          --wheel-centre-coach-border: #13E38C;
+          --wheel-overlay: rgba(0,0,0,.23);
+        }
+        html[data-theme='monochrome'] .shuttleWheelNodeActive { color: #14271C !important; }
+      `}</style>
       {/* Only mount the radial menu when selected in Settings. */}
       {navigationStyle === 'floating' && radialExpanded && (
         <button type="button" aria-label="Close navigation menu" onClick={() => setRadialExpanded(false)}
-          style={{ position: 'fixed', inset: 0, zIndex: 2799, background: 'rgba(5,13,30,.14)', border: 0, cursor: 'default' }} />
+          style={{ position: 'fixed', inset: 0, zIndex: 2799, background: 'var(--wheel-overlay)', border: 0, cursor: 'default' }} />
       )}
       {navigationStyle === 'floating' && <div style={{ position: 'fixed', left: centreX, top: centreY, width: radialExpanded ? WHEEL_SIZE : 64, height: radialExpanded ? WHEEL_SIZE : 64, transform: 'translate(-50%, -50%)', zIndex: 2800, fontFamily: 'inherit', pointerEvents: 'none' }}>
         {radialExpanded && (
-          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'radial-gradient(circle at 47% 40%, #1b3763 0%, #102447 54%, #08172c 100%)', border: '1px solid rgba(139,193,255,.4)', boxShadow: '0 20px 65px rgba(3,12,30,.36), inset 0 0 40px rgba(47,103,220,.13)', pointerEvents: 'auto' }}>
-            <div style={{ position: 'absolute', inset: '17%', borderRadius: '50%', border: '1px dashed rgba(140,185,255,.19)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'var(--wheel-bg)', border: '1px solid var(--wheel-border)', boxShadow: 'var(--wheel-shadow)', pointerEvents: 'auto' }}>
+            <div style={{ position: 'absolute', inset: '17%', borderRadius: '50%', border: '1px dashed var(--wheel-guide)', pointerEvents: 'none' }} />
               {radialItems.map((item, index) => {
                 // Nine nodes for Player, eight for Coach. Avoid the bottom-right handle.
                 const angle = -Math.PI / 2 + (index * 2 * Math.PI) / radialItems.length
@@ -1731,19 +1845,20 @@ export default function Layout() {
                   <button
                     key={item.label}
                     data-shuttle-radial-index={index}
+                    className={isActive && dragHoverIndex !== index ? 'shuttleWheelNodeActive' : undefined}
                     type="button"
                     onClick={() => openRadialPage(item)}
                     title={item.label}
                     aria-label={item.label}
                     aria-current={isActive ? 'page' : undefined}
-                    style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: `translate(-50%, -50%) ${dragHoverIndex === index ? 'scale(1.19)' : 'scale(1)'}`, transition: 'transform .12s, box-shadow .12s, background .12s', width: 47, height: 47, borderRadius: '50%', border: dragHoverIndex === index ? '2px solid #9dfcec' : isActive ? '2px solid #81B5FF' : '1px solid #476691', background: dragHoverIndex === index ? '#0EA883' : isActive ? '#1A5FFF' : '#1b3458', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: dragHoverIndex === index ? '0 0 24px rgba(52,211,153,.75)' : isActive ? '0 0 14px rgba(59,130,246,.55)' : '0 3px 12px rgba(0,0,0,.25)' }}
+                    style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: `translate(-50%, -50%) ${dragHoverIndex === index ? 'scale(1.19)' : 'scale(1)'}`, transition: 'transform .12s, box-shadow .12s, background .12s', width: 47, height: 47, borderRadius: '50%', border: dragHoverIndex === index ? '2px solid var(--wheel-hover-border)' : isActive ? '2px solid var(--wheel-active-border)' : '1px solid var(--wheel-node-border)', background: dragHoverIndex === index ? 'var(--wheel-hover)' : isActive ? 'var(--wheel-active)' : 'var(--wheel-node)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: dragHoverIndex === index ? '0 0 24px var(--wheel-hover-glow)' : isActive ? '0 0 14px var(--wheel-active-glow)' : '0 3px 12px rgba(0,0,0,.25)' }}
                   >
                     <RadialNavIcon name={item.icon} />
                   </button>
                 )
               })}
-            {dragHoverIndex >= 0 && radialItems[dragHoverIndex] && <div style={{ position: 'absolute', left: '50%', top: '77%', transform: 'translateX(-50%)', color: '#5af5cc', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 2px 10px #071322' }}>{radialItems[dragHoverIndex].label}</div>}
-            <div style={{ position: 'absolute', top: '69%', left: '50%', transform: 'translateX(-50%)', color: '#a3badc', fontSize: 10, fontWeight: 650, whiteSpace: 'nowrap', pointerEvents: 'none' }}>{mode === 'coach' ? 'COACH PORTAL' : 'PLAYER PORTAL'}</div>
+            {dragHoverIndex >= 0 && radialItems[dragHoverIndex] && <div style={{ position: 'absolute', left: '50%', top: '77%', transform: 'translateX(-50%)', color: 'var(--wheel-hover-label)', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 2px 10px #071322' }}>{radialItems[dragHoverIndex].label}</div>}
+            <div style={{ position: 'absolute', top: '69%', left: '50%', transform: 'translateX(-50%)', color: 'var(--wheel-caption)', fontSize: 10, fontWeight: 650, whiteSpace: 'nowrap', pointerEvents: 'none' }}>{mode === 'coach' ? 'COACH PORTAL' : 'PLAYER PORTAL'}</div>
           </div>
         )}
         <div style={{ position: 'absolute', width: 64, height: 64, left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 2, pointerEvents: 'auto' }}>
@@ -1754,17 +1869,17 @@ export default function Layout() {
             }}
             title={radialExpanded ? 'Drag toward an icon and release · click to switch role' : 'Drag toward a page icon · tap to switch role'}
             aria-label={hasBothModes ? `Switch to ${mode === 'player' ? 'Coach' : 'Player'} portal` : `${sidebarRole} portal`}
-            style={{ position: 'absolute', inset: 0, width: 64, height: 64, borderRadius: '50%', border: `3px solid ${mode === 'coach' ? '#72f0cf' : '#90b6ff'}`, background: mode === 'coach' ? 'linear-gradient(145deg,#0b9a76,#05634f)' : 'linear-gradient(145deg,#2977ff,#1241aa)', color: '#fff', fontSize: 27, fontWeight: 900, cursor: radialExpanded ? 'crosshair' : 'grab', touchAction: 'none', userSelect: 'none', boxShadow: '0 10px 28px rgba(13,40,100,.32)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ position: 'absolute', inset: 0, width: 64, height: 64, borderRadius: '50%', border: `3px solid ${mode === 'coach' ? 'var(--wheel-centre-coach-border)' : 'var(--wheel-centre-player-border)'}`, background: mode === 'coach' ? 'var(--wheel-centre-coach)' : 'var(--wheel-centre-player)', color: '#fff', fontSize: 27, fontWeight: 900, cursor: radialExpanded ? 'crosshair' : 'grab', touchAction: 'none', userSelect: 'none', boxShadow: '0 10px 28px rgba(13,40,100,.32)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >{mode === 'coach' ? 'C' : 'P'}</button>
           <button type="button" aria-label={radialExpanded ? 'Minimise navigation' : 'Expand navigation'}
             title={radialExpanded ? 'Minimise menu' : 'Expand menu'}
             onClick={() => { setRadialExpanded((previous) => !previous); setDragHoverIndex(-1) }}
-            style={{ position: 'absolute', width: 26, height: 26, right: -5, top: -6, borderRadius: '50%', border: '2px solid #fff', background: '#142c54', color: '#fff', fontSize: 17, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 3px 10px rgba(0,0,0,.28)' }}
+            style={{ position: 'absolute', width: 26, height: 26, right: -5, top: -6, borderRadius: '50%', border: '2px solid #fff', background: 'var(--wheel-control)', color: '#fff', fontSize: 17, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 3px 10px rgba(0,0,0,.28)' }}
           >{radialExpanded ? '−' : '+'}</button>
           {!radialExpanded && <button type="button" aria-label="Move floating navigation" title="Drag to reposition the navigation button"
             onPointerDown={startDockGesture}
             onClick={(event) => { event.preventDefault(); event.stopPropagation() }}
-            style={{ position: 'absolute', left: -10, bottom: -9, width: 27, height: 27, borderRadius: '50%', border: '2px solid #fff', background: '#142c54', color: '#fff', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', touchAction: 'none', userSelect: 'none', boxShadow: '0 3px 10px rgba(0,0,0,.25)' }}
+            style={{ position: 'absolute', left: -10, bottom: -9, width: 27, height: 27, borderRadius: '50%', border: '2px solid #fff', background: 'var(--wheel-control)', color: '#fff', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', touchAction: 'none', userSelect: 'none', boxShadow: '0 3px 10px rgba(0,0,0,.25)' }}
           >⠿</button>}
         </div>
       </div>}
