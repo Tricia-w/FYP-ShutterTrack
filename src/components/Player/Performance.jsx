@@ -28,6 +28,19 @@ const SKILL_COLUMNS = [
 
 const defaultSkills = SKILL_COLUMNS.map(skill => ({ ...skill, val: 0 }))
 
+// Guidance for self-assessment only. Does not alter scores or verification.
+const SKILL_RATING_LEVELS = [
+  { max: 20, label: 'Beginner', description: 'Still learning the basic technique and finding it difficult to perform consistently.' },
+  { max: 40, label: 'Developing', description: 'Can perform the basics, but timing, accuracy or control often need improvement.' },
+  { max: 60, label: 'Intermediate', description: 'Can perform the skill in practice or matches, but consistency can improve.' },
+  { max: 80, label: 'Proficient', description: 'Usually performs the skill confidently with good control.' },
+  { max: 100, label: 'Advanced', description: 'Performs the skill consistently and effectively, including under match pressure.' },
+]
+
+const getSkillRatingLevel = value =>
+  SKILL_RATING_LEVELS.find(level => Number(value) <= level.max) || SKILL_RATING_LEVELS[4]
+
+
 const SKILL_COLORS = {
   Smash: '#2563EB',
   Defense: '#14B8A6',
@@ -3055,7 +3068,10 @@ export default function Performance() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button className={styles.btnPrimary} onClick={openAdd}>
-              <MiniIcon type="plus" />
+              <MiniIcon
+                type="plus"
+                color="var(--add-icon-color, currentColor)"
+              />
               Log Match
             </button>
 
@@ -5898,8 +5914,11 @@ export default function Performance() {
           <div
             className={styles.modal}
             style={{
+              width: 'min(760px, 94vw)',
+              maxWidth: '94vw',
               maxHeight: '90vh',
               overflowY: 'auto',
+              boxSizing: 'border-box',
             }}
           >
             <div className={styles.modalHead}>
@@ -5913,7 +5932,34 @@ export default function Performance() {
             </div>
 
             <div className={styles.tip}>
-              Rate each skill honestly from 1–100. These scores are self-reported until another player or coach verifies them. Verification is optional, and updating your scores resets the current verification.
+              Rate each skill honestly from 1–100 based on your current ability. These scores are self-reported. Verification is optional, and later updates do not reset your initial verified baseline.
+            </div>
+
+            <div
+              style={{
+                padding: '12px 14px',
+                border: `1px solid ${C.line}`,
+                background: C.soft,
+                borderRadius: 12,
+                marginBottom: 18,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+                Rating guide
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px 12px' }}>
+                {SKILL_RATING_LEVELS.map((level, index) => (
+                  <span key={level.label} style={{ fontSize: 12, color: C.muted }}>
+                    <strong style={{ color: C.text }}>
+                      {index === 0 ? '1' : SKILL_RATING_LEVELS[index - 1].max + 1}–{level.max}
+                    </strong>{' '}
+                    {level.label}
+                  </span>
+                ))}
+              </div>
+              <div style={{ color: C.muted, fontSize: 11, marginTop: 8, lineHeight: 1.4 }}>
+                Use these descriptions as a guide, not a formal skill test.
+              </div>
             </div>
 
             {skills.map((skill, index) => (
@@ -5938,7 +5984,7 @@ export default function Performance() {
                       color: C.text,
                     }}
                   >
-                    {skillVals[index]}
+                    {skillVals[index]}/100
                   </span>
                 </div>
 
@@ -5947,9 +5993,10 @@ export default function Performance() {
                   min="1"
                   max="100"
                   value={skillVals[index]}
+                  aria-label={`${skill.name} skill rating`}
                   style={{
                     width: '100%',
-                    accentColor: '#1A5FFF',
+                    accentColor: 'var(--blue, #1A5FFF)',
                   }}
                   onChange={event =>
                     setSkillVals(prev =>
@@ -5961,6 +6008,30 @@ export default function Performance() {
                     )
                   }
                 />
+                <div
+                  aria-live="off"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    marginTop: 7,
+                    fontSize: 12,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <span
+                    style={{
+                      color: 'var(--blue, #1A5FFF)',
+                      fontWeight: 800,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {getSkillRatingLevel(skillVals[index]).label}
+                  </span>
+                  <span style={{ color: C.muted }}>
+                    {getSkillRatingLevel(skillVals[index]).description}
+                  </span>
+                </div>
               </div>
             ))}
 

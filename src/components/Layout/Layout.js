@@ -8,6 +8,8 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import styles from './Layout.module.css'
+import '../../theme/themePalette.css'
+import { applyShuttleTheme, getSavedTheme } from '../../theme/themeOptions'
 
 function RadialNavIcon({ name }) {
   const paths = {
@@ -38,6 +40,11 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
 
+  // Restore the selected appearance across Player and Coach portals.
+  useEffect(() => {
+    applyShuttleTheme(getSavedTheme())
+  }, [])
+
   const accountRole = (
     profile?.role ||
     user?.role ||
@@ -61,8 +68,8 @@ export default function Layout() {
     useState(false)
 
   // The navigation preference is local to each signed-in account.
-  // Keep floating as the default to preserve the user's current layout.
-  const [navigationStyle, setNavigationStyle] = useState('floating')
+  // Classic sidebar is the default for accounts without a saved navigation preference.
+  const [navigationStyle, setNavigationStyle] = useState('sidebar')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem('shuttleClassicSidebarCollapsed') === 'true'
@@ -486,14 +493,14 @@ export default function Layout() {
 
   useEffect(() => {
     if (!user?.id) {
-      setNavigationStyle('floating')
+      setNavigationStyle('sidebar')
       return
     }
     try {
       const saved = localStorage.getItem(`shuttleNavigationStyle:${user.id}`)
-      setNavigationStyle(saved === 'sidebar' ? 'sidebar' : 'floating')
+      setNavigationStyle(saved === 'floating' ? 'floating' : 'sidebar')
     } catch {
-      setNavigationStyle('floating')
+      setNavigationStyle('sidebar')
     }
   }, [user?.id])
 
@@ -1008,7 +1015,7 @@ export default function Layout() {
             className={styles.roleSwitcherWrap}
             style={{
               padding: isNavCollapsed ? '8px 4px' : '16px 12px',
-              borderBottom: '1px solid #1e2d50',
+              borderBottom: '1px solid var(--role-switcher-divider, #1e2d50)',
               marginBottom: isNavCollapsed ? 8 : 16,
               display: 'flex',
               alignItems: 'center',
@@ -1020,7 +1027,7 @@ export default function Layout() {
                 display: 'flex',
                 flexDirection: isNavCollapsed ? 'column' : 'row',
                 width: '100%',
-                background: '#0a1020',
+                background: 'var(--role-switcher-bg, #0a1020)',
                 borderRadius: 10,
                 padding: 3,
                 gap: 3,
@@ -1042,12 +1049,12 @@ export default function Layout() {
                   transition: 'all 0.15s',
                   background:
                     mode === 'player'
-                      ? '#1A5FFF'
+                      ? 'var(--role-player-active, #1A5FFF)'
                       : 'transparent',
                   color:
                     mode === 'player'
                       ? '#fff'
-                      : '#4b6080',
+                      : 'var(--role-switcher-muted, #4b6080)',
                 }}
               >
                 {isNavCollapsed ? 'P' : 'Player'}
@@ -1069,12 +1076,12 @@ export default function Layout() {
                   transition: 'all 0.15s',
                   background:
                     mode === 'coach'
-                      ? '#00976C'
+                      ? 'var(--role-coach-active, #00976C)'
                       : 'transparent',
                   color:
                     mode === 'coach'
                       ? '#fff'
-                      : '#4b6080',
+                      : 'var(--role-switcher-muted, #4b6080)',
                 }}
               >
                 {isNavCollapsed ? 'C' : 'Coach'}

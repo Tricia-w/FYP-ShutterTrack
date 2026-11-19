@@ -2001,3 +2001,222 @@
 .listRow [style*='font-size: 13px'] {
   font-size: 14px !important;
 }
+
+/* =========================
+   OCEAN / FOREST / MONOCHROME THEMES
+   Keep light and dark unchanged. For CSS modules, :global(html[...])
+   targets the theme on the document element.
+========================= */
+:global(html[data-theme='ocean']) .pageTitle,
+:global(html[data-theme='forest']) .pageTitle,
+:global(html[data-theme='monochrome']) .pageTitle,
+:global(html[data-theme='ocean']) .modalTitle,
+:global(html[data-theme='forest']) .modalTitle,
+:global(html[data-theme='monochrome']) .modalTitle,
+:global(html[data-theme='ocean']) .metricVal,
+:global(html[data-theme='forest']) .metricVal,
+:global(html[data-theme='monochrome']) .metricVal,
+:global(html[data-theme='ocean']) .statVal,
+:global(html[data-theme='forest']) .statVal,
+:global(html[data-theme='monochrome']) .statVal,
+:global(html[data-theme='ocean']) .skillVal,
+:global(html[data-theme='forest']) .skillVal,
+:global(html[data-theme='monochrome']) .skillVal,
+:global(html[data-theme='ocean']) .expBarVal,
+:global(html[data-theme='forest']) .expBarVal,
+:global(html[data-theme='monochrome']) .expBarVal,
+:global(html[data-theme='ocean']) .psrVal,
+:global(html[data-theme='forest']) .psrVal,
+:global(html[data-theme='monochrome']) .psrVal {
+  color: var(--text);
+}
+
+:global(html[data-theme='ocean']) .pageSub,
+:global(html[data-theme='forest']) .pageSub,
+:global(html[data-theme='monochrome']) .pageSub,
+:global(html[data-theme='ocean']) .cardTitle,
+:global(html[data-theme='forest']) .cardTitle,
+:global(html[data-theme='monochrome']) .cardTitle,
+:global(html[data-theme='ocean']) .metricLbl,
+:global(html[data-theme='forest']) .metricLbl,
+:global(html[data-theme='monochrome']) .metricLbl,
+:global(html[data-theme='ocean']) .statLabel,
+:global(html[data-theme='forest']) .statLabel,
+:global(html[data-theme='monochrome']) .statLabel,
+:global(html[data-theme='ocean']) .formLabel,
+:global(html[data-theme='forest']) .formLabel,
+:global(html[data-theme='monochrome']) .formLabel,
+:global(html[data-theme='ocean']) .skillLbl,
+:global(html[data-theme='forest']) .skillLbl,
+:global(html[data-theme='monochrome']) .skillLbl,
+:global(html[data-theme='ocean']) .expBarLbl,
+:global(html[data-theme='forest']) .expBarLbl,
+:global(html[data-theme='monochrome']) .expBarLbl,
+:global(html[data-theme='ocean']) .psrLabel,
+:global(html[data-theme='forest']) .psrLabel,
+:global(html[data-theme='monochrome']) .psrLabel {
+  color: var(--text-muted);
+}
+
+:global(html[data-theme='ocean']) .card,
+:global(html[data-theme='forest']) .card,
+:global(html[data-theme='monochrome']) .card,
+:global(html[data-theme='ocean']) .metric,
+:global(html[data-theme='forest']) .metric,
+:global(html[data-theme='monochrome']) .metric,
+:global(html[data-theme='ocean']) .modal,
+:global(html[data-theme='forest']) .modal,
+:global(html[data-theme='monochrome']) .modal,
+:global(html[data-theme='ocean']) .tabActive,
+:global(html[data-theme='forest']) .tabActive,
+:global(html[data-theme='monochrome']) .tabActive {
+  background: var(--card);
+  color: var(--text);
+}
+
+:global(html[data-theme='ocean']) .metricHighlight,
+:global(html[data-theme='forest']) .metricHighlight,
+:global(html[data-theme='monochrome']) .metricHighlight {
+  background: linear-gradient(135deg, var(--navy), var(--navy-mid));
+}
+
+:global(html[data-theme='ocean']) .tip,
+:global(html[data-theme='forest']) .tip,
+:global(html[data-theme='monochrome']) .tip,
+:global(html[data-theme='ocean']) .badgeBlue,
+:global(html[data-theme='forest']) .badgeBlue,
+:global(html[data-theme='monochrome']) .badgeBlue,
+:global(html[data-theme='ocean']) .av,
+:global(html[data-theme='forest']) .av,
+:global(html[data-theme='monochrome']) .av {
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+:global(html[data-theme='ocean']) .tip,
+:global(html[data-theme='forest']) .tip,
+:global(html[data-theme='monochrome']) .tip {
+  color: var(--text);
+  border-left-color: var(--blue);
+}
+
+:global(html[data-theme='ocean']) .tipStrong,
+:global(html[data-theme='forest']) .tipStrong,
+:global(html[data-theme='monochrome']) .tipStrong,
+:global(html[data-theme='ocean']) .scheduleDateNum,
+:global(html[data-theme='forest']) .scheduleDateNum,
+:global(html[data-theme='monochrome']) .scheduleDateNum {
+  color: var(--blue);
+}
+
+:global(html[data-theme='ocean']) .btnPrimary,
+:global(html[data-theme='forest']) .btnPrimary,
+:global(html[data-theme='monochrome']) .btnPrimary {
+  background: var(--blue);
+  color: #fff;
+}
+:global(html[data-theme='ocean']) .btnPrimary:hover,
+:global(html[data-theme='forest']) .btnPrimary:hover,
+:global(html[data-theme='monochrome']) .btnPrimary:hover {
+  background: var(--blue-mid);
+}
+:global(html[data-theme='ocean']) .btnOutline,
+:global(html[data-theme='forest']) .btnOutline,
+:global(html[data-theme='monochrome']) .btnOutline {
+  color: var(--text);
+  border-color: var(--gray-mid);
+}
+:global(html[data-theme='ocean']) .btnOutline:hover,
+:global(html[data-theme='forest']) .btnOutline:hover,
+:global(html[data-theme='monochrome']) .btnOutline:hover {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+
+:global(html[data-theme='ocean']) .formInput,
+:global(html[data-theme='forest']) .formInput,
+:global(html[data-theme='monochrome']) .formInput,
+:global(html[data-theme='ocean']) .formSelect,
+:global(html[data-theme='forest']) .formSelect,
+:global(html[data-theme='monochrome']) .formSelect,
+:global(html[data-theme='ocean']) .formTextarea,
+:global(html[data-theme='forest']) .formTextarea,
+:global(html[data-theme='monochrome']) .formTextarea {
+  background: var(--input);
+  color: var(--text);
+  border-color: var(--gray-mid);
+}
+:global(html[data-theme='ocean']) .formInput:focus,
+:global(html[data-theme='forest']) .formInput:focus,
+:global(html[data-theme='monochrome']) .formInput:focus,
+:global(html[data-theme='ocean']) .formSelect:focus,
+:global(html[data-theme='forest']) .formSelect:focus,
+:global(html[data-theme='monochrome']) .formSelect:focus,
+:global(html[data-theme='ocean']) .formTextarea:focus,
+:global(html[data-theme='forest']) .formTextarea:focus,
+:global(html[data-theme='monochrome']) .formTextarea:focus {
+  border-color: var(--blue);
+}
+
+:global(html[data-theme='ocean']) .tabs,
+:global(html[data-theme='forest']) .tabs,
+:global(html[data-theme='monochrome']) .tabs,
+:global(html[data-theme='ocean']) .psr,
+:global(html[data-theme='forest']) .psr,
+:global(html[data-theme='monochrome']) .psr,
+:global(html[data-theme='ocean']) .h2hBox,
+:global(html[data-theme='forest']) .h2hBox,
+:global(html[data-theme='monochrome']) .h2hBox,
+:global(html[data-theme='ocean']) .table th,
+:global(html[data-theme='forest']) .table,
+:global(html[data-theme='monochrome']) .table th,
+:global(html[data-theme='ocean']) .videoUploadArea,
+:global(html[data-theme='forest']) .videoUploadArea,
+:global(html[data-theme='monochrome']) .videoUploadArea {
+  background: var(--soft);
+}
+:global(html[data-theme='ocean']) .table tbody tr:hover,
+:global(html[data-theme='forest']) .table,
+:global(html[data-theme='monochrome']) .table tbody tr:hover {
+  background: var(--soft);
+}
+:global(html[data-theme='ocean']) .listRow,
+:global(html[data-theme='forest']) .listRow,
+:global(html[data-theme='monochrome']) .listRow,
+:global(html[data-theme='ocean']) .statRow,
+:global(html[data-theme='forest']) .statRow,
+:global(html[data-theme='monochrome']) .statRow,
+:global(html[data-theme='ocean']) .table th,
+:global(html[data-theme='forest']) .table,
+:global(html[data-theme='monochrome']) .table th,
+:global(html[data-theme='ocean']) .table td,
+:global(html[data-theme='forest']) .table,
+:global(html[data-theme='monochrome']) .table td {
+  border-bottom-color: var(--line);
+}
+
+/* =========================
+   MONOCHROME PRIMARY ACTIONS
+   Shared across Player and Coach pages using styles.btnPrimary.
+   Keep the dark button + bright green add icon combination.
+   Secondary, danger, status and other themes are unchanged.
+========================= */
+:global(html[data-theme='monochrome']) .btnPrimary {
+  background: #262626;
+  border: 1px solid #262626;
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+}
+
+:global(html[data-theme='monochrome']) .btnPrimary:hover:not(:disabled) {
+  background: #404040;
+  border-color: #404040;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+}
+
+/* + icon: for buttons with a direct span marked as decorative.
+   Buttons with custom inline + colours may still need a JSX update. */
+:global(html[data-theme='monochrome']) .btnPrimary > span[aria-hidden='true'] {
+  color: #13E38C;
+}
+

@@ -926,7 +926,10 @@ function GroupExpenseManager({ currentUserId, onGroupChanged }) {
             Manage Saved Groups
           </button>
           <button type="button" className={styles.btnPrimary}
-            onClick={() => { resetForm(); setCreating(true) }}>+ Create Group Expense</button>
+            onClick={() => { resetForm(); setCreating(true) }}>
+            <span aria-hidden="true" style={{ color: 'var(--coach-add-plus, currentColor)', fontSize: 19, fontWeight: 500, lineHeight: 1 }}>+</span>
+            Create Group Expense
+          </button>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
@@ -1651,7 +1654,9 @@ export default function Expenses() {
               onClick={openAddExpense}
               style={{ minHeight: 38, padding: '0 14px', borderRadius: 9 }}
             >
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"
+                aria-hidden="true"
+                style={{ color: 'var(--coach-add-plus, currentColor)', flexShrink: 0 }}>
                 <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
               Add Expense

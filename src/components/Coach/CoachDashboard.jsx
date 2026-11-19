@@ -175,8 +175,8 @@ function CoachDashboardStats({
     {
       label: 'My players',
       value: myPlayers.length,
-      color: '#1A5FFF',
-      background: 'var(--soft-blue, #E8EFFE)',
+      color: 'var(--blue, #1A5FFF)',
+      background: 'var(--blue-light, #E8EFFE)',
       icon: 'players',
     },
     {
@@ -971,7 +971,7 @@ export default function CoachDashboard() {
                       color:
                         player.performanceAverage >= 75
                           ? '#00976C'
-                          : '#1A5FFF',
+                          : 'var(--blue, #1A5FFF)',
                     }}
                   >
                     {player.performanceAverage || '-'}
@@ -1033,7 +1033,7 @@ export default function CoachDashboard() {
                       width: 48,
                       height: 48,
                       borderRadius: 12,
-                      background: 'var(--soft-blue, #E8EFFE)',
+                      background: 'var(--blue-light, #E8EFFE)',
                       border: '1px solid var(--line, transparent)',
                       display: 'flex',
                       flexDirection: 'column',
@@ -1046,7 +1046,7 @@ export default function CoachDashboard() {
                       style={{
                         fontSize: 14,
                         fontWeight: 800,
-                        color: '#1A5FFF',
+                        color: 'var(--blue, #1A5FFF)',
                         lineHeight: 1,
                       }}
                     >
@@ -1058,7 +1058,7 @@ export default function CoachDashboard() {
                       style={{
                         fontSize: 9,
                         fontWeight: 700,
-                        color: '#1A5FFF',
+                        color: 'var(--blue, #1A5FFF)',
                         textTransform: 'uppercase',
                       }}
                     >
@@ -1207,7 +1207,7 @@ export default function CoachDashboard() {
                     borderRadius: 10,
                     marginBottom: 8,
                     border: '1px solid var(--line, #EEF1F8)',
-                    borderLeft: '3px solid #1A5FFF',
+                    borderLeft: '3px solid var(--blue, #1A5FFF)',
                     cursor: 'pointer',
                   }}
                 >
@@ -1240,7 +1240,7 @@ export default function CoachDashboard() {
                           marginBottom: 8,
                           fontSize: 12,
                           fontWeight: 800,
-                          color: '#1A5FFF',
+                          color: 'var(--blue, #1A5FFF)',
                           textTransform: 'uppercase',
                           letterSpacing: '0.04em',
                         }}
@@ -1556,7 +1556,7 @@ export default function CoachDashboard() {
                         padding: 0,
                         border: 'none',
                         background: 'transparent',
-                        color: '#1A5FFF',
+                        color: 'var(--blue, #1A5FFF)',
                         fontSize: 11,
                         fontWeight: 700,
                         cursor: 'pointer',

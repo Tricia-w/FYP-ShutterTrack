@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { THEME_OPTIONS, getSavedTheme as getSelectedShuttleTheme, applyShuttleTheme } from '../../theme/themeOptions'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import styles from '../Layout/Pages.module.css'
@@ -18,7 +19,7 @@ const sanitizePhone = value => {
     .slice(0, 11)
 }
 
-const getSavedTheme = () => {
+const getSavedDarkMode = () => {
   if (typeof window === 'undefined') return null
   const savedTheme = localStorage.getItem('shuttleTheme')
   if (savedTheme === 'dark') return true
@@ -26,16 +27,33 @@ const getSavedTheme = () => {
   return null
 }
 
-const getInitialDarkMode = () => getSavedTheme() ?? false
+const getInitialDarkMode = () => getSavedDarkMode() ?? false
 
 const isValidEmail = value => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
 }
 
+
+const THEME_PREVIEWS = {
+  light: { background: '#F6F8FF', surface: '#FFFFFF', accent: '#1A5FFF', text: '#0D1B3E' },
+  dark: { background: '#0B1220', surface: '#111C33', accent: '#6795FF', text: '#FFFFFF' },
+  ocean: { background: '#EAF5FC', surface: '#FFFFFF', accent: '#087FAD', text: '#123B57' },
+  forest: { background: '#EFF8F0', surface: '#FFFFFF', accent: '#168456', text: '#193D2D' },
+  monochrome: { background: '#F5F5F5', surface: '#FFFFFF', accent: '#262626', text: '#171717' },
+}
+
 export default function CoachSettings() {
   const navigate = useNavigate()
   const { user, refreshProfile, logout } = useAuth()
-  const [navStyle, setNavStyle] = useState('floating')
+  const [selectedTheme, setSelectedTheme] = useState(getSelectedShuttleTheme)
+  const [appearanceExpanded, setAppearanceExpanded] = useState(false)
+
+  const changeTheme = (nextTheme) => {
+    const applied = applyShuttleTheme(nextTheme)
+    setSelectedTheme(applied)
+  }
+
+  const [navStyle, setNavStyle] = useState('sidebar')
   const [navStyleUserId, setNavStyleUserId] = useState('')
 
   useEffect(() => {
@@ -46,9 +64,9 @@ export default function CoachSettings() {
       setNavStyleUserId(id)
       try {
         const stored = id ? localStorage.getItem(`shuttleNavigationStyle:${id}`) : null
-        setNavStyle(stored === 'sidebar' ? 'sidebar' : 'floating')
+        setNavStyle(stored === 'floating' ? 'floating' : 'sidebar')
       } catch {
-        setNavStyle('floating')
+        setNavStyle('sidebar')
       }
     })
     return () => { active = false }
@@ -107,12 +125,6 @@ export default function CoachSettings() {
     phone: '',
   })
 
-  useEffect(() => {
-    const theme = settings.darkMode ? 'dark' : 'light'
-    document.documentElement.setAttribute('data-theme', theme)
-    document.body.setAttribute('data-theme', theme)
-    localStorage.setItem('shuttleTheme', theme)
-  }, [settings.darkMode])
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -179,7 +191,7 @@ export default function CoachSettings() {
         }
         setSettings({
           darkMode:
-            getSavedTheme() ??
+            getSavedDarkMode() ??
             readBool(savedSettings?.dark_mode, false),
           playerRequestReminder: readBool(
             savedSettings?.coach_player_request_reminder,
@@ -443,12 +455,6 @@ export default function CoachSettings() {
       ...current,
       [key]: nextValue,
     }))
-    if (key === 'darkMode') {
-      const theme = nextValue ? 'dark' : 'light'
-      document.documentElement.setAttribute('data-theme', theme)
-      document.body.setAttribute('data-theme', theme)
-      localStorage.setItem('shuttleTheme', theme)
-    }
     setAutoSaveStatus('Saving...')
     try {
       const authUser = await getAuthUser()
@@ -544,21 +550,6 @@ export default function CoachSettings() {
         ...current,
         [key]: !nextValue,
       }))
-      if (key === 'darkMode') {
-        const revertedTheme = !nextValue ? 'dark' : 'light'
-        document.documentElement.setAttribute(
-          'data-theme',
-          revertedTheme
-        )
-        document.body.setAttribute(
-          'data-theme',
-          revertedTheme
-        )
-        localStorage.setItem(
-          'shuttleTheme',
-          revertedTheme
-        )
-      }
       setAutoSaveStatus('Could not save')
     }
   }
@@ -1031,31 +1022,93 @@ export default function CoachSettings() {
                 marginBottom: 8,
               }}
             >
-              <div className={styles.cardTitle}>
-                Appearance
-              </div>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: 'var(--text-muted, #8892A4)',
-                }}
-              >
+              <div className={styles.cardTitle} style={{ marginBottom: 0 }}>Appearance</div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
                 Auto-saved
               </span>
             </div>
-
-            <SettingLine
-              label="Dark mode"
-              value={settings.darkMode ? 'On' : 'Off'}
-              checked={settings.darkMode}
-              onChange={() => toggle('darkMode')}
-            />
-
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55, marginBottom: 12 }}>
+              Customize how ShuttleTrack looks and how you navigate between pages.
+            </div>
+            {!appearanceExpanded && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: 'var(--text)' }}>
+                  <strong>Theme:</strong> {THEME_OPTIONS.find(option => option.value === selectedTheme)?.label || 'Classic Light'}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text)' }}>
+                  <strong>Navigation:</strong> {navStyle === 'floating' ? 'Floating circular menu' : 'Classic sidebar'}
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setAppearanceExpanded(expanded => !expanded)}
+              aria-expanded={appearanceExpanded}
+              aria-controls="shuttletrack-appearance-options"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', padding: '10px 12px', borderRadius: 10,
+                border: '1px solid var(--line, #E8EDF6)',
+                background: 'var(--soft, #F6F8FF)', color: 'var(--text, #0D1B3E)',
+                fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span>{appearanceExpanded ? 'Show less' : 'Show more'}</span>
+              <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1 }}>
+                {appearanceExpanded ? '⌃' : '⌄'}
+              </span>
+            </button>
+            {appearanceExpanded && (
+              <div id="shuttletrack-appearance-options" style={{ paddingTop: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+              Colour theme
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>
+              Choose your appearance. The selection is saved automatically for both portals.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              {THEME_OPTIONS.map(option => {
+                const preview = THEME_PREVIEWS[option.value]
+                const active = selectedTheme === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => changeTheme(option.value)}
+                    aria-pressed={active}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 9,
+                      border: active ? '2px solid var(--blue)' : '1px solid var(--line)',
+                      background: 'var(--card)', borderRadius: 12, padding: 10,
+                      cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      color: 'var(--text)', minWidth: 0,
+                    }}
+                  >
+                    <span aria-hidden="true" style={{
+                      background: preview.background, borderRadius: 8, padding: 8,
+                      display: 'flex', flexDirection: 'column', gap: 5,
+                      border: '1px solid rgba(120,140,170,0.14)',
+                    }}>
+                      <span style={{ background: preview.surface, borderRadius: 5, padding: 7, display: 'flex', gap: 5 }}>
+                        <span style={{ background: preview.accent, borderRadius: 4, height: 9, width: '38%' }} />
+                        <span style={{ background: preview.background, borderRadius: 4, height: 9, flex: 1 }} />
+                      </span>
+                      <span style={{ background: preview.surface, borderRadius: 5, height: 12, opacity: 0.85 }} />
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 5 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>{option.label}</span>
+                      <span aria-hidden="true" style={{ color: active ? 'var(--blue)' : 'var(--text-muted)', fontSize: 16 }}>
+                        {active ? '◉' : '○'}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
             <div style={{ marginTop: 12 }}>
               <span className={styles.badgeBlue}>
-                Current mode:{' '}
-                {settings.darkMode ? 'Dark' : 'Light'}
+                Current theme: {THEME_OPTIONS.find(option => option.value === selectedTheme)?.label || 'Classic Light'}
               </span>
             </div>
 
@@ -1096,6 +1149,8 @@ export default function CoachSettings() {
                 ))}
               </div>
             </div>
+              </div>
+            )}
           </div>
         </div>
 

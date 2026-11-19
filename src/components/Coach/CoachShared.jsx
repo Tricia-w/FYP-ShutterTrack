@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import styles from '../Layout/Pages.module.css'
 
-
 const initials = name =>
   String(name || 'Player')
     .trim()
@@ -12,12 +11,11 @@ const initials = name =>
     .toUpperCase()
     .slice(0, 2)
 
-
 export function Avatar({
   name,
   size = 36,
   bg = 'var(--soft-blue, #E8EFFE)',
-  color = '#1A5FFF',
+  color = 'var(--blue, #1A5FFF)',
 }) {
   return (
     <div
@@ -42,7 +40,7 @@ export function Avatar({
 
 export function LevelBadge({ level }) {
   const map = {
-    Advanced: { bg: 'var(--soft-blue, #E8EFFE)', color: '#1A5FFF' },
+    Advanced: { bg: 'var(--soft-blue, #E8EFFE)', color: 'var(--blue, #1A5FFF)' },
     Intermediate: { bg: 'var(--soft-green, #E0FAF3)', color: '#00976C' },
     Beginner: { bg: 'var(--soft-yellow, #FEF3C7)', color: '#92400E' },
   }
@@ -65,7 +63,7 @@ export function LevelBadge({ level }) {
   )
 }
 
-export function SkillBar({ label, val, color = '#1A5FFF' }) {
+export function SkillBar({ label, val, color = 'var(--blue, #1A5FFF)' }) {
   const safeValue = Math.max(0, Math.min(100, Number(val) || 0))
 
   return (
@@ -187,7 +185,7 @@ export function CoachPageHeader({
                       padding: '0 16px',
                       borderRadius: 10,
                       border:
-                        '1px solid #B8C7E6',
+                        '1px solid var(--line, #B8C7E6)',
                       background:
                         'var(--card, #FFFFFF)',
                       color:
@@ -218,8 +216,8 @@ export function CoachPageHeader({
                     padding: '0 16px',
                     borderRadius: 10,
                     border:
-                      '1px solid #1A5FFF',
-                    background: '#1A5FFF',
+                      '1px solid var(--blue, #1A5FFF)',
+                    background: 'var(--blue, #1A5FFF)',
                     color: '#FFFFFF',
                     fontSize: 13,
                     fontWeight: 700,
@@ -230,13 +228,13 @@ export function CoachPageHeader({
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
                     boxShadow:
-                      '0 4px 10px rgba(26, 95, 255, 0.16)',
+                      '0 4px 10px rgba(13, 27, 62, 0.16)',
                   }}
                 >
                   <span
                     aria-hidden="true"
                     style={{
-                      color: '#13E38C',
+                      color: 'var(--coach-add-plus, #13E38C)',
                       fontSize: 22,
                       fontWeight: 400,
                       lineHeight: 1,
@@ -269,7 +267,7 @@ export function CoachStats({
     {
       label: 'My players',
       val: myPlayers.length,
-      color: '#1A5FFF',
+      color: 'var(--blue, #1A5FFF)',
       bg: 'var(--soft-blue, #E8EFFE)',
     },
     {

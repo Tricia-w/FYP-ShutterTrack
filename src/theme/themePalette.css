@@ -1,0 +1,125 @@
+/* ShuttleTrack theme palette. Import once from your React entrypoint, after global reset CSS.
+   Existing light and dark themes are preserved. */
+:root {
+  --card: #ffffff;
+  --soft: #f6f8ff;
+  --input: #ffffff;
+  --line: #eef1f8;
+  --text-muted: #8892a4;
+  --text-soft: #64748b;
+}
+
+/* Keep your existing html[data-theme='dark'] styles and existing dark palette unchanged. */
+html[data-theme='ocean'] {
+  color-scheme: light;
+  --blue: #087fad;
+  --blue-mid: #1398c2;
+  --blue-light: #dff2fb;
+  --navy: #123b57;
+  --navy-mid: #175477;
+  --white: #ffffff;
+  --off: #eaf5fc;
+  --gray: #607e91;
+  --gray-light: #d7e8f1;
+  --gray-mid: #acc6d5;
+  --bg: #eaf5fc;
+  --card: #ffffff;
+  --soft: #eef8fd;
+  --input: #ffffff;
+  --line: #d7e8f1;
+  --text: #123b57;
+  --text-muted: #607e91;
+  --text-soft: #375970;
+  --sidebar-bg: #123b57;
+}
+
+html[data-theme='forest'] {
+  color-scheme: light;
+  --blue: #168456;
+  --blue-mid: #22996a;
+  --blue-light: #def4e7;
+  --navy: #193d2d;
+  --navy-mid: #255540;
+  --white: #ffffff;
+  --off: #eff8f0;
+  --gray: #647f70;
+  --gray-light: #dcebdd;
+  --gray-mid: #afcab8;
+  --bg: #eff8f0;
+  --card: #ffffff;
+  --soft: #f3faf4;
+  --input: #ffffff;
+  --line: #dcebdd;
+  --text: #193d2d;
+  --text-muted: #647f70;
+  --text-soft: #426b51;
+  --sidebar-bg: #193d2d;
+}
+
+/* Monochrome: neutral black, white and grey; preserves semantic status colours. */
+html[data-theme='monochrome'] {
+  color-scheme: light;
+  --blue: #262626;
+  --blue-mid: #404040;
+  --blue-light: #ececec;
+  --navy: #171717;
+  --navy-mid: #333333;
+  --white: #ffffff;
+  --off: #f5f5f5;
+  --gray: #636363;
+  --gray-light: #e5e5e5;
+  --gray-mid: #b8b8b8;
+  --bg: #f5f5f5;
+  --card: #ffffff;
+  --soft: #eeeeee;
+  --input: #ffffff;
+  --line: #dedede;
+  --text: #171717;
+  --text-muted: #626262;
+  --text-soft: #494949;
+  --sidebar-bg: #171717;
+}
+
+/* Role switcher, with original colours retained in Classic Light / Midnight Dark. */
+:root {
+  --role-player-active: #1a5fff;
+  --role-coach-active: #00976c;
+  --role-switcher-bg: #0a1020;
+  --role-switcher-muted: #4b6080;
+  --role-switcher-divider: #1e2d50;
+}
+html[data-theme='ocean'] {
+  --role-player-active: #087fad;
+  --role-coach-active: #087fad;
+  --role-switcher-bg: #0d2d45;
+  --role-switcher-muted: #a9cadb;
+  --role-switcher-divider: #346782;
+}
+html[data-theme='forest'] {
+  --role-player-active: #168456;
+  --role-coach-active: #168456;
+  --role-switcher-bg: #102d21;
+  --role-switcher-muted: #a8c5b5;
+  --role-switcher-divider: #34634b;
+}
+html[data-theme='monochrome'] {
+  --role-player-active: #404040;
+  --role-coach-active: #404040;
+  --role-switcher-bg: #0a0a0a;
+  --role-switcher-muted: #a3a3a3;
+  --role-switcher-divider: #404040;
+}
+
+/* Green accent for primary Add actions; the base button uses each theme palette. */
+:root { --coach-add-plus: #13E38C; }
+html[data-theme='ocean'] { --coach-add-plus: #DFF7FF; }
+html[data-theme='forest'] { --coach-add-plus: #E4FFED; }
+html[data-theme='monochrome'] { --coach-add-plus: #13E38C; }
+
+:root {
+  --add-icon-color: currentColor;
+}
+
+html[data-theme='monochrome'] {
+  --add-icon-color: #13E38C;
+}

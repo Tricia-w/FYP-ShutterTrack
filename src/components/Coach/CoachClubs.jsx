@@ -6322,6 +6322,7 @@ export default function CoachClubs() {
       <CoachPageHeader
         title="Coach Clubs"
         subtitle="Join a club as a coach, or create and manage your own club"
+        showActions={false}
         rightAction={
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <CoachNotificationBell
