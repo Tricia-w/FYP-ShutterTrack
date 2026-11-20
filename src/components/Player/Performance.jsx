@@ -30,16 +30,125 @@ const defaultSkills = SKILL_COLUMNS.map(skill => ({ ...skill, val: 0 }))
 
 // Guidance for self-assessment only. Does not alter scores or verification.
 const SKILL_RATING_LEVELS = [
-  { max: 20, label: 'Beginner', description: 'Still learning the basic technique and finding it difficult to perform consistently.' },
-  { max: 40, label: 'Developing', description: 'Can perform the basics, but timing, accuracy or control often need improvement.' },
-  { max: 60, label: 'Intermediate', description: 'Can perform the skill in practice or matches, but consistency can improve.' },
-  { max: 80, label: 'Proficient', description: 'Usually performs the skill confidently with good control.' },
+  { max: 30, label: 'Beginner', description: 'Still learning the basic technique and finding it difficult to perform consistently.' },
+  { max: 49, label: 'Developing', description: 'Can perform the basics, but timing, accuracy or control often need improvement.' },
+  { max: 69, label: 'Intermediate', description: 'Can perform the skill in practice or matches, but consistency can improve.' },
+  { max: 89, label: 'Proficient', description: 'Usually performs the skill confidently with good control.' },
   { max: 100, label: 'Advanced', description: 'Performs the skill consistently and effectively, including under match pressure.' },
 ]
 
 const getSkillRatingLevel = value =>
   SKILL_RATING_LEVELS.find(level => Number(value) <= level.max) || SKILL_RATING_LEVELS[4]
 
+
+// Lightweight, illustrative technique animations; no external media required.
+const SKILL_DEMOS = {
+  Smash: { description: 'A powerful overhead shot that travels steeply down into the opposite court.', cue: 'Reach high, strike in front of your body and follow through.', path: 'M110 35 Q190 65 302 170', arm: 'M75 86 L91 65 L110 35', angle: '-35;-35;58;58;-35' },
+  Defense: { description: 'Returning an attacking shot, such as a smash, with a controlled block or lift.', cue: 'Keep your knees bent and racket in front of your body.', path: 'M300 35 L115 112 Q205 25 302 145', arm: 'M75 86 L94 103 L115 112', angle: '-15;-15;-40;-40;-15' },
+  Footwork: { description: 'Moving efficiently around the court and recovering to a ready position.', cue: 'Split step, move to the shuttle, then recover toward your base.', path: '' },
+  'Drop shot': { description: 'A soft overhead shot from the rear court that lands just beyond the net.', cue: 'Use overhead preparation and reduce the pace at contact.', path: 'M110 35 Q160 25 183 170', arm: 'M75 86 L91 65 L110 35', angle: '-30;-30;25;25;-30' },
+  'Net play': { description: 'A delicate shot played close to the net that tumbles or falls just across it.', cue: 'Take the shuttle early with a relaxed grip and gentle racket touch.', path: 'M148 91 Q174 48 198 170', arm: 'M75 86 L94 91 L113 91', angle: '-12;-12;12;12;-12' },
+  Serve: { description: 'The opening shot of a rally, played underhand into the diagonally opposite service court.', cue: 'Use a smooth controlled swing and aim into the correct service box.', path: 'M110 122 Q191 24 273 170', arm: 'M75 86 L91 104 L110 122', angle: '25;25;-35;-35;25' },
+}
+
+// Each pose contains head, shoulder, hip, free elbow/hand, racket elbow/hand,
+// both knees/feet and racket head. Interpolation keeps every limb connected.
+const techniquePose = (head, shoulder, hip, freeElbow, freeHand, elbow, hand, kneeA, footA, kneeB, footB, racket) =>
+  [head, shoulder, hip, freeElbow, freeHand, elbow, hand, kneeA, footA, kneeB, footB, racket]
+
+const readyPose = techniquePose([77,65],[80,84],[83,119],[64,99],[52,105],[98,100],[115,94],[63,142],[56,169],[105,141],[119,169],[132,76])
+const loadPose = techniquePose([69,72],[72,91],[78,125],[91,76],[107,56],[51,78],[47,57],[53,146],[46,169],[104,145],[113,169],[39,37])
+const jumpPose = techniquePose([79,48],[80,67],[85,102],[100,53],[116,36],[60,53],[62,36],[63,123],[56,145],[105,119],[103,142],[76,14])
+const smashContact = techniquePose([91,47],[91,66],[82,101],[73,83],[58,97],[103,46],[119,28],[66,122],[54,143],[104,119],[112,143],[138,15])
+const followPose = techniquePose([100,71],[97,90],[88,123],[74,103],[62,113],[112,106],[123,127],[70,145],[58,169],[110,144],[127,169],[134,147])
+const crouchPose = techniquePose([80,84],[82,103],[77,132],[64,112],[52,123],[102,114],[120,110],[53,148],[42,169],[104,144],[122,169],[140,99])
+const blockPose = techniquePose([91,80],[93,98],[81,129],[70,110],[57,123],[113,104],[130,103],[56,147],[43,169],[111,145],[132,169],[152,91])
+const dropContact = techniquePose([82,57],[82,76],[80,115],[65,83],[55,103],[94,53],[109,34],[60,143],[50,169],[100,143],[111,169],[128,20])
+const netReady = techniquePose([113,66],[116,85],[111,119],[98,100],[84,108],[130,96],[143,91],[92,144],[83,169],[130,143],[144,169],[158,76])
+const netLunge = techniquePose([132,81],[130,99],[109,128],[104,111],[86,119],[146,100],[161,93],[83,148],[66,169],[146,143],[152,169],[182,82])
+const netTouch = techniquePose([133,80],[131,98],[110,128],[104,111],[86,119],[147,99],[160,89],[83,148],[66,169],[146,143],[152,169],[182,75])
+const serveReady = techniquePose([87,65],[88,84],[85,120],[107,102],[122,119],[71,105],[65,123],[66,144],[60,169],[104,145],[113,169],[53,142])
+const serveContact = techniquePose([89,65],[90,84],[87,120],[108,99],[116,112],[96,108],[112,124],[68,144],[60,169],[106,144],[115,169],[135,122])
+const serveFollow = techniquePose([93,64],[94,83],[90,119],[78,100],[66,115],[111,91],[127,82],[70,145],[60,169],[109,144],[118,169],[145,65])
+const shiftPose = (pose, x, y = 0) => pose.map(([px, py]) => [px + x, py + y])
+const mirrorTechniquePose = (pose, axis) => pose.map(([x, y]) => [2 * axis - x, y])
+const stepPose = techniquePose([86,64],[86,83],[83,119],[68,97],[55,103],[101,94],[113,88],[65,139],[48,157],[108,138],[128,169],[131,72])
+const oppositeStep = techniquePose([86,61],[86,80],[84,115],[76,95],[63,108],[101,93],[115,90],[105,140],[123,157],[61,137],[47,169],[131,73])
+
+const TECHNIQUE_MOTION = {
+  Smash: { duration: 3400, poses: [[0,readyPose],[.18,loadPose],[.32,jumpPose],[.43,smashContact],[.62,followPose],[.82,crouchPose],[1,readyPose]], shuttle: [[0, [260,22]],[.43,[138,15]],[.64,[306,168]],[.88,[306,168]]], flight:'M138 15 Q205 65 306 168', contact:.43, phases:[[0,'Ready'],[.18,'Load and jump'],[.43,'Overhead contact'],[.62,'Land and recover']] },
+  Defense: { duration: 3200, poses:[[0,readyPose],[.2,crouchPose],[.4,blockPose],[.55,shiftPose(blockPose,0,-8)],[.76,crouchPose],[1,readyPose]], shuttle:[[0,[310,26]],[.4,[152,91]],[.68,[248,61]],[.88,[308,168]]], flight:'M310 26 L152 91 Q234 7 308 168', contact:.4, phases:[[0,'Ready'],[.2,'Lower your stance'],[.4,'Block the smash'],[.76,'Recover']] },
+  'Drop shot': { duration: 3600, poses:[[0,readyPose],[.2,loadPose],[.4,dropContact],[.58,followPose],[.8,crouchPose],[1,readyPose]], shuttle:[[0,[244,20]],[.4,[128,20]],[.62,[204,65]],[.85,[218,168]]], flight:'M128 20 Q195 0 204 65 Q216 115 218 168', contact:.4, phases:[[0,'Ready'],[.2,'Overhead preparation'],[.4,'Soft contact'],[.58,'Follow through']] },
+  'Net play': { duration: 3400, poses:[[0,readyPose],[.2,netReady],[.4,netLunge],[.49,netTouch],[.68,netLunge],[.85,netReady],[1,readyPose]], shuttle:[[0,[264,65]],[.49,[182,75]],[.65,[211,69]],[.85,[226,168]]], flight:'M182 75 Q215 56 226 168', contact:.49, phases:[[0,'Ready'],[.2,'Move toward net'],[.4,'Lunge and reach'],[.49,'Gentle touch'],[.68,'Push back and recover']] },
+  Serve: { duration: 3400, poses:[[0,serveReady],[.22,serveReady],[.4,serveContact],[.62,serveFollow],[.82,readyPose],[1,serveReady]], shuttle:[[0,[122,119]],[.22,[122,119]],[.4,[135,122]],[.6,[202,71]],[.88,[260,168]]], flight:'M135 122 Q204 18 260 168', contact:.4, phases:[[0,'Prepare shuttle'],[.22,'Release and swing'],[.4,'Underhand contact'],[.62,'Follow through']] },
+  Footwork: { duration: 5000, poses:[[0,shiftPose(readyPose,85)],[.1,shiftPose(crouchPose,85)],[.2,shiftPose(oppositeStep,25)],[.3,shiftPose(mirrorTechniquePose(netLunge,110),-35)],[.4,shiftPose(stepPose,35)],[.5,shiftPose(readyPose,85)],[.6,shiftPose(crouchPose,85)],[.7,shiftPose(stepPose,135)],[.8,shiftPose(netLunge,120)],[.9,shiftPose(oppositeStep,130)],[1,shiftPose(readyPose,85)]], phases:[[0,'Base position'],[.1,'Split step'],[.2,'Move left'],[.3,'Reach'],[.4,'Recover to base'],[.6,'Split step'],[.7,'Move right'],[.8,'Reach'],[.9,'Recover to base']] },
+}
+
+function blendTechniqueFrames(frames, time, blend) {
+  const next = frames.findIndex(([t]) => t >= time)
+  if (next <= 0) return frames[next === 0 ? 0 : frames.length - 1][1]
+  const [a, start] = frames[next - 1]
+  const [b, end] = frames[next]
+  return blend(start, end, (time - a) / (b - a))
+}
+const blendTechniquePoint = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t)
+
+function SkillTechniqueDemo({ name }) {
+  const demo = SKILL_DEMOS[name]
+  const motion = TECHNIQUE_MOTION[name]
+  const [playing, setPlaying] = useState(() => typeof window === 'undefined' || !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const [time, setTime] = useState(0)
+  const elapsed = useRef(0)
+  useEffect(() => {
+    if (!playing) return undefined
+    let frame, last
+    const tick = now => {
+      if (last !== undefined) elapsed.current = (elapsed.current + Math.min(now - last, 100)) % motion.duration
+      last = now
+      setTime(elapsed.current / motion.duration)
+      frame = window.requestAnimationFrame(tick)
+    }
+    frame = window.requestAnimationFrame(tick)
+    return () => window.cancelAnimationFrame(frame)
+  }, [playing, motion.duration])
+  const [head, shoulder, hip, freeElbow, freeHand, elbow, hand, kneeA, footA, kneeB, footB, racket] = blendTechniqueFrames(motion.poses, time, (a,b,t) => a.map((p,i) => blendTechniquePoint(p,b[i],t)))
+  const shuttle = motion.shuttle && blendTechniqueFrames(motion.shuttle, time, blendTechniquePoint)
+  const phase = motion.phases.reduce((label, [t, text]) => time >= t ? text : label, motion.phases[0][1])
+  const color = 'var(--blue, #1A5FFF)'
+  const line = (points, strokeWidth = 6, opacity = 1) => <polyline points={points.map(p => p.join(',')).join(' ')} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" opacity={opacity}/>
+  const angle = Math.atan2(racket[1]-hand[1], racket[0]-hand[0]) * 180 / Math.PI
+  return (
+    <div style={{ margin: '8px 0 12px', padding: 12, borderRadius: 12, border: `1px solid ${C.line}`, background: C.soft }}>
+      <svg viewBox="0 0 340 200" role="img" aria-label={`${name}: full-body illustrative technique demonstration`} style={{display:'block',width:'100%',maxWidth:460,margin:'0 auto',height:'auto'}}>
+        <rect x="4" y="4" width="332" height="192" rx="12" fill={C.card}/>
+        <path d="M20 170H320" stroke={C.muted} strokeWidth="2"/>
+        {name !== 'Footwork' ? <g stroke={C.muted} fill="none"><path d="M195 84V170 M200 84V170" strokeWidth="2"/><path d="M192 84H203" strokeWidth="3"/></g> : <g fill="none" stroke={C.muted} strokeDasharray="4 4"><path d="M48 170V178 M170 170V178 M295 170V178"/><path d="M55 180H285"/></g>}
+        {motion.flight && time >= motion.contact && <path d={motion.flight} fill="none" stroke={color} strokeDasharray="4 5" strokeWidth="1.7" opacity=".45"/>}
+        <ellipse cx={hip[0]} cy="171" rx="25" ry="3" fill={C.muted} opacity=".16"/>
+        {line([hip,kneeA,footA],6,.65)}
+        {line([footA,[footA[0]+8,footA[1]]],5,.65)}
+        {line([shoulder,freeElbow,freeHand],5,.65)}
+        {line([head,shoulder,hip],7)}
+        {line([hip,kneeB,footB])}
+        {line([footB,[footB[0]+8,footB[1]]],5)}
+        <circle cx={head[0]} cy={head[1]} r="10" fill={color}/>
+        {line([shoulder,elbow,hand],6)}
+        {line([hand,racket],2.5)}
+        <ellipse cx={racket[0]} cy={racket[1]} rx="11" ry="7" transform={`rotate(${angle} ${racket.join(' ')})`} stroke={color} strokeWidth="2" fill={C.card}/>
+        <circle cx={hand[0]} cy={hand[1]} r="3.5" fill={color}/>
+        {shuttle && time < .94 && <g transform={`translate(${shuttle.join(' ')})`}><path d="M-2 0L-10 -5L-10 5Z" stroke={C.muted} fill={C.card}/><circle r="2.8" fill="#F59E0B"/></g>}
+        <text x="170" y="190" textAnchor="middle" fontSize="10" fontWeight="700" fill={C.text}>{phase}</text>
+      </svg>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8}}>
+        <strong style={{fontSize:13,color:C.text}}>What is {name.toLowerCase()}?</strong>
+        <div style={{display:'flex',gap:6}}><button type="button" className={styles.btnOutline} onClick={() => {elapsed.current=0;setTime(0)}} style={{fontSize:11,padding:'5px 9px'}}>Restart</button><button type="button" className={styles.btnOutline} onClick={() => setPlaying(v => !v)} style={{fontSize:11,padding:'5px 9px'}}>{playing ? 'Pause' : 'Play'}</button></div>
+      </div>
+      <div style={{fontSize:13,color:C.text,lineHeight:1.5,marginTop:5}}>{demo.description}</div>
+      <div style={{fontSize:12,color:C.muted,lineHeight:1.5,marginTop:5}}>Technique tip: {demo.cue}</div>
+      <div style={{fontSize:10,color:C.muted,marginTop:5}}>Simplified movement illustration, not a full coaching demonstration.</div>
+    </div>
+  )
+}
 
 const SKILL_COLORS = {
   Smash: '#2563EB',
@@ -1208,6 +1317,7 @@ export default function Performance() {
   const [upcomingForm, setUpcomingForm] = useState(emptyUpcomingForm)
   const [sourceUpcomingMatch, setSourceUpcomingMatch] = useState(null)
   const [showSkillModal, setShowSkillModal] = useState(false)
+  const [expandedSkillDemo, setExpandedSkillDemo] = useState(null)
   const [showViewModal, setShowViewModal] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [duplicatePrompt, setDuplicatePrompt] = useState(false)
@@ -3482,6 +3592,7 @@ export default function Performance() {
                         ? skills.map(skill => skill.val)
                         : SKILL_COLUMNS.map(() => 1)
                     )
+                    setExpandedSkillDemo(null)
                     setShowSkillModal(true)
                   }}
                 >
@@ -5958,7 +6069,7 @@ export default function Performance() {
                 ))}
               </div>
               <div style={{ color: C.muted, fontSize: 11, marginTop: 8, lineHeight: 1.4 }}>
-                Use these descriptions as a guide, not a formal skill test.
+                Use these descriptions as a guide, not a formal skill test. Tap any skill name to watch a technique demonstration.
               </div>
             </div>
 
@@ -5971,12 +6082,13 @@ export default function Performance() {
                     marginBottom: 6,
                   }}
                 >
-                  <label
-                    className={styles.formLabel}
-                    style={{ marginBottom: 0 }}
-                  >
+                  <button type="button" aria-expanded={expandedSkillDemo === skill.name}
+                    aria-controls={`skill-demo-${index}`}
+                    onClick={() => setExpandedSkillDemo(current => current === skill.name ? null : skill.name)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '3px 0', border: 0, background: 'transparent', color: C.text, fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                     {skill.name}
-                  </label>
+                    <span style={{ color: 'var(--blue, #1A5FFF)', fontSize: 11, fontWeight: 600 }}>{expandedSkillDemo === skill.name ? '▴ Hide demo' : '▷ View demo'}</span>
+                  </button>
                   <span
                     style={{
                       fontSize: 14,
@@ -5988,6 +6100,9 @@ export default function Performance() {
                   </span>
                 </div>
 
+                <div id={`skill-demo-${index}`}>
+                  {expandedSkillDemo === skill.name && <SkillTechniqueDemo key={skill.name} name={skill.name} />}
+                </div>
                 <input
                   type="range"
                   min="1"

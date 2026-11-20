@@ -28,11 +28,62 @@ const INITIAL_FORM_STATE = {
 }
 
 function isValidEmail(email) {
-  return (
-    Boolean(email) &&
-    email.length <= MAX_EMAIL_LENGTH &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email)
-  )
+  if (!email || email.length > MAX_EMAIL_LENGTH) return false
+  const parts = email.split('@')
+  if (parts.length !== 2) return false
+  const [local, domain] = parts
+  return local.length <= 64 && /^[a-z0-9!#$%&'*+/=?^_`{|}~.-]+$/i.test(local) &&
+    !local.startsWith('.') && !local.endsWith('.') && !local.includes('..') &&
+    /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain)
+}
+
+const EMAIL_PROVIDERS = ['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com', 'live.com', 'msn.com', 'proton.me', 'protonmail.com', 'googlemail.com', 'ymail.com', 'aol.com', 'me.com', 'mac.com', 'hotmail.co.uk', 'yahoo.co.uk']
+const COMMON_EMAIL_TYPOS = {
+  'gmail.co': 'gmail.com', 'gmail.con': 'gmail.com', 'gmail.cmo': 'gmail.com',
+  'gmai.com': 'gmail.com', 'gmial.com': 'gmail.com', 'gmal.com': 'gmail.com',
+  'mmail.co': 'gmail.com', 'mmail.com': 'gmail.com',
+  'mmial.cpm': 'gmail.com',
+  'hotmail.co': 'hotmail.com', 'hotmail.con': 'hotmail.com', 'hotmial.com': 'hotmail.com',
+  'gotmail.co': 'hotmail.com', 'gotmail.com': 'hotmail.com',
+  'outlook.co': 'outlook.com', 'outlook.con': 'outlook.com', 'outlok.com': 'outlook.com',
+  'yahoo.con': 'yahoo.com', 'yahoo.cmo': 'yahoo.com', 'icloud.co': 'icloud.com', 'icloud.con': 'icloud.com',
+}
+function domainDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0))
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+(a[i-1] === b[j-1] ? 0 : 1))
+      if (i > 1 && j > 1 && a[i-1] === b[j-2] && a[i-2] === b[j-1]) d[i][j] = Math.min(d[i][j], d[i-2][j-2]+1)
+    }
+  }
+  return d[a.length][b.length]
+}
+function suggestedEmailDomain(email) {
+  const clean = email.trim().toLowerCase()
+  if (!isValidEmail(clean)) return ''
+  const domain = clean.split('@')[1]
+  if (EMAIL_PROVIDERS.includes(domain)) return ''
+  if (Object.prototype.hasOwnProperty.call(COMMON_EMAIL_TYPOS, domain)) return COMMON_EMAIL_TYPOS[domain]
+  // Allow multiple combined misspellings in sufficiently distinctive provider names.
+  // Only compare two-label domains here to avoid flagging unrelated subdomains.
+  const labels = domain.split('.')
+  if (labels.length !== 2) return ''
+  const matches = EMAIL_PROVIDERS.filter(provider => provider.split('.').length === 2)
+    .map(provider => {
+      const [name, suffix] = provider.split('.')
+      return { provider, nameDistance: domainDistance(labels[0], name), suffixDistance: domainDistance(labels[1], suffix) }
+    })
+    .filter(item => {
+      const providerName = item.provider.split('.')[0]
+      const longName = providerName.length >= 5
+      const suffixLimit = longName && item.nameDistance === 0 ? 2 : 1
+      return item.suffixDistance <= suffixLimit &&
+        item.nameDistance <= (longName ? 2 : 1) &&
+        item.nameDistance + item.suffixDistance <= (longName ? 3 : 2)
+    })
+    .sort((a, b) => (a.nameDistance + a.suffixDistance) - (b.nameDistance + b.suffixDistance) || a.nameDistance - b.nameDistance || EMAIL_PROVIDERS.indexOf(a.provider) - EMAIL_PROVIDERS.indexOf(b.provider))
+  // In a tie, suggest the first common provider, not an automatic correction.
+  return matches[0]?.provider || '' 
 }
 
 function getPasswordChecks(password) {
@@ -313,6 +364,9 @@ export default function Register() {
   const [registrationComplete, setRegistrationComplete] = useState(Boolean(loginVerificationEmail))
   const [resending, setResending] = useState(false)
   const [otpCode, setOtpCode] = useState('')
+  const [emailCorrectionNotice, setEmailCorrectionNotice] = useState('')
+  const [confirmedEmail, setConfirmedEmail] = useState('')
+  const emailSuggestion = accountMode === 'new' && confirmedEmail !== form.email.trim().toLowerCase() ? suggestedEmailDomain(form.email) : '' 
   const [verifyingOtp, setVerifyingOtp] = useState(false)
   const [existingNotice, setExistingNotice] = useState('')
   const [resumingVerification, setResumingVerification] = useState(false)
@@ -344,6 +398,7 @@ export default function Register() {
 
   function resetForm() {
     setForm(INITIAL_FORM_STATE)
+    setConfirmedEmail('')
     setTermsAccepted(false)
     setPrivacyAccepted(false)
     setProfileConsentAccepted(false)
@@ -380,6 +435,13 @@ export default function Register() {
       return
     }
 
+    const correctedDomain = suggestedEmailDomain(cleanEmail)
+    if (correctedDomain && confirmedEmail !== cleanEmail) {
+      setError(`Please check your email address. Did you mean @${correctedDomain}?`)
+      setLoading(false)
+      return
+    }
+
     if (form.password.length > MAX_PASSWORD_LENGTH) {
       setError(`Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`)
       setLoading(false)
@@ -409,6 +471,19 @@ export default function Register() {
         'Please agree to the Terms & Conditions, confirm that you have read the Privacy Policy, and give consent before continuing.',
       )
       setLoading(false)
+      return
+    }
+
+    // Only send the domain, never the full email or password, to the DNS service.
+    const { data: domainCheck, error: domainError } = await supabase.functions.invoke('validate-email-domain', {
+      body: { domain: cleanEmail.split('@')[1] },
+    })
+    if (domainError || !domainCheck || domainCheck.status === 'unavailable') {
+      setError('Email domain validation is temporarily unavailable. Please try again. No account has been created.')
+      return
+    }
+    if (domainCheck.status !== 'valid') {
+      setError('This email domain does not appear to accept email. Please check the address before continuing.')
       return
     }
 
@@ -512,7 +587,8 @@ export default function Register() {
     setOtpCode('')
     setRegistrationComplete(true)
     setError('')
-    setSuccess('Registration received. Enter the verification code sent to your email.')
+    setEmailCorrectionNotice('')
+    setSuccess('Registration received. Check your inbox for the verification code. If the address is incorrect, choose Change Email Address.')
   }
 
   async function resumeRegistrationVerification() {
@@ -541,7 +617,7 @@ export default function Register() {
   async function handleExistingAccount() {
     const cleanEmail = form.email.trim().toLowerCase()
 
-    if (!isValidEmail(cleanEmail)) {
+    if (!cleanEmail || cleanEmail.length > MAX_EMAIL_LENGTH || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(cleanEmail)) {
       setError('Please enter a valid email address.')
       setLoading(false)
       return
@@ -770,6 +846,22 @@ export default function Register() {
     }
   }
 
+  function changeVerificationEmail() {
+    if (resending || verifyingOtp) return
+    // An unverified signup has no authenticated session. Restart signup with
+    // the corrected address instead of attempting an unauthenticated updateUser.
+    setForm(previous => ({ ...previous, email: verificationEmail, password: '', confirm: '' }))
+    setConfirmedEmail('')
+    setRegistrationComplete(false)
+    setVerificationEmail('')
+    setOtpCode('')
+    setExistingNotice('')
+    setAccountMode('new')
+    resetMessages()
+    setEmailCorrectionNotice('Correct your email address and register again. The previous unverified registration is not changed or deleted.')
+    setStep(role ? 'details' : 'role')
+  }
+
   async function resendVerificationEmail() {
     if (!verificationEmail || resending) return
 
@@ -896,6 +988,11 @@ export default function Register() {
                 style={{ width: '100%', padding: 12, background: 'transparent', border: 'none',
                   color: '#1a5fff', marginTop: 12, cursor: 'pointer', fontWeight: 700 }}>
                 {resending ? 'Sending...' : 'Resend Verification Code'}
+              </button>
+              <button type="button" onClick={changeVerificationEmail} disabled={resending || verifyingOtp}
+                style={{ width: '100%', padding: 10, background: 'transparent', border: 'none',
+                  color: '#1a5fff', cursor: resending || verifyingOtp ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+                Change Email Address
               </button>
               <button type="button" onClick={() => navigate('/login', { state: { email: verificationEmail } })}
                 style={{ width: '100%', padding: 10, background: 'transparent', border: 'none',
@@ -1220,7 +1317,7 @@ export default function Register() {
                 }
 
                 resetMessages()
-                resetForm()
+                if (!emailCorrectionNotice) resetForm()
                 setStep('details')
               }}
               style={{
@@ -1869,6 +1966,11 @@ export default function Register() {
             </div>
           )}
 
+          {emailCorrectionNotice && accountMode === 'new' && (
+            <div role="status" style={{ marginBottom: 14, fontSize: 13, lineHeight: 1.5, color: detailsSecondary }}>
+              {emailCorrectionNotice}
+            </div>
+          )}
           <form
             onSubmit={handleSubmit}
             autoComplete="off"
@@ -1906,12 +2008,39 @@ export default function Register() {
                 type="email"
                 placeholder="Email"
                 value={form.email}
-                onChange={setField('email')}
+                onChange={(event) => {
+                  setField('email')(event)
+                  setConfirmedEmail('')
+                  setError('')
+                  setExistingNotice('')
+                }}
                 autoComplete="off"
                 maxLength={MAX_EMAIL_LENGTH}
                 required
                 disabled={loading}
+                aria-invalid={Boolean(emailSuggestion)}
+                aria-describedby={emailSuggestion ? 'register-email-typo' : undefined}
+                style={emailSuggestion ? { borderColor: '#DC2626' } : undefined}
               />
+              {emailSuggestion && (
+                <div id="register-email-typo" role="alert" style={{ marginTop: 7, fontSize: 12, lineHeight: 1.5, color: isDark ? '#F87171' : '#DC2626' }}>
+                  Please check your email. Did you mean @{emailSuggestion}?{' '}
+                  <button type="button" disabled={loading} onClick={() => {
+                    setForm(previous => ({ ...previous, email: previous.email.trim().split('@')[0] + '@' + emailSuggestion }))
+                    setError('')
+                    setExistingNotice('')
+                  }} style={{ padding: 0, border: 0, background: 'none', color: isDark ? '#90B6FF' : '#1A5FFF', font: 'inherit', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
+                    Use @{emailSuggestion}
+                  </button>{' · '}
+                  <button type="button" disabled={loading} onClick={() => {
+                    setConfirmedEmail(form.email.trim().toLowerCase())
+                    setError('')
+                    setExistingNotice('')
+                  }} style={{ padding: 0, border: 0, background: 'none', color: isDark ? '#90B6FF' : '#1A5FFF', font: 'inherit', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
+                    Keep my address
+                  </button>
+                </div>
+              )}
             </div>
 
             <div
