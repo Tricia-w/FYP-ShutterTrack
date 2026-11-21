@@ -626,6 +626,7 @@ export default function Layout() {
 
   const startRadialGesture = (event) => {
     if (event.button !== undefined && event.button !== 0) return
+    window.getSelection()?.removeAllRanges()
     if (radialCleanupRef.current) radialCleanupRef.current()
     const pointerId = event.pointerId
     const startedExpanded = radialExpanded
@@ -683,6 +684,7 @@ export default function Layout() {
     if (event.button !== undefined && event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
+    window.getSelection()?.removeAllRanges()
     if (radialCleanupRef.current) radialCleanupRef.current()
     const pointerId = event.pointerId
     const x0 = clamp(dock.x, 36, Math.max(36, viewport.width - 36))
@@ -850,7 +852,7 @@ export default function Layout() {
               min-width: 0 !important;
               max-width: 100% !important;
               margin: 0 !important;
-              padding-top: 0 !important;
+              padding-top: 16px !important;
               flex: 1 1 auto !important;
               box-sizing: border-box !important;
             }
@@ -1714,6 +1716,14 @@ export default function Layout() {
 
       {/* Floating navigation colours follow the active account theme via html[data-theme]. */}
       <style>{`
+        .shuttleFloatingWheel, .shuttleFloatingWheel *, .shuttleFloatingBackdrop {
+          -webkit-user-select: none !important;
+          user-select: none !important;
+          -webkit-touch-callout: none !important;
+          -webkit-tap-highlight-color: transparent;
+          -webkit-user-drag: none;
+          touch-action: none;
+        }
         :root {
           --wheel-bg: radial-gradient(circle at 47% 40%, #1b3763 0%, #102447 54%, #08172c 100%);
           --wheel-border: rgba(139,193,255,.4);
@@ -1828,10 +1838,10 @@ export default function Layout() {
       `}</style>
       {/* Only mount the radial menu when selected in Settings. */}
       {navigationStyle === 'floating' && radialExpanded && (
-        <button type="button" aria-label="Close navigation menu" onClick={() => setRadialExpanded(false)}
+        <button type="button" className="shuttleFloatingBackdrop" onContextMenu={event => event.preventDefault()} aria-label="Close navigation menu" onClick={() => setRadialExpanded(false)}
           style={{ position: 'fixed', inset: 0, zIndex: 2799, background: 'var(--wheel-overlay)', border: 0, cursor: 'default' }} />
       )}
-      {navigationStyle === 'floating' && <div style={{ position: 'fixed', left: centreX, top: centreY, width: radialExpanded ? WHEEL_SIZE : 64, height: radialExpanded ? WHEEL_SIZE : 64, transform: 'translate(-50%, -50%)', zIndex: 2800, fontFamily: 'inherit', pointerEvents: 'none' }}>
+      {navigationStyle === 'floating' && <div className="shuttleFloatingWheel" onContextMenu={event => event.preventDefault()} onDragStart={event => event.preventDefault()} style={{ position: 'fixed', left: centreX, top: centreY, width: radialExpanded ? WHEEL_SIZE : 64, height: radialExpanded ? WHEEL_SIZE : 64, transform: 'translate(-50%, -50%)', zIndex: 2800, fontFamily: 'inherit', pointerEvents: 'none' }}>
         {radialExpanded && (
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'var(--wheel-bg)', border: '1px solid var(--wheel-border)', boxShadow: 'var(--wheel-shadow)', pointerEvents: 'auto' }}>
             <div style={{ position: 'absolute', inset: '17%', borderRadius: '50%', border: '1px dashed var(--wheel-guide)', pointerEvents: 'none' }} />

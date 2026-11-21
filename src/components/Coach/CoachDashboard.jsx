@@ -728,7 +728,7 @@ export default function CoachDashboard() {
         title="Coach Dashboard"
         subtitle="Manage your players, sessions and track progress"
         rightAction={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="shuttleCoachDashboardQrGroup" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <button
               type="button"
               className={styles.btnOutline}

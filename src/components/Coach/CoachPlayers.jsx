@@ -2668,6 +2668,27 @@ export default function CoachPlayers() {
          * Mobile uses the existing profile modal instead, so users never
          * need to scroll through a long player list to see the selection.
          */
+        @media (max-width: 768px) {
+          .shuttleCoachPlayersQrGroup {
+            flex: 0 0 auto !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            flex-wrap: nowrap !important;
+            max-width: 100%;
+          }
+
+          .shuttleCoachPlayersQrGroup > * {
+            flex-shrink: 0 !important;
+          }
+
+          .shuttleCoachPlayersRequestActions {
+            justify-content: flex-start !important;
+            align-items: center !important;
+            width: 100%;
+          }
+        }
+
         @media (max-width: 900px) {
           .coachSelectedPlayerDesktopPanel {
             display: none !important;
@@ -2769,6 +2790,7 @@ export default function CoachPlayers() {
         showFindPlayer={false}
         rightAction={
           <div
+            className="shuttleCoachPlayersQrGroup"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -2808,6 +2830,7 @@ export default function CoachPlayers() {
       />
 
       <div
+        className="shuttleCoachPlayersRequestActions"
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
