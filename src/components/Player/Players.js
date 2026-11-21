@@ -1453,6 +1453,15 @@ function CoachDetail({
   const [reviewSaving, setReviewSaving] = useState(false);
   const [reviewError, setReviewError] = useState("");
 
+  const contactPhone = String(coach.phone || "").trim();
+  const whatsappNumber = getWhatsAppNumber(contactPhone);
+  const hasContactPhone = /^\d{7,15}$/.test(whatsappNumber);
+  const instagramHandle = String(coach.instagram || "").trim()
+    .replace(/^https?:\/\/(?:www\.)?instagram\.com\//i, "")
+    .replace(/^@/, "")
+    .split(/[/?#]/)[0];
+  const hasInstagram = /^[a-zA-Z0-9._]{1,30}$/.test(instagramHandle);
+
   const requestStatus = coach.requestStatus;
   const requestSentByCoach =
     requestStatus === "pending" && coach.requestedBy === "coach";
@@ -1534,6 +1543,28 @@ function CoachDetail({
           <SmallInfo label="Session types" value={coach.sessionTypes.join(", ")} />
         </div>
 
+        {(hasContactPhone || hasInstagram) && (
+          <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${C.line}` }}>
+            <div className={styles.cardTitle}>Contact information</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 14 }}>
+              {hasContactPhone && <SmallInfo label="Contact number" value={contactPhone} />}
+              {hasInstagram && (
+                <SmallInfo label="Instagram" value={
+                  <a href={`https://www.instagram.com/${encodeURIComponent(instagramHandle)}/`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue, #1A5FFF)", overflowWrap: "anywhere" }}>
+                    @{instagramHandle} ↗
+                  </a>
+                } />
+              )}
+            </div>
+            {hasContactPhone && (
+              <a href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Hi ${coach.name}, I found your coaching profile on ShuttleTrack and would like to ask about badminton coaching.`)}`} target="_blank" rel="noopener noreferrer" className={styles.btnPrimary} style={{ marginTop: 16, width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.5 11.5a8.5 8.5 0 0 1-12.8 7.4L3.5 20l1.1-4.2A8.5 8.5 0 1 1 20.5 11.5Z"/><path d="M9 8c0 3.4 3.6 7 7 7l1-2-2.5-1-1 1c-1.5-.7-2.8-2-3.5-3.5l1-1L10 6l-2 1Z"/></svg>
+                WhatsApp coach
+              </a>
+            )}
+          </div>
+        )}
+
         {coach.trainingVenues.length > 0 && (
           <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${C.line}` }}>
             <div className={styles.cardTitle}>Training venues</div>
@@ -1565,9 +1596,7 @@ function CoachDetail({
           </div>
         )}
 
-        {requestStatus === "accepted" && coach.phone && (
-          <a href={`https://wa.me/${getWhatsAppNumber(coach.phone)}?text=${encodeURIComponent(`Hi ${coach.name}, I found your coaching profile on ShuttleTrack and would like to ask about badminton coaching.`)}`} target="_blank" rel="noreferrer" className={styles.btnPrimary} style={{ marginTop: 16, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>WhatsApp coach</a>
-        )}
+
 
         {(coach.certification || coach.certificationFileUrl || coach.relevantCertificates.length > 0) && (
           <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid ${C.line}` }}>
@@ -1607,7 +1636,6 @@ function CoachDetail({
 
         {coach.coachingPhilosophy && <div style={{ marginTop: 16 }}><div className={styles.cardTitle}>Coaching philosophy</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{coach.coachingPhilosophy}</div></div>}
         {coach.achievements && <div style={{ marginTop: 16 }}><div className={styles.cardTitle}>Achievements</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{coach.achievements}</div></div>}
-        {coach.instagram && <a href={`https://instagram.com/${coach.instagram.replace("@", "")}`} target="_blank" rel="noreferrer" style={{ display: "inline-flex", marginTop: 14, padding: "5px 12px", background: "#FFF0F6", border: "1px solid #FBC8DC", borderRadius: 20, textDecoration: "none", color: "#B5305A", fontSize: 11, fontWeight: 700 }}>{coach.instagram}</a>}
 
         <div
           style={{
