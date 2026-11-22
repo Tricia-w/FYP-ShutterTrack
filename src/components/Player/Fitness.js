@@ -107,6 +107,7 @@ function normalizeTrainingFocus(
 }
 
 const todayISO = () => new Date().toISOString().split('T')[0]
+const recoveryTodayISO = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10)
 const toKey = d => d?.slice(0, 10)
 const clamp = (n, min = 0, max = 100) => Math.max(min, Math.min(max, Number(n) || 0))
 
@@ -805,7 +806,7 @@ const emptyTest = (date = todayISO()) => ({
   adjustmentAmount: 0,
 })
 
-const emptyRecovery = (date = todayISO()) => ({
+const emptyRecovery = (date = recoveryTodayISO()) => ({
   date,
   sleep: 7,
   tiredness: 3,
@@ -2777,6 +2778,20 @@ export default function Fitness() {
   const [scheduleList, setScheduleList] = useState([])
   const [tests, setTests] = useState([])
   const [recoveryLogs, setRecoveryLogs] = useState([])
+  const [recoveryToday, setRecoveryToday] = useState(recoveryTodayISO)
+  const hasRecoveryToday = recoveryLogs.some(log => toKey(log.date) === recoveryToday)
+
+  useEffect(() => {
+    const updateDate = () => setRecoveryToday(recoveryTodayISO())
+    const timer = window.setInterval(updateDate, 1000)
+    window.addEventListener('focus', updateDate)
+    document.addEventListener('visibilitychange', updateDate)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', updateDate)
+      document.removeEventListener('visibilitychange', updateDate)
+    }
+  }, [])
   const [injuries, setInjuries] = useState([])
   const [coachAssessments, setCoachAssessments] = useState([])
   const [coachProgress, setCoachProgress] = useState([])
@@ -8859,6 +8874,27 @@ export default function Fitness() {
               </button>
               <button className={styles.btnOutline} style={{ fontSize: 14, padding: '7px 14px' }} onClick={openAddRecovery}>Add</button>
             </div>
+
+            {!loading && !loadError && !hasRecoveryToday && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 12px', marginBottom: 10, borderRadius: 10,
+                background: 'var(--soft, #F7F9FF)',
+                border: '1px solid var(--line, #EEF1F8)',
+                color: 'var(--text, #0D1B3E)',
+              }}>
+                <span style={{ flexShrink: 0, color: '#7C3AED', display: 'flex' }}>
+                  <FitnessIcon type="heart" size={20} />
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>Today's Recovery Check-in</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted, #8892A4)', lineHeight: 1.5, marginTop: 3 }}>
+                    You haven't recorded your recovery today.
+                  </div>
+                </div>
+                <span className={styles.badgeGray} style={{ fontSize: 10, flexShrink: 0 }}>Not recorded</span>
+              </div>
+            )}
 
             {[
               { label: 'Sleep Hours', val: latestRecovery ? `${latestRecovery.sleep} h` : '-', badge: latestRecovery ? (latestRecovery.sleep >= 7 ? 'Good' : 'Low') : 'No data', color: latestRecovery ? (latestRecovery.sleep >= 7 ? 'green' : 'amber') : 'gray' },

@@ -631,7 +631,22 @@ export default function NotificationBell({
       if (requestResult.error) {
         console.error("Partner request load error:", requestResult.error);
       } else {
-        setPartnerRequests(requestResult.data || []);
+        const requests = requestResult.data || [];
+        const requesterIds = [...new Set(requests.map(request => request.requester_user_id).filter(Boolean))];
+        let profiles = [];
+        if (requesterIds.length > 0) {
+          const { data, error } = await supabase
+            .from("player_profiles")
+            .select("user_id, display_name, profile_photo_url")
+            .in("user_id", requesterIds);
+          if (error) console.error("Partner requester profile load error:", error);
+          else profiles = data || [];
+        }
+        const profileMap = new Map(profiles.map(profile => [String(profile.user_id), profile]));
+        setPartnerRequests(requests.map(request => ({
+          ...request,
+          requesterProfile: profileMap.get(String(request.requester_user_id)) || null,
+        })));
       }
     } finally {
       setLoading(false);
@@ -1166,15 +1181,28 @@ export default function NotificationBell({
                   >
                     New partner request
                   </div>
-                  <div
-                    style={{
-                      marginTop: 5,
-                      fontSize: 13,
-                      lineHeight: 1.55,
-                      color: C.muted,
-                    }}
-                  >
-                    A player sent you a partner request.
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                    <div style={{ position: "relative", width: 40, height: 40, borderRadius: "50%", overflow: "hidden", flexShrink: 0, display: "grid", placeItems: "center", background: "color-mix(in srgb, #1A5FFF 15%, var(--card, #FFFFFF))", color: "var(--blue, #1A5FFF)", fontWeight: 800, fontSize: 13 }}>
+                      {String(request.requesterProfile?.display_name || request.requester_name || "Player").trim().split(/\s+/).slice(0, 2).map(word => word[0]).join("").toUpperCase()}
+                      {request.requesterProfile?.profile_photo_url && (
+                        <img src={request.requesterProfile.profile_photo_url} alt="" onError={event => { event.currentTarget.style.display = "none"; }} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                      )}
+                    </div>
+                    <div style={{ flex: "1 1 110px", minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: C.text, overflowWrap: "anywhere" }}>
+                        {request.requesterProfile?.display_name || request.requester_name || "A player"}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>Sent you a partner request.</div>
+                    </div>
+                    {request.requester_user_id && (
+                      <button type="button" onClick={event => {
+                        event.stopPropagation();
+                        setOpen(false);
+                        navigate(`/players?player=${encodeURIComponent(request.requester_user_id)}`);
+                      }} style={{ border: `1px solid ${C.line}`, borderRadius: 9, background: C.card, color: C.text, fontSize: 12, fontWeight: 700, padding: "7px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                        View profile
+                      </button>
+                    )}
                   </div>
                   <div
                     style={{

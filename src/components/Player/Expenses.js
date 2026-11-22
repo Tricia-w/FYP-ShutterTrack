@@ -1816,7 +1816,7 @@ export default function Expenses() {
           >
             {formatRMNoDecimal(avgMonth)}
           </div>
-          <div className={styles.metricLbl}>Avg / month this year</div>
+          <div className={styles.metricLbl}>Monthly Average</div>
         </div>
       </div>
       <div
