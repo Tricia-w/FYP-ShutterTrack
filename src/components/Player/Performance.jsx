@@ -303,13 +303,28 @@ function decodeActionPlans(value) {
   }
 }
 
+function getSectionReviewDate(progress, section) {
+  const raw = String(progress?.coach_comment || '')
+  if (!raw.startsWith(ACTION_PLAN_META_PREFIX)) return progress?.next_review_date || ''
+  try {
+    const parsed = JSON.parse(raw.slice(ACTION_PLAN_META_PREFIX.length))
+    const plan = parsed?.[section]
+    if (plan && typeof plan === 'object' && Object.prototype.hasOwnProperty.call(plan, 'reviewDate')) {
+      return plan.reviewDate || ''
+    }
+  } catch { /* Legacy fallback */ }
+  return progress?.next_review_date || ''
+}
+
 function encodeActionPlans({
   performance = '',
   performanceDeadline = '',
   performanceCompletion = 0,
+  performanceReviewDate = '',
   fitness = '',
   fitnessDeadline = '',
   fitnessCompletion = 0,
+  fitnessReviewDate = '',
 }) {
   const cleanPerformance =
     String(performance || '').trim()
@@ -356,6 +371,7 @@ function encodeActionPlans({
         cleanPerformanceDeadline,
       completionRate:
         cleanPerformanceCompletion,
+      reviewDate: String(performanceReviewDate || '').trim(),
     },
     fitness: {
       text: cleanFitness,
@@ -363,6 +379,7 @@ function encodeActionPlans({
         cleanFitnessDeadline,
       completionRate:
         cleanFitnessCompletion,
+      reviewDate: String(fitnessReviewDate || '').trim(),
     },
   })}`
 }
@@ -2641,6 +2658,8 @@ export default function Performance() {
             currentPlans.performanceDeadline,
           performanceCompletion:
             nextCompletion,
+          performanceReviewDate: getSectionReviewDate(progressItem, 'performance'),
+          fitnessReviewDate: getSectionReviewDate(progressItem, 'fitness'),
           fitness:
             currentPlans.fitness,
           fitnessDeadline:
@@ -4077,6 +4096,8 @@ export default function Performance() {
                                                       actionPlans.performanceDeadline,
                                                     performanceCompletion:
                                                       nextValue,
+                                                    performanceReviewDate: getSectionReviewDate(progress, 'performance'),
+                                                    fitnessReviewDate: getSectionReviewDate(progress, 'fitness'),
                                                     fitness:
                                                       actionPlans.fitness,
                                                     fitnessDeadline:
@@ -4177,14 +4198,8 @@ export default function Performance() {
                         Next review
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
-                        {item.next_review_date
-                          ? new Date(
-                              `${item.next_review_date}T00:00:00`
-                            ).toLocaleDateString('en-MY', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric',
-                            })
+                        {getSectionReviewDate(item, 'performance')
+                          ? fmtDate(`${getSectionReviewDate(item, 'performance')}T00:00:00`)
                           : 'Not set'}
                       </div>
                     </div>

@@ -196,6 +196,19 @@ function decodeActionPlans(value) {
   }
 }
 
+function getSectionReviewDate(progress, section) {
+  const raw = String(progress?.coach_comment || '')
+  if (!raw.startsWith(ACTION_PLAN_META_PREFIX)) return progress?.next_review_date || ''
+  try {
+    const parsed = JSON.parse(raw.slice(ACTION_PLAN_META_PREFIX.length))
+    const plan = parsed?.[section]
+    if (plan && typeof plan === 'object' && Object.prototype.hasOwnProperty.call(plan, 'reviewDate')) {
+      return plan.reviewDate || ''
+    }
+  } catch { /* Legacy fallback */ }
+  return progress?.next_review_date || ''
+}
+
 function encodeActionPlans({
   performance = '',
   performanceDeadline = '',
@@ -1633,6 +1646,9 @@ export default function CoachProgress() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [editOpen, setEditOpen] = useState(false)
+  const [clearTarget, setClearTarget] = useState(null)
+  const [clearSelection, setClearSelection] = useState({ performance: false, fitness: false })
+  const [clearErrorMessage, setClearErrorMessage] = useState('')
   const [progressSaveNotice, setProgressSaveNotice] = useState(null)
   const [progressSection, setProgressSection] = useState('performance')
   const [assessmentHistory, setAssessmentHistory] = useState([])
@@ -3774,15 +3790,9 @@ export default function CoachProgress() {
         actionPlans.fitnessCompletion ||
         0,
       performance_review_date:
-        actionPlans.performanceReviewDate ||
-        student.progress
-          ?.next_review_date ||
-        '',
+        getSectionReviewDate(student.progress, 'performance'),
       fitness_review_date:
-        actionPlans.fitnessReviewDate ||
-        student.progress
-          ?.next_review_date ||
-        '',
+        getSectionReviewDate(student.progress, 'fitness'),
       smash: Number(student.assessment?.smash ?? DEFAULT_SCORE),
       defense: Number(student.assessment?.defense ?? DEFAULT_SCORE),
       footwork: Number(student.assessment?.footwork ?? DEFAULT_SCORE),
@@ -3894,108 +3904,80 @@ export default function CoachProgress() {
       }
     }
 
+  const openClearProgress = () => {
+    if (!selectedStudent || saving) return
+    setClearTarget({ id: selectedStudent.id, name: selectedStudent.name })
+    setClearSelection({ performance: false, fitness: false })
+    setClearErrorMessage('')
+  }
+
   const clearProgress = async () => {
-    if (
-      !user?.id ||
-      !selectedStudent ||
-      saving
-    ) {
-      return
-    }
-    const confirmed = window.confirm(
-      `Clear the current coach progress for ${selectedStudent.name}? Performance and fitness feedback, action plans, status, focus area and next review will be cleared. Coach skill ratings and injury recommendations will remain unchanged.`
-    )
-    if (!confirmed) {
-      return
-    }
+    if (!user?.id || !clearTarget || saving) return
+    const { performance, fitness } = clearSelection
+    if (!performance && !fitness) return
+    const playerId = clearTarget.id
+    const both = performance && fitness
     setSaving(true)
     setError('')
     setSuccess('')
+    setClearErrorMessage('')
     try {
-      const progressDelete = selectedStudent.progress
-        ? supabase
-            .from('coach_player_progress')
-            .delete()
-            .eq('coach_user_id', user.id)
-            .eq('player_user_id', selectedStudent.id)
-        : Promise.resolve({
-            error: null,
-          })
-      const assessmentUpdate = selectedStudent.assessment
-        ? supabase
-            .from('coach_player_assessments')
-            .update({
-              performance_comment: null,
-              fitness_comment: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('coach_user_id', user.id)
-            .eq('player_user_id', selectedStudent.id)
-            .select('*')
-            .single()
-        : Promise.resolve({
-            data: null,
-            error: null,
-          })
-      const [
-        progressResult,
-        assessmentResult,
-      ] = await Promise.all([
-        progressDelete,
-        assessmentUpdate,
+      // Read the latest plan so the other section's player completion is preserved.
+      const [progressRead, assessmentRead] = await Promise.all([
+        supabase.from('coach_player_progress').select('*')
+          .eq('coach_user_id', user.id).eq('player_user_id', playerId).maybeSingle(),
+        supabase.from('coach_player_assessments').select('*')
+          .eq('coach_user_id', user.id).eq('player_user_id', playerId).maybeSingle(),
       ])
-      if (progressResult.error) {
-        throw progressResult.error
+      if (progressRead.error) throw progressRead.error
+      if (assessmentRead.error) throw assessmentRead.error
+      const progress = progressRead.data
+      let assessment = assessmentRead.data
+      let updatedProgress = progress
+      if (progress) {
+        const plans = decodeActionPlans(progress.coach_comment)
+        const nextPlans = {
+          ...plans,
+          performanceReviewDate: getSectionReviewDate(progress, 'performance'),
+          fitnessReviewDate: getSectionReviewDate(progress, 'fitness'),
+          ...(performance ? { performance: '', performanceDeadline: '', performanceCompletion: 0, performanceReviewDate: '' } : {}),
+          ...(fitness ? { fitness: '', fitnessDeadline: '', fitnessCompletion: 0, fitnessReviewDate: '' } : {}),
+        }
+        const reviewDates = [nextPlans.performanceReviewDate, nextPlans.fitnessReviewDate].filter(Boolean).sort()
+        // Do not delete the row: injury recommendations share this table.
+        const payload = {
+          coach_comment: encodeActionPlans(nextPlans),
+          next_review_date: reviewDates[0] || null,
+          ...(both ? { progress_status: null, focus_area: null } : {}),
+          updated_at: new Date().toISOString(),
+        }
+        let query = supabase.from('coach_player_progress').update(payload)
+          .eq('coach_user_id', user.id).eq('player_user_id', playerId)
+        // Reject concurrent plan changes rather than accidentally overwriting them.
+        query = progress.coach_comment == null ? query.is('coach_comment', null) : query.eq('coach_comment', progress.coach_comment)
+        const result = await query.select('*').single()
+        if (result.error) throw result.error
+        updatedProgress = result.data
       }
-      if (assessmentResult.error) {
-        throw assessmentResult.error
+      if (assessment) {
+        const payload = {
+          ...(performance ? { performance_comment: null } : {}),
+          ...(fitness ? { fitness_comment: null } : {}),
+        }
+        const result = await supabase.from('coach_player_assessments').update(payload)
+          .eq('coach_user_id', user.id).eq('player_user_id', playerId).select('*').single()
+        if (result.error) throw result.error
+        assessment = result.data
       }
-      setStudents(current =>
-        current.map(student =>
-          student.id === selectedStudent.id
-            ? {
-                ...student,
-                progress: null,
-                assessment:
-                  assessmentResult.data ||
-                  (student.assessment
-                    ? {
-                        ...student.assessment,
-                        performance_comment: null,
-                        fitness_comment: null,
-                      }
-                    : null),
-              }
-            : student
-        )
-      )
-      setForm(current => ({
-        ...current,
-        progress_status: 'On track',
-        focus_area: '',
-        performance_comment: '',
-        performance_action_plan: '',
-        performance_action_deadline: '',
-        performance_action_completion: 0,
-        fitness_comment: '',
-        fitness_action_plan: '',
-        fitness_action_deadline: '',
-        fitness_action_completion: 0,
-        performance_review_date: '',
-        fitness_review_date: '',
-      }))
-      setSuccess(
-        `${selectedStudent.name}'s coach progress was cleared.`
-      )
+      setStudents(current => current.map(student => student.id === playerId
+        ? { ...student, progress: updatedProgress, assessment } : student))
+      setClearTarget(null)
+      const section = both ? 'performance and fitness' : performance ? 'performance' : 'fitness'
+      setSuccess(`${clearTarget.name}'s ${section} progress was cleared.`)
     } catch (clearError) {
-      console.error(
-        'Clear coach progress error:',
-        clearError
-      )
-      setError(
-        clearError.message ||
-          'Unable to clear coach progress.'
-      )
+      console.error('Clear coach progress error:', clearError)
+      await loadProgress()
+      setClearErrorMessage(clearError.message || 'Unable to clear coach progress. Please retry.')
     } finally {
       setSaving(false)
     }
@@ -4034,12 +4016,12 @@ export default function CoachProgress() {
       const nextPerformanceReviewDate =
         isPerformance
           ? form.performance_review_date
-          : currentPlans.performanceReviewDate
+          : getSectionReviewDate(selectedStudent.progress, 'performance')
 
       const nextFitnessReviewDate =
         isFitness
           ? form.fitness_review_date
-          : currentPlans.fitnessReviewDate
+          : getSectionReviewDate(selectedStudent.progress, 'fitness')
 
       const legacyReviewDates = [
         nextPerformanceReviewDate,
@@ -4842,7 +4824,7 @@ export default function CoachProgress() {
                         <button
                           type="button"
                           className={styles.btnOutline}
-                          onClick={clearProgress}
+                          onClick={openClearProgress}
                           disabled={saving}
                           style={{
                             fontSize: 11,
@@ -4907,8 +4889,7 @@ export default function CoachProgress() {
                       </span>
                       <span className={styles.statVal}>
                         {formatDate(
-                          selectedActionPlans.performanceReviewDate ||
-                            selectedStudent.progress?.next_review_date
+                          getSectionReviewDate(selectedStudent.progress, 'performance')
                         )}
                       </span>
                     </div>
@@ -4919,8 +4900,7 @@ export default function CoachProgress() {
                       </span>
                       <span className={styles.statVal}>
                         {formatDate(
-                          selectedActionPlans.fitnessReviewDate ||
-                            selectedStudent.progress?.next_review_date
+                          getSectionReviewDate(selectedStudent.progress, 'fitness')
                         )}
                       </span>
                     </div>
@@ -8367,6 +8347,43 @@ export default function CoachProgress() {
         </div>
       )}
 
+      {clearTarget && (
+        <div className={styles.modalOverlay} style={{ zIndex: 10050, padding: 16 }}
+          onClick={event => { if (event.target === event.currentTarget && !saving) setClearTarget(null) }}>
+          <div className={styles.modal} role="dialog" aria-modal="true" aria-label="Clear progress record"
+            style={{ width: '100%', maxWidth: 460, padding: 24, boxSizing: 'border-box' }}>
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>Clear Progress Record</div>
+              <button type="button" className={styles.modalClose} aria-label="Close" disabled={saving} onClick={() => setClearTarget(null)}>✕</button>
+            </div>
+            <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted, #8892A4)' }}>
+              Select which progress records to clear for {clearTarget.name}.
+            </p>
+            {['performance', 'fitness'].map(section => (
+              <label key={section} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14, marginTop: 10, borderRadius: 11, border: '1px solid var(--line, #EEF1F8)', background: 'var(--soft, #F7F9FF)', cursor: saving ? 'wait' : 'pointer' }}>
+                <input type="checkbox" checked={clearSelection[section]} disabled={saving}
+                  onChange={event => setClearSelection(current => ({ ...current, [section]: event.target.checked }))}
+                  style={{ width: 18, height: 18, flexShrink: 0, accentColor: 'var(--blue, #1A5FFF)' }} />
+                <span><strong style={{ color: 'var(--text, #0D1B3E)', fontSize: 14 }}>{section === 'performance' ? 'Performance' : 'Fitness'}</strong>
+                  <span style={{ display: 'block', marginTop: 4, fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted, #8892A4)' }}>Feedback, action plan, deadline, completion and next review date.</span>
+                </span>
+              </label>
+            ))}
+            <p style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted, #8892A4)', marginTop: 14 }}>
+              {clearSelection.performance && clearSelection.fitness ? 'Shared status and focus area will also be cleared. ' : 'Shared status and focus area will remain. '}
+              Coach ratings, assessment history and injury recommendations will remain unchanged.
+            </p>
+            {clearErrorMessage && <p role="alert" style={{ color: '#DC2626', fontSize: 13 }}>{clearErrorMessage}</p>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 20 }}>
+              <button type="button" className={styles.btnOutline} disabled={saving} onClick={() => setClearTarget(null)}>Cancel</button>
+              <button type="button" disabled={saving || (!clearSelection.performance && !clearSelection.fitness)} onClick={clearProgress}
+                style={{ background: '#DC2626', color: '#fff', border: 0, borderRadius: 9, padding: '10px 16px', fontWeight: 700, opacity: saving || (!clearSelection.performance && !clearSelection.fitness) ? .5 : 1, cursor: saving ? 'wait' : (!clearSelection.performance && !clearSelection.fitness) ? 'not-allowed' : 'pointer' }}>
+                {saving ? 'Clearing...' : 'Clear selected'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {duplicatePrompt && (
         <div className={styles.modalOverlay} style={{ zIndex: 10050 }}>
           <div className={styles.modal} role="alertdialog" aria-modal="true" aria-label="Possible duplicate match" style={{ maxWidth: 460, padding: 24 }}>
