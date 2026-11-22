@@ -350,28 +350,40 @@ export default function CoachProfile() {
     setAutosaveStatus('Unsaved changes')
   }
 
-  const completion = useMemo(() => {
+  const { completion, incompleteFields } = useMemo(() => {
+    const hasText = value => Boolean(String(value ?? '').trim())
+    const experienceRoute = form.verification_route === 'experience'
+    const validExperience = hasText(form.experience_years) &&
+      Number.isFinite(Number(form.experience_years)) &&
+      Number(form.experience_years) >= (experienceRoute ? 1 : 0)
     const checks = [
-      form.display_name,
-      form.headline,
-      form.club,
-      form.state,
-      form.coaching_level,
-      form.experience_years !== '',
-      form.specialties.length > 0,
-      form.player_levels.length > 0,
-      form.session_types.length > 0,
-      form.certification,
-      form.certification_file_url,
-      form.training_venue,
-      form.availability,
-      form.bio,
+      ['Display name', hasText(form.display_name)],
+      ['Profile headline', hasText(form.headline)],
+      ['Club or academy', hasText(form.club)],
+      ['State', hasText(form.state)],
+      ['Coaching level', hasText(form.coaching_level)],
+      [experienceRoute ? 'At least 1 year of coaching experience' : 'Years of experience', validExperience],
+      ['Coaching specialties', form.specialties.length > 0],
+      ['Player levels accepted', form.player_levels.length > 0],
+      ['Session types', form.session_types.length > 0],
+      ['Training venue', trainingVenues.some(item => hasText(item.venue_name))],
+      ['Availability', hasText(form.availability)],
+      [experienceRoute ? 'About coach (at least 100 characters)' : 'About coach',
+        experienceRoute ? form.bio.trim().length >= 100 : hasText(form.bio)],
     ]
-
-    return Math.round(
-      (checks.filter(Boolean).length / checks.length) * 100
-    )
-  }, [form])
+    if (experienceRoute) {
+      checks.push(['Coaching philosophy (at least 40 characters)', form.coaching_philosophy.trim().length >= 40])
+    } else {
+      const hasCertificate = (hasText(form.certification) && hasText(form.certification_file_url)) ||
+        relevantCertificates.some(item => hasText(item.certificate_name) && hasText(item.file_url))
+      checks.push(['Certificate name and uploaded proof (main or relevant certificate)', hasCertificate])
+    }
+    const incompleteFields = checks.filter(([, complete]) => !complete).map(([label]) => label)
+    return {
+      completion: Math.round((checks.length - incompleteFields.length) / checks.length * 100),
+      incompleteFields,
+    }
+  }, [form, relevantCertificates, trainingVenues])
 
   const getCurrentUser = async () => {
     const {
@@ -2318,11 +2330,18 @@ export default function CoachProfile() {
             </div>
 
             <div style={{ fontSize: 11, color: 'var(--muted, #8892A4)', marginBottom: 18 }}>
-              {completion === 100
-                ? 'Profile complete'
-                : completion >= 80
-                  ? 'Profile almost complete'
-                  : `Profile completion: ${completion}%`}
+              <div>{completion === 100 ? 'Profile complete' : `Profile completion: ${completion}%`}</div>
+              {form.verification_route === 'experience' && (
+                <div style={{ marginTop: 5 }}>Experience-based verification · Certificate optional</div>
+              )}
+              {incompleteFields.length > 0 && (
+                <div style={{ marginTop: 8, lineHeight: 1.6 }}>
+                  <strong>To complete your profile:</strong>
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                    {incompleteFields.map(label => <li key={label}>{label}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div

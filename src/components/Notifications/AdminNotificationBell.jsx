@@ -8,7 +8,13 @@ import React, {
 import { supabase } from "../../lib/supabase";
 
 const ADMIN_NOTIFICATION_TYPES = [
+  "admin_daily_registration_summary",
+  "admin_daily_club_summary",
+  "admin_coach_verification",
+  "admin_new_user",
+  "admin_new_club",
   "coach_verification_request",
+  "coach_verification_resubmitted",
   "admin_user_report",
   "admin_deletion_request",
   "admin_club_issue",
@@ -41,7 +47,7 @@ function formatTime(value) {
 
 function getAdminPage(item) {
   const type = normalise(item?.source_type || item?.type);
-  if (type === "coach_verification_request") {
+  if (type === "admin_coach_verification" || type === "coach_verification_request" || type === "coach_verification_resubmitted") {
     return "coaches";
   }
   if (
@@ -50,10 +56,10 @@ function getAdminPage(item) {
   ) {
     return "reports";
   }
-  if (type === "admin_club_issue") {
+  if (type === "admin_club_issue" || type === "admin_new_club" || type === "admin_daily_club_summary") {
     return "clubs";
   }
-  if (type === "admin_account_security") {
+  if (type === "admin_account_security" || type === "admin_new_user" || type === "admin_daily_registration_summary") {
     return "users";
   }
 

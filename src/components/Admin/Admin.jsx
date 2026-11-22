@@ -189,7 +189,8 @@ export default function Admin() {
           verification_status,
           verified_at,
           verified_by,
-          rejection_reason
+          rejection_reason,
+          verification_submitted_at
         `),
     ]);
     if (publicCoachResult.error) {
@@ -289,6 +290,8 @@ export default function Admin() {
             verification?.verification_status ||
               "pending"
           ),
+          verificationSubmittedAt:
+            verification?.verification_submitted_at || null,
           verifiedAt:
             verification?.verified_at || null,
           rejectionReason:
@@ -407,7 +410,7 @@ export default function Admin() {
   const pendingCoachCount = useMemo(
     () =>
       coaches.filter(
-        (coach) => coach.status === "Pending"
+        (coach) => coach.status === "Pending" && Boolean(coach.verificationSubmittedAt)
       ).length,
     [coaches]
   );

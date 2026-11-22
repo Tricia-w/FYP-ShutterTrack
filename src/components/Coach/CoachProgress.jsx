@@ -12,6 +12,21 @@ import FitnessDevelopmentTimeline from '../Player/fitness/components/FitnessDeve
 
 const DEFAULT_SCORE = 50
 
+// Only playing levels belong in LevelBadge, never preferred events.
+const PLAYING_LEVELS = [
+  'Lower Beginner', 'Beginner', 'Upper Beginner',
+  'Lower Intermediate', 'Intermediate', 'Upper Intermediate',
+  'Lower Advanced', 'Advanced', 'Upper Advanced', 'Elite',
+]
+const getStudentPlayingLevel = (profile, setup) => {
+  for (const value of [profile.level, profile.playing_level, profile.skill_level, setup?.playing_level]) {
+    const normalized = String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')
+    const level = PLAYING_LEVELS.find(item => item.toLowerCase() === normalized)
+    if (level) return level
+  }
+  return 'Not specified'
+}
+
 const MATCH_CATEGORIES = ['Competition', 'Friendly Match', 'Sparring']
 const getMatchCategory = match => match?.category || '-'
 
@@ -1886,6 +1901,7 @@ export default function CoachProgress() {
         progressResult,
         assessmentResult,
         taggedScheduleResult,
+        setupResult,
       ] = await Promise.all([
         supabase
           .from('player_profiles')
@@ -1980,6 +1996,8 @@ export default function CoachProgress() {
           .order('event_time', {
             ascending: true,
           }),
+        // Reuse the restricted setup RPC already used by CoachPlayers.
+        supabase.rpc('get_coach_player_setup_profiles'),
       ])
       const firstError = [
         profilesResult.error,
@@ -1995,6 +2013,15 @@ export default function CoachProgress() {
       }
       const profileRows =
         profilesResult.data || []
+      if (setupResult.error) {
+        console.warn('Coach progress playing level load error:', setupResult.error)
+      }
+      const acceptedStudentIds = new Set(studentUserIds.map(String))
+      const setupByUserId = new Map(
+        (setupResult.error ? [] : setupResult.data || [])
+          .filter(row => acceptedStudentIds.has(String(row.user_id)))
+          .map(row => [String(row.user_id), row])
+      )
       const profileIds = profileRows
         .map(profile => profile.id)
         .filter(Boolean)
@@ -2294,12 +2321,7 @@ export default function CoachProgress() {
             name:
               profile.display_name ||
               'Unnamed player',
-            level:
-              profile.playing_level ||
-              profile.level ||
-              profile.player_category ||
-              profile.category ||
-              'Not specified',
+            level: getStudentPlayingLevel(profile, setupByUserId.get(userId)),
             club:
               profile.club ||
               'No club',

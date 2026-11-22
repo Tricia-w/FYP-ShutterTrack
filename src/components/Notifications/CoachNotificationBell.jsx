@@ -10,155 +10,50 @@ const MODE_TITLES = {
   clubs: "Club notifications",
 };
 
-const MODE_KEYWORDS = {
-  players: [
-    "coach_request",
-    "player_request",
-    "coach_relationship",
-    "coaching_request",
-    "player_removed",
-    "request_accepted",
-    "request_declined",
-    "request_rejected",
-    "request_cancelled",
-  ],
-  sessions: [
-    "session",
-    "training",
-    "schedule",
-    "attendance",
-    "completed",
-    "absent",
-    "reminder",
-  ],
-  progress: [
-    "progress",
-    "assessment",
-    "performance",
-    "fitness",
-    "injury",
-    "recovery",
-    "recommendation",
-    "feedback",
-  ],
-  clubs: [
-    "club_",
-    "club ",
-    "membership",
-    "join request",
-    "member removed",
-    "member left",
-    "club_coach_request_accepted",
-    "club_coach_request_declined",
-    "club_coach_role_added",
-    "club_coach_role_removed",
-    "club_manager_added",
-    "club_manager_removed",
-    "club_owner_transferred",
-  ],
-};
-
 function normalise(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-const COACH_ONLY_KEYWORDS = [
-  "coach_session_reminder",
-  "player_request",
-  "coach_request_received",
-  "coach_relationship",
-  "club_join_request",
-  "club_request_cancelled",
-  "club_member_left",
-  "club_coach_request_accepted",
-  "club_coach_request_declined",
-  "club_coach_role_added",
-  "club_coach_role_removed",
-  "club_manager_added",
-  "club_manager_removed",
-  "club_owner_transferred",
-  "verification",
-  "coach_verification",
-  "admin",
-];
+// Classify each notification once. Do not use arbitrary message keywords:
+// training names may contain "fitness", and action plans may be "complete".
+function notificationCategory(notification) {
+  const url = normalise(notification?.action_url)
+    .replace(/^https?:\/\/[^/]+/i, "");
+  const path = url.split(/[?#]/)[0].replace(/\/$/, "");
+  const source = normalise(notification?.source_type || notification?.type)
+    .replace(/[\s-]+/g, "_");
+  const title = normalise(notification?.title);
+  const clubSource = /^club(?:_|$)/.test(source) || /^(?:membership|clubmembership)(?:_|$)/.test(source);
+  const clubTitle = /^(?:club\b|new club\b|you (?:joined|left) (?:the |a )?club\b|membership\b|join request\b|member (?:removed|left)\b)/.test(title);
+  // Shared club events belong to both portals, but only the Clubs category here.
+  if (/^\/(?:coach\/|player\/)?clubs(?:\/|$)/.test(path) || clubSource || clubTitle) return "clubs";
 
-const PLAYER_ONLY_KEYWORDS = [
-  "training_reminder",
-  "coach_scheduled_training",
-  "coach_cancelled_training",
-  "coach_session_created",
-  "coach_session_cancelled",
-  "coach_session_updated",
-  "coach_progress_updated",
-  "coach_fitness_updated",
-  "coach_performance_updated",
-  "removed_from_coach",
-];
+  // Explicit player destinations must not leak into the coach portal.
+  if (/^\/(?:player|players|fitness|performance|expenses)(?:\/|$)/.test(path)) return null;
 
-function isCoachNotification(notification) {
-  const actionUrl = normalise(notification?.action_url);
-  const searchable = [
-    notification?.source_type,
-    notification?.type,
-    notification?.title,
-    notification?.message,
-  ]
-    .map(normalise)
-    .join(" ");
+  // Prefer explicit category routes, including legacy records.
+  const coachRoute = path.match(/^\/coach(?:\/([^/]+))?(?:\/|$)/);
+  const routeCategory = coachRoute?.[1];
+  if (["players", "sessions", "progress", "clubs"].includes(routeCategory)) return routeCategory;
 
-  const isClubNotification =
-    searchable.includes("club") ||
-    searchable.includes("membership") ||
-    searchable.includes("join request") ||
-    searchable.includes("member removed") ||
-    searchable.includes("member left");
+  // Some legacy notifications have no destination; use semantic source types,
+  // then specific title phrases, never generic words in the message body.
+  const playerOnly = /^(?:training_reminder|coach_scheduled_training|coach_cancelled_training|coach_session_created|coach_session_cancelled|coach_session_updated|coach_progress_updated|coach_fitness_updated|coach_performance_updated|removed_from_coach|partner_request.*)$/;
+  if (!coachRoute && playerOnly.test(source)) return null;
+  const coachEvidence = Boolean(coachRoute) || /^(?:coach_|player_request|player_removed|admin|verification)/.test(source);
+  if (!coachEvidence) return null;
 
-  // Club notifications are shared between Player and Coach mode.
-  // They use the neutral /clubs route, so they must still appear
-  // inside the Coach notification bell.
-  if (isClubNotification) return true;
-
-  if (actionUrl.startsWith("/coach")) return true;
-
-  if (
-    actionUrl.startsWith("/player") ||
-    actionUrl.startsWith("/players") ||
-    actionUrl.startsWith("/fitness") ||
-    actionUrl.startsWith("/performance") ||
-    actionUrl.startsWith("/expenses") ||
-    actionUrl === "/clubs"
-  ) {
-    return false;
-  }
-
-  if (
-    PLAYER_ONLY_KEYWORDS.some(keyword =>
-      searchable.includes(keyword)
-    )
-  ) {
-    return false;
-  }
-
-  return COACH_ONLY_KEYWORDS.some(keyword =>
-    searchable.includes(keyword)
-  );
+  if (/action_plan|progress|assessment|feedback|recommendation/.test(source) || /^(?:action plan|(?:coach |player )?(?:performance|fitness) action plan|(?:coach |player )?(?:progress|assessment|feedback))\b/.test(title)) return "progress";
+  if (/(?:^|_)(?:session|training|attendance|schedule)(?:_|$)/.test(source) || /^(?:session|training|coach training|coach session|attendance|new training|upcoming training)\b/.test(title)) return "sessions";
+  if (/^(?:coach_request|player_request|coach_relationship|coaching_request|player_removed|request_(?:accepted|declined|rejected|cancelled))/.test(source) || /^(?:(?:new )?(?:player|coach|coaching) request|player removed)\b/.test(title)) return "players";
+  if (/(?:^|_)(?:performance|fitness|injury|recovery)(?:_|$)/.test(source)) return "progress";
+  // Verification, administrative and unclassified coach events stay on Dashboard.
+  return "other";
 }
 
 function matchesMode(notification, mode) {
-  if (!isCoachNotification(notification)) return false;
-  if (!mode || mode === "all") return true;
-  const searchable = [
-    notification?.source_type,
-    notification?.type,
-    notification?.title,
-    notification?.message,
-    notification?.action_url,
-  ]
-    .map(normalise)
-    .join(" ");
-  return (MODE_KEYWORDS[mode] || []).some(keyword =>
-    searchable.includes(keyword)
-  );
+  const category = notificationCategory(notification);
+  return category !== null && (!mode || mode === "all" || category === mode);
 }
 
 function notificationTone(notification) {
@@ -481,20 +376,32 @@ export default function CoachNotificationBell({
     }
     setLoading(true);
     await ensureCoachSessionReminders(user.id);
-    const { data, error } = await supabase
-    .from("notifications")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-    if (error) {
-    console.error("Coach notification load error:", error);
-    setNotifications([]);
-    } else {
-    setNotifications(data || []);
+    try {
+      // Apply the category before the display limit, so unrelated notifications
+      // cannot hide older records belonging to this bell.
+      const pageSize = 100;
+      const matched = [];
+      for (let offset = 0; matched.length < limit; offset += pageSize) {
+        const { data, error } = await supabase
+          .from("notifications")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        const rows = data || [];
+        matched.push(...rows.filter(item => matchesMode(item, mode)));
+        if (rows.length < pageSize) break;
+      }
+      setNotifications(matched.slice(0, limit));
+    } catch (error) {
+      console.error("Coach notification load error:", error);
+      setNotifications([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [ensureCoachSessionReminders, limit, supabase]);
+  }, [ensureCoachSessionReminders, limit, mode, supabase]);
   useEffect(() => {
     loadNotifications();
   }, [loadNotifications]);
@@ -600,18 +507,7 @@ export default function CoachNotificationBell({
     setOpen(false);
     onNotificationOpened?.(notification);
     const actionUrl = String(notification?.action_url || "").trim();
-    const searchable = [
-    notification?.source_type,
-    notification?.type,
-    notification?.title,
-    notification?.message,
-    ]
-    .map(normalise)
-    .join(" ");
-    const isClubNotification =
-    searchable.includes("club") ||
-    /^\/?clubs(?:[/?#]|$)/i.test(actionUrl) ||
-    /^\/?coach\/clubs(?:[/?#]|$)/i.test(actionUrl);
+    const isClubNotification = notificationCategory(notification) === "clubs";
     // Coach notification bell: keep club notifications in Coach mode.
     if (isClubNotification) {
     const withoutOrigin = actionUrl.replace(/^https?:\/\/[^/]+/i, "");

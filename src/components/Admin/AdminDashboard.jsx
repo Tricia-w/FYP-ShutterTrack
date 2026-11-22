@@ -132,7 +132,7 @@ export default function AdminDashboard({
     }).length;
 
     const pendingCoachCount = coaches.filter(
-      (item) => normalizeStatus(item.status) === "pending"
+      (item) => normalizeStatus(item.status) === "pending" && Boolean(item.verificationSubmittedAt)
     ).length;
 
     const pendingReportCount = reports.filter((item) => {
