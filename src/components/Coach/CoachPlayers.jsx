@@ -1139,7 +1139,9 @@ export default function CoachPlayers() {
   useEffect(() => {
     if (searchParams.get('find') === '1') {
       setShowSearch(true)
-      setSearchParams({}, { replace: true })
+      const remaining = new URLSearchParams(searchParams)
+      remaining.delete('find')
+      setSearchParams(remaining, { replace: true })
     }
   }, [searchParams, setSearchParams])
 
@@ -1813,6 +1815,30 @@ export default function CoachPlayers() {
       players.find(player => player.id === profilePlayerId) || null,
     [players, profilePlayerId]
   )
+
+  // Dashboard QR scans and profile links pass the target through ?player=.
+  // Wait for the permission-filtered directory before resolving the target.
+  useEffect(() => {
+    const targetId = String(searchParams.get('player') || '').trim()
+    if (!targetId || !user?.id || loading || searchParams.get('find') === '1') return
+    if (error) return
+
+    const player = players.find(item =>
+      String(item.id || '') === targetId ||
+      String(item.profileId || '') === targetId
+    )
+
+    if (player) {
+      setProfilePlayerId(player.id)
+    } else {
+      setError('Player profile not found. The profile may be private, hidden, or unavailable.')
+    }
+
+    // Consume only this parameter so closing the modal does not reopen it.
+    const remaining = new URLSearchParams(searchParams)
+    remaining.delete('player')
+    setSearchParams(remaining, { replace: true })
+  }, [searchParams, setSearchParams, user?.id, loading, players, error])
 
 
   useEffect(() => {
