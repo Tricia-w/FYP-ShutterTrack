@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 //import { useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { QRCodeCanvas } from 'qrcode.react'
 import NotificationBell from '../Notifications/NotificationBell'
 import { useAuth } from '../../context/AuthContext'
@@ -732,6 +733,73 @@ function MiniIcon({ type, color = 'currentColor', size = 18 }) {
   }
 
   return null
+}
+
+// Formula help is display-only; calculateMatchStats remains the source of scores.
+function MetricFormulaInfo({ label, formula, example }) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef(null)
+  const closeRef = useRef(null)
+
+  const close = () => {
+    setOpen(false)
+    triggerRef.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!open) return
+    closeRef.current?.focus()
+  }, [open])
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={`How ${label} is calculated`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={formula}
+        onClick={() => setOpen(true)}
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 22, height: 22, padding: 0, border: 0, background: 'transparent',
+          color: C.muted, cursor: 'pointer', flexShrink: 0 }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M12 11v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <circle cx="12" cy="8" r="1" fill="currentColor" />
+        </svg>
+      </button>
+      {open && createPortal(
+        <div className={styles.modalOverlay}
+          onClick={event => { if (event.target === event.currentTarget) close() }}
+          onKeyDown={event => {
+            if (event.key === 'Escape') { event.stopPropagation(); close() }
+            if (event.key === 'Tab') { event.preventDefault(); closeRef.current?.focus() }
+          }}>
+          <div className={styles.modal} role="dialog" aria-modal="true"
+            aria-label={`${label} calculation`}
+            style={{ width: 'min(380px, 90vw)', maxWidth: 380, textAlign: 'left', color: C.text }}>
+            <div className={styles.modalHead}>
+              <div className={styles.modalTitle}>{label} calculation</div>
+              <button ref={closeRef} type="button" className={styles.modalClose}
+                aria-label="Close formula" onClick={close}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Formula</div>
+            <div style={{ padding: 12, borderRadius: 10, background: C.soft,
+              color: C.text, fontWeight: 700, fontSize: 14, lineHeight: 1.6 }}>{formula}</div>
+            <div style={{ marginTop: 12, fontSize: 13, color: C.text, lineHeight: 1.6 }}>
+              <strong>Example: </strong>{example}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+              Based on recorded match results, not upcoming matches.
+            </div>
+          </div>
+        </div>, document.body
+      )}
+    </>
+  )
 }
 
 function PerformanceComparisonRow({
@@ -3249,7 +3317,11 @@ export default function Performance() {
           >
             {stats.winRate}%
           </div>
-          <div className={styles.metricLbl}>Win rate</div>
+          <div className={styles.metricLbl} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            Win rate
+            <MetricFormulaInfo label="Win rate" formula="(Matches won ÷ Total matches played) × 100"
+              example="Winning 6 out of 10 matches gives a win rate of 60%." />
+          </div>
         </div>
 
         <div className={styles.metric}>
@@ -3277,7 +3349,11 @@ export default function Performance() {
           >
             {stats.averageScorePerSet}
           </div>
-          <div className={styles.metricLbl}>Avg score/set</div>
+          <div className={styles.metricLbl} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            Avg score/set
+            <MetricFormulaInfo label="Avg score/set" formula="Total points scored ÷ Total recorded sets"
+              example="Scoring 21, 15 and 18 points in three sets gives an average of 18 points per set." />
+          </div>
         </div>
 
         <div className={styles.metric}>
