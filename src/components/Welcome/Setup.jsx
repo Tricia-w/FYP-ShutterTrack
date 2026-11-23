@@ -257,22 +257,26 @@ export default function Setup() {
           'Account is not ready yet. Please refresh or login again.'
         )
       }
-      /*
-        Mark onboarding as finished even when the player skips.
-        No player_setup row is created, so the player can complete
-        the setup later from the Profile page.
-      */
+      // Skipping onboarding must work for an existing Coach who adds the
+      // Player role, without requiring a player_setup record. Use the
+      // same app_users update as Finish Setup instead of an extra RPC.
+      const { data: updatedAccount, error: completeSetupError } = await supabase
+        .from('app_users')
+        .update({ setup_completed: true })
+        .eq('user_id', activeUser.id)
+        .select('user_id, setup_completed')
+        .maybeSingle()
 
-      const { error: completeSetupError } = await supabase.rpc(
-        'complete_player_setup'
-      )
       if (completeSetupError) {
-        console.error(
-          'Skip setup completion RPC error:',
-          completeSetupError
-        )
+        console.error('Skip setup account update error:', completeSetupError)
         throw new Error(
-          'Unable to skip setup right now. Please try again.'
+          completeSetupError.message || 'Unable to skip setup right now.'
+        )
+      }
+
+      if (!updatedAccount || updatedAccount.setup_completed !== true) {
+        throw new Error(
+          'Unable to confirm that setup was skipped. Please try again.'
         )
       }
       saveProfile?.({
